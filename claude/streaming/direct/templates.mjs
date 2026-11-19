@@ -39,6 +39,8 @@ const CONCAT_ENTRY = new RegExp(
 /** Keys that name an attribute, not a provider (a poster's `src`, a link's `href`). */
 const GENERIC_KEYS = new Set(['src', 'href', 'url', 'link', 'poster', 'image', 'img', 'backdrop', 'logo', 'icon', 'action', 'canonical', 'background', 'thumbnail', 'avatar']);
 /** A one-variable address that points at a series' page, not a film. */
+/** A query value that carries an address or words: where a share link or a relay puts its one variable. */
+const CARRIER_PARAM = /[?&](?:url|uri|u|href|link|text|title|body|subject|message|destination|dest|redirect|redirect_uri|return|next|target|q)=\{id\}/i;
 const SHOW_PAGE = /\/(?:tv|series|show)(?:\/|$)|[?&]type=(?:tv|series)\b/i;
 /** Chunk names worth reading first: where a site keeps its player servers. */
 const LIKELY_CHUNK = /movie|detail|watch|player|embed|server|stream|tv|series|episode/i;
@@ -91,6 +93,9 @@ export function templateFromParts(parts) {
     return null;
   }
   if (parsed.protocol !== 'https:' || /\.(?:png|jpe?g|webp|gif|svg|avif|ico|css|js)$/i.test(parsed.pathname)) return null;
+  // A share button or a relay builds its address around another address or a text, not a title's id
+  // (bingebang.st's `whatsapp: \`https://wa.me/?text=${e}\``, 2026-11-19).
+  if (CARRIER_PARAM.test(url)) return null;
   return { kind, url };
 }
 

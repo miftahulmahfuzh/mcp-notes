@@ -1351,7 +1351,9 @@ machine's provider list and probes for minutes.
    they load, on the site's own host only, likely chunks (`movie`, `details`, `player`, ...)
    first. It stops at 40 scripts, 4 MB a script, 30 MB in all and 90 seconds. A template is an
    object entry whose value builds an `https` address around one id (a film) or three (an
-   episode: id, season, episode), keyed by the provider's name. ww6-fmovies.com gave all 24 of
+   episode: id, season, episode), keyed by the provider's name. An address whose one
+   variable is the value of a parameter that carries another address or words (`?url=`,
+   `?text=`, `?destination=`: a share button, a relay) is not a provider. ww6-fmovies.com gave all 24 of
    its servers, each with a film and an episode template.
 2. **Or read the frames, in the streaming Chrome.** Only when step 1 found no template. A watch
    page of the site (`watch_page`, else the address you gave) is opened by the sniffer the

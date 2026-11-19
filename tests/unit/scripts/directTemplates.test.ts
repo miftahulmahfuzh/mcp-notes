@@ -92,6 +92,12 @@ describe('direct streaming: reading provider templates', () => {
     expect(skipped).toEqual([{ name: 'OnlyTv', reason: 'no_film_template' }]);
   });
 
+  it('does not take a share button or a relay for a provider', () => {
+    // bingebang.st's share menu and rivestream.app's relay, 2026-11-19: one variable each, and no title's id.
+    const source = 'const share={reddit:`https://www.reddit.com/submit?url=${e}`,whatsapp:`https://wa.me/?text=${e}`,telegram:`https://t.me/share/url?url=${e}`,x:`https://twitter.com/intent/tweet?url=${e}`,relay:`https://proxy.example/?destination=${e}`,VidOne:`https://vidone.example/embed/movie/${e}`,VidTwo:`https://vidtwo.example/embed?tmdb=${e}`,VidThree:`https://vidthree.example/api/movie/?id=${e}&color=fff`}';
+    expect(extractTemplates(source).map((e: { name: string }) => e.name)).toEqual(['VidOne', 'VidTwo', 'VidThree']);
+  });
+
   it('follows the page to its webpack runtime and the movie-details chunk, on the site only, as a plain client', async () => {
     const { fetch, asked } = fakeFetch(gatsbySite('https://fm.example'));
     const answer = await readSiteTemplates('https://fm.example/', { fetch });
