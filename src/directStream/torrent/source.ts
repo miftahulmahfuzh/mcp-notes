@@ -150,7 +150,7 @@ export interface TitleNames {
 export interface TorrentResolveOptions {
   /** The title's original language (TMDB's code); null: unknown. */
   audioLang: string | null;
-  /** The title's IMDb id; null: no index can be asked. */
+  /** The title's IMDb id; null: it has none, and only the indexes asked by title (and the fallback sites) are asked. */
   imdbId: string | null;
   names?: TitleNames | null;
   /** Where the play starts, in seconds (phase 8's Whisper transcribes from there first). */
@@ -170,7 +170,8 @@ export type TorrentResolve =
 /** What one play knows besides the candidate: the same for every torrent it tries. */
 interface PlayFacts {
   audioLang: string | null;
-  imdbId: string;
+  /** Null: the title has none; the subtitle services are then asked by what else they take (Wyzie: the TMDB id). */
+  imdbId: string | null;
   resumeS: number | null;
   cloudTried: boolean;
 }
@@ -285,7 +286,7 @@ function indexAttempt(a: IndexAttempt): ResolveAttempt {
 }
 
 /** The finder's query: the IMDb id, the title's names and year, its original language, and the episode for a series. */
-function queryOf(ref: StreamRef, imdbId: string, names: TitleNames | null, audioLang: string | null): FindQuery {
+function queryOf(ref: StreamRef, imdbId: string | null, names: TitleNames | null, audioLang: string | null): FindQuery {
   const common = { imdbId, title: names?.title ?? null, originalTitle: names?.originalTitle ?? null, year: names?.year ?? null, originalLanguage: audioLang };
   if (ref.kind === 'movie') return { ...common, kind: 'movie' };
   // TMDB's number runs on across seasons (a long anime): the indexes and many releases count within the season.
@@ -378,13 +379,7 @@ export class TorrentSource {
    */
   async resolve(ref: StreamRef, options: TorrentResolveOptions): Promise<TorrentResolve> {
     const started = this.now();
-    if (options.imdbId === null) {
-      return {
-        ok: false,
-        error: 'no_source',
-        attempts: [{ provider: 'Index: all', outcome: 'error', took_s: 0, detail: 'no IMDb id is known for this title (TMDB has none or cannot be asked), and the torrent indexes are asked by it' }],
-      };
-    }
+    // No IMDb id (TMDB lists none, or could not be asked): the indexes asked by title and the fallback sites still are.
     const query = queryOf(ref, options.imdbId, options.names ?? null, options.audioLang);
     options.progress?.({ stage: 'asking the torrent indexes', attempts: [] });
     let found: FindAnswer;
@@ -607,12 +602,12 @@ export class TorrentSource {
    * dub, or a torrent with no video file, is refused). `attempts` holds the one `Torrent: <name>`. Never throws.
    */
   async playMagnet(ref: StreamRef, options: TorrentResolveOptions & { magnet: string }): Promise<TorrentResolve> {
-    const query = queryOf(ref, options.imdbId ?? '', options.names ?? null, options.audioLang);
+    const query = queryOf(ref, options.imdbId, options.names ?? null, options.audioLang);
     const candidate = candidateFromMagnet(options.magnet, query);
     if (candidate === null) {
       return { ok: false, error: 'no_source', attempts: [{ provider: 'Torrent: magnet', outcome: 'error', took_s: 0, detail: 'not a magnet link or a 40-character info hash' }] };
     }
-    const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId ?? '', resumeS: options.resumeS ?? null, cloudTried: false };
+    const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId, resumeS: options.resumeS ?? null, cloudTried: false };
     options.progress?.({ stage: `opening the torrent ${candidate.name}`, attempts: [] });
     // Asked beside the play, without joining anything: when the swarm sends nothing, the answer says how thin it is.
     const known = this.swarmCounts([candidate], TRACKER_PROBE_MS).then((counts) => counts.get(candidate.infoHash) ?? null);
@@ -628,7 +623,7 @@ export class TorrentSource {
 
   /** The shuffle button: the session's remaining candidates, in their order, without asking the indexes again. */
   async next(ref: StreamRef, torrent: SessionTorrent, audioLang: string | null): Promise<TorrentResolve> {
-    if (torrent.query === null || torrent.imdbId === null || torrent.candidates.length === 0) return { ok: false, error: 'no_source', attempts: [] };
+    if (torrent.query === null || torrent.candidates.length === 0) return { ok: false, error: 'no_source', attempts: [] };
     const play: PlayFacts = { audioLang, imdbId: torrent.imdbId, resumeS: null, cloudTried: false };
     // A torrent the shuffle tried and could not play is left out of the title's next plays too.
     const key = refKey(ref);

@@ -226,8 +226,9 @@ async function askAll(indexes: readonly TorrentIndex[], query: TorrentQuery, run
 }
 
 export async function findCandidates(query: TorrentQuery, options: FindOptions = {}): Promise<FoundCandidates> {
-  const imdbId = normalizeImdbId(query.imdbId);
-  if (imdbId === null) throw new RangeError(`not an IMDb id: ${query.imdbId}`);
+  // No IMDb id: the indexes keyed by it answer `empty` without a request; the ones asked by title go on.
+  const imdbId = query.imdbId === null ? null : normalizeImdbId(query.imdbId);
+  if (query.imdbId !== null && imdbId === null) throw new RangeError(`not an IMDb id: ${query.imdbId}`);
   const asked: TorrentQuery = { ...query, imdbId };
   const settings: RankSettings = {
     minSeeds: options.minSeeds ?? DEFAULT_RANK_SETTINGS.minSeeds,

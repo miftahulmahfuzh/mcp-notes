@@ -1,4 +1,4 @@
-import { answerOf, candidateFrom } from './candidate.js';
+import { answerOf, candidateFrom, withoutImdbId } from './candidate.js';
 import { asCount, asRecord, asText, failedAnswer, getIndexJson } from './http.js';
 import type { IndexRow, TorrentIndex } from './types.js';
 
@@ -17,10 +17,12 @@ export function apibayIndex(base: string): TorrentIndex {
   return {
     name: 'apibay',
     async find(query, ctx) {
-      const got = await getIndexJson(ctx, `${root}/q.php?q=${encodeURIComponent(query.imdbId)}`);
+      const imdbId = query.imdbId;
+      if (imdbId === null) return withoutImdbId();
+      const got = await getIndexJson(ctx, `${root}/q.php?q=${encodeURIComponent(imdbId)}`);
       if (!got.ok) return failedAnswer(got);
       if (!Array.isArray(got.json)) return { outcome: 'error', detail: 'the answer is not a list', candidates: [] };
-      const rows = got.json.map((v: unknown) => readApibayRow(v, query.imdbId)).filter((r): r is IndexRow => r !== null);
+      const rows = got.json.map((v: unknown) => readApibayRow(v, imdbId)).filter((r): r is IndexRow => r !== null);
       return answerOf(rows.map((row) => candidateFrom(row, 'apibay', query)));
     },
   };

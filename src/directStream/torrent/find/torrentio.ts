@@ -1,4 +1,4 @@
-import { answerOf, candidateFrom, YTS_HINTS } from './candidate.js';
+import { answerOf, candidateFrom, withoutImdbId, YTS_HINTS } from './candidate.js';
 import { asRecord, asText, failedAnswer, getIndexJson, parseSizeText } from './http.js';
 import { baseName } from './release.js';
 import type { IndexAnswer, IndexRow, TorrentIndex, TorrentQuery } from './types.js';
@@ -76,9 +76,11 @@ export function stremioAddonIndex(addon: StremioAddon): TorrentIndex {
     async find(query, ctx): Promise<IndexAnswer> {
       const skip = addon.skip?.(query) ?? null;
       if (skip !== null) return { outcome: 'empty', detail: skip, candidates: [] };
+      const imdbId = query.imdbId;
+      if (imdbId === null) return withoutImdbId();
       // The add-ons number an episode within its season: `alt` when TMDB's number runs on across seasons.
       const episode = query.kind === 'movie' ? null : (query.alt ?? query);
-      const path = episode === null ? `movie/${query.imdbId}` : `series/${query.imdbId}:${episode.season}:${episode.episode}`;
+      const path = episode === null ? `movie/${imdbId}` : `series/${imdbId}:${episode.season}:${episode.episode}`;
       const got = await getIndexJson(ctx, `${root}/stream/${path}.json`);
       if (!got.ok) return failedAnswer(got);
       const streams = asRecord(got.json)?.streams;

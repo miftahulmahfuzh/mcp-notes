@@ -1854,6 +1854,12 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   480p), then more seeds. For an
   episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
   (never a sample).
+- **A title with no IMDb id.** TMDB lists none for many small films (Chasing the Moon, 2024), and a play of one used
+  to end before any index was asked. Now the indexes keyed by the id (Torrentio, apibay, EZTV, TorrentsDB, Peerflix,
+  YTS) answer `no_stream`, "not asked: no IMDb id is known for this title, and this index is asked by it", with no
+  request, and the indexes asked by title and the fallback sites are asked as for any title. TMDB is asked twice for
+  the id when it does not answer (a timeout, a 5xx, a 429), a failure is logged
+  (`could not read the IMDb id of ... from TMDB`), and an id TMDB gave is kept for the daemon's run.
 - **Indexes asked by title.** Knaben, Bitsearch and torrents-csv hold no IMDb ids, so the finder asks them by name, at
   the same time as the others: a film as its title and year (`Dune 2021`), an episode as its title and `SxxEyy`
   (numbered within the season when TMDB's number runs on across seasons). Each is its own attempt (`Index: knaben`,

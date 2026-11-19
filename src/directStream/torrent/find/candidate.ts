@@ -111,6 +111,14 @@ export function candidateFromMagnet(magnet: string, query: TorrentQuery): Torren
   };
 }
 
+/** The detail of an index keyed by the IMDb id when the title has none. */
+export const NO_IMDB_ID = 'not asked: no IMDb id is known for this title, and this index is asked by it';
+
+/** The answer of an index keyed by the IMDb id for a query that carries none: `empty`, and no request is sent. */
+export function withoutImdbId(): IndexAnswer {
+  return { outcome: 'empty', detail: NO_IMDB_ID, candidates: [] };
+}
+
 /** `ok` with what was listed, or `empty`. */
 export function answerOf(candidates: TorrentCandidate[]): IndexAnswer {
   return candidates.length > 0

@@ -6,8 +6,12 @@
  */
 
 interface QueryCommon {
-  /** `tt` and at least seven digits; findCandidates normalizes it once. */
-  imdbId: string;
+  /**
+   * `tt` and at least seven digits; findCandidates normalizes it once. Null: TMDB lists none for the title (a small
+   * film often has none) or could not be asked. The indexes keyed by it then send no request (`withoutImdbId`), and
+   * the ones asked by title (find/titleSearch.ts) and the fallback sites are asked as usual.
+   */
+  imdbId: string | null;
   /** The title's English name. When set, a release that names neither it nor `originalTitle` is left out. */
   title?: string | null;
   originalTitle?: string | null;

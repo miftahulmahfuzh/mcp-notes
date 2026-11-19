@@ -1,4 +1,4 @@
-import { answerOf, candidateFrom, YTS_HINTS } from './candidate.js';
+import { answerOf, candidateFrom, withoutImdbId, YTS_HINTS } from './candidate.js';
 import { asCount, asList, asRecord, asText, failedAnswer, getIndexJson } from './http.js';
 import type { IndexRow, TorrentIndex } from './types.js';
 
@@ -28,7 +28,9 @@ export function ytsIndex(base: string): TorrentIndex {
     kinds: ['movie'],
     timeoutMs: DEFAULT_YTS_TIMEOUT_MS,
     async find(query, ctx) {
-      const got = await getIndexJson(ctx, `${root}/list_movies.json?query_term=${encodeURIComponent(query.imdbId)}`);
+      const imdbId = query.imdbId;
+      if (imdbId === null) return withoutImdbId();
+      const got = await getIndexJson(ctx, `${root}/list_movies.json?query_term=${encodeURIComponent(imdbId)}`);
       if (!got.ok) return failedAnswer(got);
       const answer = asRecord(got.json);
       const status = asText(answer?.status);
@@ -36,8 +38,8 @@ export function ytsIndex(base: string): TorrentIndex {
       const rows: IndexRow[] = [];
       for (const value of asList(asRecord(answer.data)?.movies) ?? []) {
         const movie = asRecord(value);
-        if (movie === null || asText(movie.imdb_code)?.toLowerCase() !== query.imdbId) continue;
-        const title = asText(movie.title_long) ?? asText(movie.title) ?? query.imdbId;
+        if (movie === null || asText(movie.imdb_code)?.toLowerCase() !== imdbId) continue;
+        const title = asText(movie.title_long) ?? asText(movie.title) ?? imdbId;
         for (const torrent of asList(movie.torrents) ?? []) {
           const row = readYtsTorrent(torrent, title);
           if (row !== null) rows.push(row);

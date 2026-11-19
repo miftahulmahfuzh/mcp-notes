@@ -1,4 +1,4 @@
-import { answerOf, candidateFrom } from './candidate.js';
+import { answerOf, candidateFrom, withoutImdbId } from './candidate.js';
 import { asCount, asList, asRecord, asText, failedAnswer, getIndexJson, trackersFromMagnet } from './http.js';
 import { episodeFitOf, stripExtension } from './release.js';
 import type { IndexRow, TorrentIndex } from './types.js';
@@ -34,6 +34,7 @@ export function eztvIndex(base: string): TorrentIndex {
     kinds: ['tv'],
     async find(query, ctx) {
       if (query.kind !== 'tv') return { outcome: 'empty', detail: 'EZTV lists series only', candidates: [] };
+      if (query.imdbId === null) return withoutImdbId();
       const digits = query.imdbId.slice(2);
       const rows: IndexRow[] = [];
       for (let page = 1; page <= EZTV_MAX_PAGES; page++) {

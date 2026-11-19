@@ -343,13 +343,13 @@ describe('TorrentSource.resolve', () => {
     expect((await t.settled()).find((c) => c.startsWith('use '))).toBe(`use ${h(9)} 1`);
   });
 
-  it('asks no index without an IMDb id, and says why in attempts', async () => {
+  it('without an IMDb id the finder is still asked (the indexes asked by title need none), and the torrent plays', async () => {
     const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')] });
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: null });
-    expect(out.ok).toBe(false);
-    expect(out.attempts).toEqual([expect.objectContaining({ provider: 'Index: all', outcome: 'error' })]);
-    expect(t.finds()).toBe(0);
-    expect(await t.settled()).toEqual([]);
+    expect(t.finds()).toBe(1);
+    expect(out.ok && out.torrent.infoHash).toBe(h(1));
+    expect(out.ok && out.torrent.imdbId).toBeNull();
+    expect(out.attempts.some((a) => a.provider === 'Index: all')).toBe(false);
   });
 });
 

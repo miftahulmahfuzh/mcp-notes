@@ -12,6 +12,9 @@ export const TORRENT_PROVIDER_NAME = 'Torrent';
 
 /** The resolve error that means the title has no source now. Every other error is the local Chrome's and records nothing. */
 export const NO_SOURCE = 'no_source';
+/** TMDB is asked this many times for a title's IMDb id before the title goes without one. */
+export const IMDB_ID_TRIES = 2;
+export const IMDB_ID_RETRY_MS = 250;
 
 /** What MovieStreams needs of the movies service (AppDeps.movies fits). */
 export type MovieStreamsSource = Pick<MoviesService, 'repo' | 'tmdb' | 'events' | 'host'>;
@@ -112,6 +115,9 @@ export class MovieStreams {
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
 
+  /** IMDb ids TMDB gave, by title id, for this run of the daemon. */
+  private readonly imdbIds = new Map<string, string>();
+
   constructor(
     private readonly movies: MovieStreamsSource,
     options: MovieStreamsOptions = {},
@@ -198,17 +204,32 @@ export class MovieStreams {
 
   /**
    * The title's IMDb id for the torrent indexes (torrent phase 3): TMDB's external ids of the film or of the
-   * series (an episode is found by the series' id with its season and episode). Not stored. Null when TMDB has
-   * none, is not configured or cannot be reached.
+   * series (an episode is found by the series' id with its season and episode). An id TMDB gave is kept in memory
+   * for this run of the daemon (it does not change), so a later play does not hang on TMDB answering again. Null
+   * when TMDB lists none or is not configured, and when TMDB cannot be reached: it is asked twice, and the failure
+   * is logged, since a play then goes on with the indexes asked by title only.
    */
   async imdbId(target: StreamTarget): Promise<string | null> {
-    try {
-      const tmdb: (TmdbClient & Partial<TmdbTitleNames>) | null = this.movies.tmdb;
-      if (tmdb === null || tmdb.imdbId === undefined) return null;
-      return await tmdb.imdbId(target.kind, target.tmdbId);
-    } catch (err) {
-      if (!(err instanceof TmdbError)) this.log(`[notesd] direct stream: could not read the IMDb id of ${describeTarget(target)}: ${messageOf(err)}`);
-      return null;
+    const tmdb: (TmdbClient & Partial<TmdbTitleNames>) | null = this.movies.tmdb;
+    if (tmdb === null || tmdb.imdbId === undefined) return null;
+    const key = titleId(target.kind, target.tmdbId);
+    const kept = this.imdbIds.get(key);
+    if (kept !== undefined) return kept;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const id = await tmdb.imdbId(target.kind, target.tmdbId);
+        if (id !== null) this.imdbIds.set(key, id);
+        return id;
+      } catch (err) {
+        // TMDB did not answer (a timeout, a dropped connection, a 5xx, a 429): once more before the title goes without.
+        const again = err instanceof TmdbError && attempt < IMDB_ID_TRIES && (err.code === 'network' || err.code === 'timeout' || (err.code === 'http' && ((err.status ?? 0) >= 500 || err.status === 429)));
+        if (again) {
+          await new Promise((resolve) => setTimeout(resolve, IMDB_ID_RETRY_MS));
+          continue;
+        }
+        this.log(`[notesd] direct stream: could not read the IMDb id of ${describeTarget(target)} from TMDB (${attempt} ${attempt === 1 ? 'try' : 'tries'}): ${messageOf(err)}; the torrent indexes keyed by it are not asked`);
+        return null;
+      }
     }
   }
 

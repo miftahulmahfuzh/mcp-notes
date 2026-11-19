@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { candidateFrom } from '../../../../../src/directStream/torrent/find/candidate.js';
+import { candidateFrom, NO_IMDB_ID } from '../../../../../src/directStream/torrent/find/candidate.js';
 import { findCandidates, TORRENT_INDEX_USER_AGENT } from '../../../../../src/directStream/torrent/find/find.js';
 import type { FetchLike, TorrentIndex, TorrentQuery } from '../../../../../src/directStream/torrent/find/types.js';
 
@@ -55,6 +55,34 @@ const NOTHING_BY_TITLE_FILM: Record<string, Route> = { [KNABEN]: body('{"hits":[
 const NOTHING_BY_TITLE_EPISODE: Record<string, Route> = { [KNABEN]: body('{"hits":[]}'), [BITSEARCH_EPISODE]: body('{"success":true,"results":[]}'), [TCSV_EPISODE]: body('{"torrents":[]}') };
 
 describe('findCandidates', () => {
+  it('a title with no IMDb id: the indexes keyed by it send no request, the ones asked by title are asked', async () => {
+    const { fetch, calls } = fakeFetch({
+      [KNABEN]: body('{"hits":[]}'),
+      [BITSEARCH_FILM]: body(JSON.stringify({ success: true, results: [{ infohash: hash(21), title: 'Sintel 2010 1080p WEB x264 AAC', seeders: 40, size: 900 * 1024 * 1024 }] })),
+      [TCSV_FILM]: body('{"torrents":[]}'),
+    });
+    const found = await findCandidates({ ...SINTEL, imdbId: null }, { fetch });
+    expect(calls.map((c) => c.url).sort()).toEqual([KNABEN, BITSEARCH_FILM, TCSV_FILM].sort());
+    const byName = Object.fromEntries(found.indexes.map((a) => [a.index, a]));
+    for (const name of ['torrentio', 'apibay', 'torrentsdb', 'yts']) {
+      expect(byName[name]).toMatchObject({ outcome: 'empty', detail: NO_IMDB_ID, listed: 0 });
+    }
+    expect(byName.bitsearch).toMatchObject({ outcome: 'ok', listed: 1 });
+    expect(found.candidates.map((c) => c.infoHash)).toEqual([hash(21)]);
+    expect(found.candidates[0]?.titleSearch).toBe(true);
+  });
+
+  it('a series with no IMDb id: EZTV sends no request either', async () => {
+    const { fetch, calls } = fakeFetch({ ...NOTHING_BY_TITLE_EPISODE });
+    const found = await findCandidates({ ...BREAKING_BAD, imdbId: null }, { fetch });
+    expect(found.indexes.find((a) => a.index === 'eztv')).toMatchObject({ outcome: 'empty', detail: NO_IMDB_ID });
+    expect(calls.every((c) => [KNABEN, BITSEARCH_EPISODE, TCSV_EPISODE].includes(c.url))).toBe(true);
+  });
+
+  it('still refuses an id that is not an IMDb id', async () => {
+    await expect(findCandidates({ ...SINTEL, imdbId: 'nonsense' }, { fetch: fakeFetch({}).fetch })).rejects.toThrow(RangeError);
+  });
+
   it('asks Torrentio, apibay, TorrentsDB and YTS for a film by its IMDb id and answers ranked candidates', async () => {
     const { fetch, calls } = fakeFetch({
       [TORRENTIO_FILM]: body(fixture('torrentio-movie-sintel.json')),
@@ -244,7 +272,7 @@ describe('findCandidates', () => {
   });
 
   it('asks the fallback only when the JSON indexes give no usable candidate', async () => {
-    const asked: string[] = [];
+    const asked: Array<string | null> = [];
     const fallback: TorrentIndex = {
       name: '1337x',
       async find(query) {
@@ -288,7 +316,7 @@ describe('findCandidates', () => {
 
   it('refuses a query that has no IMDb id', async () => {
     await expect(findCandidates({ kind: 'movie', imdbId: 'sintel' })).rejects.toBeInstanceOf(RangeError);
-    const seen: string[] = [];
+    const seen: Array<string | null> = [];
     const recorder: TorrentIndex = {
       name: 'recorder',
       async find(query) {
