@@ -2029,7 +2029,9 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   anchors give one shift (their median offset), or a shift and a stretch when the offset grows over
   the film (a 25 fps file on a 23.976 fps film). `in_step`: within 0.6 s at the start and the end,
   with 70% of the anchors agreeing. `off`: one such fix puts 70% of them right. `scattered`: no
-  single fix does, so the file was cut for another edit.
+  single fix does, so the file was cut for another edit. `by_place` gives the offset at each place
+  heard: one number everywhere is a plain shift, a climb a stretch, steps another cut; every file
+  stepping at the same place points at the stream, not the subtitles.
 - **What it does about it.** Right and in step: nothing (`ok`). Right text, `off`: the same file is
   re-timed (`retimed`) and judged again. Wrong, missing or `scattered`: Wyzie's list (up to eight
   files) and the OpenSubtitles add-on's (up to five) are tried one by one, each judged the same way;

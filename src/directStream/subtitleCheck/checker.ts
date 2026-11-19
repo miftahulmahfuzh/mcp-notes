@@ -346,6 +346,8 @@ export class SubtitleChecker {
           hinted.enough = quick !== null && shown !== null && 'vtt' in shown && (quick.grade === 'good' || fixed(shown.vtt, quick) !== null);
         }
         if (!hinted.enough) notes.push(where.charAt(0).toUpperCase() + where.slice(1) + ', and the film\'s two ends did not settle it, so the rest of the usual places were heard as well.');
+      } else {
+        notes.push('The length of the film is not known here (a source resolved out of sight), so its two ends could not be picked beside ' + where + ': the usual places were heard as well. A stream on screen has a length.');
       }
     }
     if (hinted === null || !hinted.enough) {

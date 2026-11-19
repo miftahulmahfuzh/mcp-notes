@@ -244,6 +244,30 @@ export interface Judgement {
   off_start_s: number | null;
   off_end_s: number | null;
   fit: TimingFit | null;
+  /**
+   * The same offset (cue minus speech, the median) at each place lines were found, in film order: what `scattered`
+   * looks like. One number everywhere is in step or a plain shift, a steady climb a stretch, steps a file cut for
+   * another edit. `spread_s`: how far the place's own lines disagree. Empty for a wrong text.
+   */
+  by_place: Array<{ at_s: number; lines: number; off_s: number; spread_s: number }>;
+}
+
+/** Anchors further apart than this were heard at different places. */
+export const PLACE_GAP_S = 90;
+
+/** The anchors' offsets per place heard. */
+export function offsetsByPlace(anchors: readonly Anchor[]): Judgement['by_place'] {
+  const sorted = [...anchors].sort((a, b) => a.heardS - b.heardS);
+  const groups: Anchor[][] = [];
+  for (const a of sorted) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && a.heardS - last[last.length - 1]!.heardS <= PLACE_GAP_S) last.push(a);
+    else groups.push([a]);
+  }
+  return groups.map((g) => {
+    const offs = g.map((a) => a.cueS - a.heardS);
+    return { at_s: Math.round(g[0]!.heardS), lines: g.length, off_s: round3(median(offs)), spread_s: round3(Math.max(...offs) - Math.min(...offs)) };
+  });
 }
 
 /** Judges one subtitle against what was heard. */
@@ -271,6 +295,7 @@ export function judge(vtt: string, heard: readonly HeardLine[], durationS: numbe
     off_start_s: timing?.offStartS ?? null,
     off_end_s: timing?.offEndS ?? null,
     fit: timing?.fit ?? null,
+    by_place: text === 'wrong' ? [] : offsetsByPlace(match.anchors),
   };
 }
 

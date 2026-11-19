@@ -52,7 +52,7 @@ const DESCRIPTION =
   'When a stream of the title is on screen (live), the new subtitle is put on that session and the open page shows it within about 5 seconds, without touching the film. With none open (idle), this machine\'s finished torrent download of the title is checked, else a cloud source resolved out of sight (nothing plays), and the choice is kept for the next play. source "torrent" or "cloud" says which to check when idle. ' +
   'Answers { verdict, changed, title, mode live | idle, source, provider, heard { lines, windows }, current, tried, chosen, notes, took_s }. verdict ok: the subtitle shown is right and in step, nothing changed. retimed: the same subtitle, moved (chosen.shift_s, chosen.stretch). replaced: another file (chosen.from, chosen.name). ' +
   'none_fits: the subtitle shown is wrong or out of step and no other file passed; unsure: too little matched to say (a film not in English is heard through a translation), or the subtitle shown is a growing track that cannot be read as a file; unheard: too little speech was heard. In those three nothing changed. ' +
-  'current and each of tried carry text (correct, wrong, unsure) with text_share (the share of heard lines found in it), timing (in_step, off, scattered, unknown) with off_start_s and off_end_s (subtitle minus speech, seconds), and grade. ' +
+  'current and each of tried carry text (correct, wrong, unsure) with text_share (the share of heard lines found in it), timing (in_step, off, scattered, unknown) with off_start_s and off_end_s (subtitle minus speech, seconds), by_place (that offset at each place heard: at_s, lines, off_s, spread_s; one number everywhere is a plain shift, a climb a stretch, steps a file cut for another edit or a stream that is another cut), and grade. ' +
   'A check that outlasts 45 s answers pending true with stage: it goes on in the daemon, and the same call again joins it. Errors: unknown_session, no_audio (idle, torrent asked, and no finished download here), no_source (no cloud provider could stream the title), subtitle_check_off.';
 
 function ok(value: unknown): CallToolResult {
@@ -110,7 +110,7 @@ export function nextFor(out: CheckResult): string {
     case 'replaced':
       return 'The subtitle shown was ' + (out.current === null ? 'missing' : 'wrong or could not be re-timed (current.text, current.timing)') + ': it was replaced by chosen.from / chosen.name' + (out.chosen?.retimed === true ? ', re-timed to the audio' : '') + ', which passed both checks. Say what was wrong and what is shown now. ' + where;
     case 'none_fits':
-      return 'The subtitle shown did not pass (current.text, current.timing) and none of the files tried did either: list tried in one short line each (name, text, timing). Nothing was changed. Offer the player\'s G and H keys for a plain delay, or another source of the title (a torrent with its own subtitle file, another cloud provider).';
+      return 'The subtitle shown did not pass (current.text, current.timing) and none of the files tried did either: list tried in one short line each (name, text, timing), and when the timing is scattered say what by_place shows (where the offset steps). Nothing was changed. Offer the player\'s G and H keys for a plain delay, or another source of the title (a torrent with its own subtitle file, another cloud provider).';
     case 'unsure':
       return 'Too little matched to say whether the subtitle is right, and nothing was changed: give the reason from notes and current.';
     case 'unheard':

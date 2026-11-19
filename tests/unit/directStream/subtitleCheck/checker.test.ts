@@ -259,6 +259,8 @@ describe('SubtitleChecker', () => {
     expect(g.cuts[0]).toBe(700);
     expect(g.cuts.length).toBeGreaterThan(3);
     expect(out.heard.hint).toMatchObject({ enough: false });
+    expect(out.notes.join(' ')).toContain('The length of the film is not known here');
+    expect(out.current).toMatchObject({ by_place: expect.arrayContaining([expect.objectContaining({ at_s: 700, lines: 12 })]) });
   });
 
   it('passes over a window that cannot be cut and says so', async () => {

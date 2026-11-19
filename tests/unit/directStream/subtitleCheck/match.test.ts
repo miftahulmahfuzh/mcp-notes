@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commonWords, judge, matchLines, parseSubCues, retime, wordsOf, type HeardLine } from '../../../../src/directStream/subtitleCheck/match.js';
+import { commonWords, judge, matchLines, offsetsByPlace, parseSubCues, retime, wordsOf, type HeardLine } from '../../../../src/directStream/subtitleCheck/match.js';
 
 /** A film of 120 lines, one every 20 s, each of its own words. */
 const WORDS = ['river', 'candle', 'stone', 'window', 'garden', 'letter', 'silver', 'morning', 'winter', 'doctor', 'kitchen', 'brother', 'engine', 'yellow', 'paper', 'north'];
@@ -99,6 +99,18 @@ describe('judge', () => {
     const j = judge(twice, heard, DURATION);
     expect(j).toMatchObject({ grade: 'good', timing: 'in_step' });
     expect(j.agree).toBe(1);
+  });
+});
+
+describe('offsetsByPlace', () => {
+  it('gives the offset at each place heard, so a step between two places shows', () => {
+    const at = (heardS: number, off: number) => ({ heardS, cueS: heardS + off, score: 1, sharp: true });
+    const out = offsetsByPlace([at(1500, -19.5), at(750, 0.1), at(760, 0), at(790, 0.3), at(1510, -19.4)]);
+    expect(out).toEqual([
+      { at_s: 750, lines: 3, off_s: 0.1, spread_s: 0.3 },
+      { at_s: 1500, lines: 2, off_s: -19.45, spread_s: 0.1 },
+    ]);
+    expect(offsetsByPlace([])).toEqual([]);
   });
 });
 

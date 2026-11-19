@@ -73,6 +73,9 @@ joins the same check; repeat until an outcome comes.
 - `timing`: `in_step` (within 0.6 s at both ends), `off` (one shift, or a shift and a stretch, fixes
   it), `scattered` (the offsets disagree: cut for another edit), `unknown`. `off_start_s` and
   `off_end_s` are subtitle minus speech, in seconds, at the start and the end of the film.
+- `by_place`: that offset at each place heard (`at_s`, `lines`, `off_s`). For a `scattered` file, say
+  what it shows: where the offset steps (a stream or a file cut differently from there on), and that
+  every file stepping at the same place points at the stream, not the subtitles.
 
 Nothing is ever changed unless a subtitle passed both checks, so a verdict with "no" above left the
 player exactly as it was.
