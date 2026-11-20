@@ -128,6 +128,8 @@ export interface TorrentSwarm {
   received?(infoHash: string): number | null;
   /** This host's rows of a film or episode (every torrent opened for it), for the candidates list. Absent: none. */
   downloadsOf?(ref: StreamRef): Promise<TorrentSlotRecord[]>;
+  /** The trackers this host's row of a torrent keeps (what it was opened with), for opening it again by its info hash. Absent: none. */
+  trackersOf?(infoHash: string): Promise<string[]>;
 }
 
 export interface TorrentSourceOptions {
@@ -211,11 +213,35 @@ export interface TorrentResolveOptions {
   skip?: readonly string[];
   /** Told each time the play moves on (the indexes answered, a torrent was tried), for a caller that answers before the play does. */
   progress?: (progress: TorrentProgress) => void;
+  /**
+   * Which of the found torrents may be tried at all (a download's band: 1080p with live seeds, or below 1080p), given
+   * what the trackers said of its swarm (null: nobody answered for it). Unset: every one (a play).
+   */
+  only?: (c: TorrentCandidate, count: SwarmCount | null) => boolean;
 }
 
 export type TorrentResolve =
   | { ok: true; torrent: SessionTorrent; source: ResolvedSource; attempts: ResolveAttempt[] }
   | { ok: false; error: 'no_source'; attempts: ResolveAttempt[] };
+
+/** What fetchKept answers: the torrent held for a download, or why none could be (`dubbed`: every torrent tried was a dub). */
+export type KeptResolve =
+  | { ok: true; torrent: SessionTorrent; attempts: ResolveAttempt[] }
+  | { ok: false; error: 'no_source' | 'dubbed'; attempts: ResolveAttempt[] };
+
+/** Where a kept download stands (TorrentSource.keptState). */
+export interface KeptState {
+  file: 'downloading' | 'whole';
+  /** `none`: the file plays as is, or no remux runs for it. */
+  remux: 'none' | 'running' | 'whole' | 'failed';
+  subtitles: 'searching' | 'done';
+}
+
+/** `dubbed` when every torrent tried was refused or heard as a dub; else `no_source`. */
+export function keptFailure(attempts: readonly ResolveAttempt[]): 'no_source' | 'dubbed' {
+  const torrents = attempts.filter((a) => a.provider.startsWith(`${TORRENT_PROVIDER}: `) && a.outcome !== 'skipped');
+  return torrents.length > 0 && torrents.every((a) => a.outcome === 'dubbed') ? 'dubbed' : 'no_source';
+}
 
 /** Where the torrent that plays was found, for its log line: `from torrentio`, `from knaben, also listed by apibay`. */
 function foundIn(c: Pick<TorrentCandidate, 'index' | 'listedBy'> | null): string {
@@ -507,6 +533,14 @@ export class TorrentSource {
     const counts = await this.swarmCounts([...candidates, ...dubs]);
     const dead = [...candidates, ...dubs].filter((c) => looksDead(counts.get(c.infoHash))).length;
     if (dead > 0) this.log(`[notesd] torrent: ${refLabel(ref)}: the trackers know no seeder for ${dead} of ${candidates.length + dubs.length} torrent(s); those are tried last`);
+    const only = options.only ?? null;
+    if (only !== null) {
+      const allowed = (c: TorrentCandidate): boolean => only(c, counts.get(c.infoHash) ?? null);
+      const before = candidates.length + dubs.length;
+      candidates = candidates.filter(allowed);
+      dubs = dubs.filter(allowed);
+      this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length + dubs.length} of ${before} torrent(s) fit what this download asks for`);
+    }
     candidates = deadLast(candidates, counts);
     dubs = deadLast(dubs, counts);
     const indexes = found.indexes.map(indexAttempt);
@@ -690,6 +724,93 @@ export class TorrentSource {
     out.torrent.stop.abort();
     if (out.torrent.manifestKind === 'hls') this.opts.remux?.release(out.torrent.infoHash, out.torrent.fileIndex);
     return out;
+  }
+
+  /**
+   * A download the owner asked for (src/directStream/downloads/): the title's torrent found and opened as a play finds
+   * it (the indexes, the race, the header, the original-language check on the file's tags), or the one torrent
+   * `infoHash` names (a pick, or a download carried on after a pause or a restart: no index is asked, its kept
+   * trackers are used). A file that tags no audio language is heard before it is kept, and a dub is let go and the
+   * next torrent tried. Unlike fetchAhead nothing is stopped: the subtitle chain and the remux run to their end. The
+   * torrent stays in the swarm until `release`. Never throws.
+   */
+  async fetchKept(ref: StreamRef, options: TorrentResolveOptions & { infoHash?: string | null }): Promise<KeptResolve> {
+    const attempts: ResolveAttempt[] = [];
+    const skip = new Set((options.skip ?? []).map((hash) => hash.toLowerCase()));
+    const pinned = options.infoHash ?? null;
+    for (let round = 0; round < MAX_TORRENT_TRIES; round += 1) {
+      const out = pinned !== null ? await this.keptByHash(ref, pinned, options) : await this.resolve(ref, { ...options, skip: [...skip] });
+      attempts.push(...out.attempts);
+      if (!out.ok) return { ok: false, error: keptFailure(attempts), attempts };
+      const dub = await this.heardAsDub(out.torrent, out.source, options.audioLang);
+      if (dub === null) {
+        this.log(`[notesd] torrent: ${refLabel(ref)}: keeping ${out.torrent.name} (${out.torrent.infoHash.slice(0, 8)}), downloaded until it is whole`);
+        return { ok: true, torrent: out.torrent, attempts };
+      }
+      // The torrent's `resolved` attempt is what was heard as a dub: it says so, so the failure reads `dubbed`.
+      const label = torrentLabel(out.torrent.name);
+      for (let i = 0; i < attempts.length; i += 1) {
+        const a = attempts[i]!;
+        if (a.provider === label && a.outcome === 'resolved') attempts[i] = { ...a, outcome: 'dubbed', detail: `${a.detail}; audio heard: ${dub}` };
+      }
+      this.noteDubbed(ref, out.torrent.infoHash, dub);
+      this.dropKept(out.torrent);
+      this.log(`[notesd] torrent: ${refLabel(ref)}: ${out.torrent.name} was heard as a dub (${dub}); not downloaded`);
+      if (pinned !== null) break;
+      skip.add(out.torrent.infoHash.toLowerCase());
+    }
+    return { ok: false, error: keptFailure(attempts), attempts };
+  }
+
+  /**
+   * Where a kept download stands: its file whole on disk, its remux (none for a file Chrome plays as is), and whether
+   * its subtitle chain is still searching. Never throws.
+   */
+  async keptState(torrent: SessionTorrent): Promise<KeptState> {
+    const file = (await this.state(torrent)) === 'ready' ? 'whole' : 'downloading';
+    const remux = torrent.manifestKind === 'hls' ? (this.opts.remux?.status(torrent.infoHash, torrent.fileIndex) ?? 'none') : 'none';
+    return { file, remux, subtitles: (torrent.subtitlesPending ?? null) === null ? 'done' : 'searching' };
+  }
+
+  /** A kept download's remux that failed: started again once (the file is whole by then, so ffmpeg reads it from disk). Never throws. */
+  async retryKeptRemux(torrent: SessionTorrent): Promise<void> {
+    if (torrent.manifestKind !== 'hls' || !torrent.held) return;
+    try {
+      await this.opts.remux?.resume(torrent.infoHash, torrent.fileIndex);
+    } catch (err) {
+      this.log(`[notesd] torrent: the remux of ${torrent.name} (${torrent.infoHash.slice(0, 8)}) failed again: ${messageOf(err)}`);
+    }
+  }
+
+  /** One torrent by its info hash, opened with the trackers this host kept for it and the shared ones; no index is asked. */
+  private async keptByHash(ref: StreamRef, infoHash: string, options: TorrentResolveOptions): Promise<TorrentResolve> {
+    const query = queryOf(ref, options.imdbId, options.names ?? null, options.audioLang);
+    const base = candidateFromMagnet(infoHash, query);
+    if (base === null) {
+      return { ok: false, error: 'no_source', attempts: [{ provider: 'Torrent: magnet', outcome: 'error', took_s: 0, detail: 'not a 40-character info hash' }] };
+    }
+    const stored = (await Promise.resolve(this.opts.swarm.trackersOf?.(base.infoHash)).catch(() => undefined)) ?? [];
+    const name = (await Promise.resolve(this.opts.swarm.releaseName?.(base.infoHash)).catch(() => null)) ?? base.name;
+    const candidate: TorrentCandidate = { ...base, name, release: parseRelease(name), trackers: [...new Set([...stored, ...base.trackers])] };
+    const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId, resumeS: null, cloudTried: false };
+    options.progress?.({ stage: `opening the torrent ${candidate.name}`, attempts: [] });
+    return this.tryCandidates(ref, query, [candidate], play, this.now() + TORRENT_DEADLINE_MS, options.progress);
+  }
+
+  /** The reason a kept torrent's untagged audio was heard as a dub, or null (tagged, unknown original, no hearer, or not a dub). */
+  private async heardAsDub(torrent: SessionTorrent, source: ResolvedSource, audioLang: string | null): Promise<string | null> {
+    if (audioLang === null || !this.hears || (source.audio?.languages.length ?? 0) > 0) return null;
+    const heard = await this.hearAudio(torrent, audioLang, 0);
+    return heard?.verdict === 'dubbed' ? heard.reason : null;
+  }
+
+  /** Lets go of a kept torrent that will not be downloaded (a dub): its subtitle chain and remux stop, and it leaves the swarm at once. */
+  private dropKept(torrent: SessionTorrent): void {
+    torrent.stop.abort();
+    if (!torrent.held) return;
+    torrent.held = false;
+    if (torrent.manifestKind === 'hls') this.opts.remux?.release(torrent.infoHash, torrent.fileIndex);
+    this.dropNow(torrent.infoHash, true);
   }
 
   /** Lets go of a torrent `fetchAhead` took (once): with no other user the daemon leaves its swarm. */

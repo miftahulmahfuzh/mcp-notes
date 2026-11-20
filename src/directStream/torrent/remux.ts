@@ -346,6 +346,19 @@ export class TorrentRemux {
     return readRemuxProbe(remuxDir(this.opts.dir, infoHash, fileIndex));
   }
 
+  /**
+   * Where the remux of one file stands on this machine: `whole` once its done.json is on disk (made now or by an
+   * earlier run), else what the run in memory is doing (`running`, `failed`); `none` when nothing runs or ran for it.
+   */
+  status(infoHash: string, fileIndex: number): 'none' | 'running' | 'whole' | 'failed' {
+    if (existsSync(path.join(remuxDir(this.opts.dir, infoHash, fileIndex), REMUX_DONE_FILE))) return 'whole';
+    const run = this.runs.get(`${infoHash}:${fileIndex}`);
+    if (run === undefined) return 'none';
+    if (run.state === 'running') return 'running';
+    if (run.state === 'failed') return 'failed';
+    return run.state === 'done' ? 'whole' : 'none';
+  }
+
   /** start() again with what the file was last started with (a session that took its torrent again). No-op for a file never started. */
   async resume(infoHash: string, fileIndex: number): Promise<void> {
     const req = this.requests.get(`${infoHash}:${fileIndex}`);
