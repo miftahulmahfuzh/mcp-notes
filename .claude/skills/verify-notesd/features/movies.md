@@ -46,8 +46,12 @@
   character still asks the chat. The caret beside Play, and on every episode row, is the play
   menu: the file (or pahe, `GET /api/movies/:id/pahe`), `POST /api/stream/play` with `provider`
   `cloud` or `torrent`, `POST /api/movies/:id/site-play` for a site. What played is kept per
-  method (`movie_title_methods`), and a named kind goes back to it. Proof:
-  `npx vitest run web/src/App.movies.test.tsx web/src/lib/movies.test.tsx tests/unit/movies/guides.test.ts tests/unit/directStream/rememberedChannel.test.ts`,
+  method (`movie_title_methods`), and a named kind goes back to it. The Torrent stream row's own list
+  button opens every candidate torrent of the film or episode (`TorrentsModal`, `GET /api/stream/torrents`):
+  per row its facts and flags, Play this one (`POST /api/stream/play` with `magnet`) and blacklist /
+  un-blacklist (`POST|DELETE /api/stream/torrents/:hash/blacklist`); on a throwaway run stub
+  `/api/stream/torrents*` with `page.route` like the stream rows. Proof:
+  `npx vitest run web/src/App.movies.test.tsx web/src/lib/movies.test.tsx web/src/components/movies/TorrentsModal.test.tsx tests/unit/movies/guides.test.ts tests/unit/directStream/rememberedChannel.test.ts`,
   `npm run test:int -- tests/integration/movies.guides.int.test.ts`. On an `up --web --movies` run
   the fake TMDB knows no person or studio profile, so the pop-up is driven with Playwright
   `page.route` on `/api/movies/people/*`; the play menu needs no stub to open, and its site, stream

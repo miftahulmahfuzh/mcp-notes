@@ -75,6 +75,8 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
       return c.json(UNKNOWN_SESSION, 403);
     case 'torrent_off':
       return c.json({ error: 'torrent_off', message: err.message }, 503);
+    case 'bad_info_hash':
+      return c.json({ error: 'bad_info_hash', message: err.message }, 400);
     case 'no_episode':
     case 'no_subtitle':
       return c.json({ error: err.code, message: err.message }, 404);

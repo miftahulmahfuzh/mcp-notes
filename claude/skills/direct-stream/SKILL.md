@@ -253,6 +253,24 @@ for a torrent the user found themselves (e.g. on ext.to) when the indexes have n
   the attempt also says what the trackers know ("1 seeder and 7 leechers"): say the swarm is too thin.
 - Never build or guess a magnet yourself, and never pass one the user did not give: this is only for
   a link the user pasted.
+- A file that tags no audio language is heard behind the play; a dub heard in a pasted torrent is
+  said in its attempt (`audio heard: dubbed ...`) and the play stays on it: tell the user and offer to
+  blacklist it.
+
+### A title's torrents, and the blacklist
+
+`direct_stream_torrents` lists every candidate torrent of a film or episode (`action: "list"`, with the
+title, and season and episode for a series): the indexes' releases, the ones played before and the
+magnets pasted, each with its height, seeds, where from, its audio and how that is known (heard, file
+tags, name), and its tags (worked, failed, blacklisted, dub group, heard dub). It joins no swarm.
+
+- "That's a Russian dub, blacklist it" while a torrent plays: `action: "blacklist"` with the title (and
+  season and episode) and a short `reason`. It blacklists the torrent on screen, for every title, the
+  title forgets it as its remembered torrent, and the play moves to another source. With `info_hash`
+  it blacklists that one. `unblacklist` takes one off; `blacklisted` lists them.
+- "Play that one" from the list: `action: "play"` with the title and its `info_hash` (a pasted magnet:
+  the original-language rule still holds, and the play stays on it).
+- The same list is on the title page: the button beside the play menu's Torrent stream row.
 
 ## Step 3: answer
 

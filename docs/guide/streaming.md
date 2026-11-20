@@ -818,8 +818,9 @@ became the title's remembered torrent. So such a torrent is heard too, behind th
 4. A dub moves the play by itself, at the page's next report of the film playing, to the next torrent (or,
    for a play with no source named, a cloud provider): [A play that moves by itself](#a-play-that-moves-by-itself),
    with `dubbed audio (heard ru)` over the picture.
-5. **A pasted magnet still plays what was pasted**: the dub is said in its attempt and the log, and kept on
-   the torrent, and the play stays.
+5. **A pasted magnet still plays what was pasted** (as does Play this one in the
+   [torrent candidates list](#the-torrent-candidates-of-a-title)): the dub is said in its attempt and the log, and
+   kept on the torrent, and the play stays.
 
 It needs the shared Whisper worker; `NOTESD_STREAM_AUDIO_CHECK=off` turns it off with the cloud check (the
 picture check is not needed for it). Each probed file's tag languages are kept in the same row, for the
@@ -2657,6 +2658,40 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
 - A magnet whose swarm sends nothing answers with what the trackers know of it ("the trackers asked
   know 1 seeder and 7 leechers for it"), so a thin swarm is told from a blocked network.
 
+### The torrent candidates of a title
+
+Every torrent the daemon knows for one film or episode, in one list, and the owner's blacklist
+(`DirectStreamService.torrentCandidates`, `TorrentSource.listCandidates`, `torrent/candidates.ts`). On the
+title page it is the button at the end of the play menu's Torrent stream row
+([movies.md](movies.md#the-torrents-of-a-title)); in chat and Claude Code it is `direct_stream_torrents`; over
+HTTP `GET /api/stream/torrents` ([http-api.md](reference/http-api.md#torrents)).
+
+- **What is listed.** The indexes' candidates in the finder's order, then the dub-named ones of the last-resort
+  round, the magnets pasted for it (with how their play went), this machine's `stream_torrents` rows of that film
+  or episode (`played before`), the torrent the title remembers, and last the releases the finder leaves out for a
+  reason worth seeing (`cam`, `few_seeds`, `dubbed`, `too_big`, `three_d`, `trailer`, `not_video`; never another
+  title or episode). The indexes' answer is kept ten minutes per film or episode, a play's own included, and
+  `fresh` asks them again (at most 40 s). Listing joins no swarm: the seeds are the index's claim, and the
+  trackers are scraped for what they know now (1.5 s, BEP 15).
+- **Per row**: the release name, its height, size, seeds, where it came from, its audio language and how that is
+  known (`heard`, the file's `tags` as kept when it was last probed, what the `name` says, or `unknown`), and
+  `worked`, `failed` (the reason this run of the daemon kept, or the row's error), `blacklisted`, `dub_group`,
+  `heard_dub`, `dub_named`, `left_out`, `remembered` (what Torrent stream opens again first) and `on_disk`.
+- **Play this one** plays that exact torrent through the pasted-magnet path (`POST /api/stream/play` with its
+  info hash as `magnet`): the original-language rule still holds, and a dub heard in it is said, not moved from.
+- **The blacklist** is per info hash, for every title (`stream_torrent_marks.blacklisted_at`, written by
+  `TorrentMarksRepo` only). A blacklisted torrent is never a candidate again: not in the finder's rounds, the
+  shuffle button, an automatic move, the next episode fetched ahead, a play from disk, the remembered torrent or a
+  play carried on after a restart. Blacklisting it makes every title on this machine forget it as the torrent it
+  last played through (`MoviesRepo.forgetTorrent`: its `torrent` method row goes, and a channel row naming it
+  falls back to the most recent other method that played, or to nothing), so the next Torrent stream asks the
+  indexes; a play on it now moves to another source at the page's next report of the film playing, a pasted one
+  too. Taking it off the blacklist brings back nothing the titles forgot. A pasted magnet that is blacklisted
+  still plays: the owner named it.
+- **From chat.** "That's a Russian dub, blacklist it" is `direct_stream_torrents` with `action: "blacklist"`, the
+  title and a reason: it blacklists the torrent a play of that title is on, else the one it last played through,
+  with no index asked.
+
 ### What a magnet says of its index
 
 ```text
@@ -2736,6 +2771,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - Public tracker lists (`torrent/trackerLists.ts`, `NOTESD_TORRENT_TRACKER_LISTS`, needs discovery): a minute after start and once a day, ngosang `trackers_best` and newtrackon `stable` are read and each new UDP tracker gets a BEP 15 connect only (`udpConnector` in `find/scrape.ts`: no info hash, no announce); up to 20 that answer go into `<torrent dir>/tracker-lists.json`, added after the candidate's and the book's trackers to every open (`trackersOf`) and every scrape (the last `SCRAPE_LIST_SLOTS` of `SCRAPE_MAX_TRACKERS`, `scrapeTrackerOrder`). A refresh that reads nothing or hears nothing keeps the previous file; it never runs in a play's path. `buildTrackerLists` is the one place the switches are read; tests inject the fetch, the socket and the clock, and `verify.sh` pins it off.
   - ext.to (a torrent index via the streaming Chrome, `claude/streaming/torrent/sites/ext.mjs`) sits behind a Cloudflare Turnstile that cannot complete in a background tab, so an automated search answers `bot_check`. The owner clears it by hand: `cli.mjs ext gate` foregrounds ext's tab (`tab.ps1 -Activate`), the owner solves the widget, and the `cf_clearance` cookie the `notesd-stream-chrome` profile keeps lets later background searches through. Never forge the challenge token, spoof a fingerprint or click the widget for the owner — the human solves it in their own browser (same rule as the streaming sites: "never a disguised client to get past a site's bot check").
   - `/update-cloud-source`'s frame reader has the same gate: a site whose fresh navigation re-triggers its Cloudflare challenge every time is read instead from a tab the owner already solved by hand (`claude/streaming/direct/cli.mjs gate <site>`, reusing `torrent/tab.ps1` and `torrent/browser.mjs` — origin-agnostic despite living under `torrent/`). `templates --from-tab` (or `direct_stream_update_source`'s `from_tab: true`) then reads that SAME tab's current `<iframe>` addresses with a JS expression (`readFrameTemplatesFromTab`, `claude/streaming/direct/frames.mjs`), never a new navigation — so it sees only the top page's own frames, not one nested inside another cross-origin frame, which the sniffer's fresh-navigation path still sees when the site has no challenge. `no_tab`: no gated tab answered; gate it again.
+  - The torrent candidates of a title (`TorrentSource.listCandidates`, `torrent/candidates.ts`, `GET /api/stream/torrents`, `direct_stream_torrents`) join no swarm: the indexes' answer kept `CANDIDATE_LIST_TTL_MS` per film or episode (a play's own included), the trackers scraped, this host's `stream_torrents` rows (`TorrentStreams.downloadsOf`), the pasted magnets and the failure reasons this run kept. The owner's blacklist is per info hash in `stream_torrent_marks` (`TorrentMarksRepo` only); `leftOutByMarks` keeps a blacklisted torrent out of every ask, and `DirectStreamService.blacklistTorrent` clears what titles remember of it through `MoviesRepo.forgetTorrent` (the `forgetTorrent` hook) and moves a play on it (`pendingMove`).
   - A magnet the owner pasted plays that exact torrent with no index asked: `direct_stream_play`'s `magnet` arg → `DirectStreamService.magnetSession` → `TorrentSource.playMagnet`, which builds one candidate with `candidateFromMagnet` (info hash + `tr=` trackers + `dn` name) and runs it through the same open/probe/remux path. The owner still names the title (ref, poster, resume, original-language check); the original-language rule still refuses a dub or a non-video torrent (an OST). Only a pasted magnet is ever played — nothing is built or guessed.
   - A release whose index name reads as a dub is kept out of normal ranking but offered as `ranked.lastResort` (`find/rank.ts`): `TorrentSource.resolve` tries these in their own round only after every proper candidate fails, and the header probe decides by the real audio (a dual-audio file carrying the original plays; a true dub stays `dubbed`). The original audio track is always the one that plays: the remux maps it (`pickAudioStream`), and a directly-playable dual-audio file whose original is not the default is remuxed, or refused as `dubbed` when no remux can force it (`playsOriginalDirect` in `torrent/source.ts`).
   - Cloudflare WARP for torrents (`src/directStream/torrentWarp.ts`, `src/streaming/warp.ts` over `claude/streaming/warp.mjs`, the one place WARP and the SSID are read or switched): the owner switches WARP with the `warp` tool or `/warp`. A torrent ask (index or pasted magnet) where every torrent tried ended at `NO_FILE_LIST` (`noPeersAtAll`), on SSID `Employee` with WARP off, gains an attempt `WARP`: a hint, or with `TORRENT_WARP_AUTO` WARP on, the swarm failures forgotten (`TorrentSource.forgetNoPeers`) and one more ask, kept on only when that played. Never for a cloud stream. `NOTESD_STREAM_WARP=off` (verify.sh pins it) builds none of it; the owner's switch works either way.
@@ -2776,12 +2812,13 @@ rule it states; the few that must never change are also in the repository's `CLA
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/ahead.ts` | The next episode, fetched while one plays: when, from where, and how it gives way to the episode on screen |
 | `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes, waiting `CHECK_HEAD_MS` for a look when a page is waited for |
+| `src/directStream/torrent/candidates.ts`, `src/http/streamTorrentCandidatesApi.ts`, `web/src/components/movies/TorrentsModal.tsx` | The torrent candidates of a title and the blacklist: the rows and their tags, the `/api/stream/torrents` routes, the title page's list |
 | `src/directStream/torrent/marks.ts` | `stream_torrent_marks`: per info hash, the file's tag languages, the language heard, the owner's blacklist (`TorrentMarksRepo`, its only writer) |
 | `src/directStream/audioLang.ts` | The cloud audio-language check: ~30 s of audio through ffmpeg and Whisper's `detect`, a dub told from the original, the kept verdicts; run in the same `vetted` loop |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
-| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_sources`, `direct_stream_update_source`, `direct_stream_discover` |
+| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_sources`, `direct_stream_update_source`, `direct_stream_discover`, `direct_stream_torrents` |
 | `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |
 | `claude/skills/direct-stream/` | The `/direct-stream` skill |
 | `claude/skills/report-stream-bug/` | The `/report-stream-bug` skill: `collect.sh`, `netcheck.mjs` (the measurement), `diagnose.mjs` (the known causes) |

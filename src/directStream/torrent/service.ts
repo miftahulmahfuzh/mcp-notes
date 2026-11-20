@@ -21,6 +21,7 @@ import {
   TorrentError,
   type TorrentDownload,
   type TorrentDownloadView,
+  type TorrentSlotRecord,
   type TorrentEngine,
   type TorrentFileInfo,
   type TorrentHandle,
@@ -343,6 +344,14 @@ export class TorrentStreams {
       };
     }
     return null;
+  }
+
+  /** This host's rows of a title slot (every torrent opened for that film or episode), for the candidates list. */
+  async downloadsOf(ref: StreamRef): Promise<TorrentSlotRecord[]> {
+    return (await this.repo.forRef(this.host, ref)).map((stored) => {
+      const row = this.active.get(stored.infoHash)?.rows.get(slotKey(stored)) ?? stored;
+      return { infoHash: row.infoHash, name: row.name, release: row.release, state: row.state, error: row.error, playedAt: row.playedAt, fileLength: row.fileLength };
+    });
   }
 
   /** One download: this host's, else the other machine's (`available: false`); null when none. */

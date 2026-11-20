@@ -624,6 +624,21 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   (fake warp-cli, netsh and switch). Every throwaway daemon pins `NOTESD_STREAM_WARP=off`, so no play reads or switches the
   machine's WARP. Live: `node claude/streaming/warp.mjs status` answers `{"ok":true,"warp":...,"ssid":...}`.
 
+## Dubs a torrent hides, the candidates list and the blacklist
+- A release named after a known voice-over group (ColdFilm, LostFilm... in `find/dubGroups.ts`) is a dub by name and goes
+  to the dub-named round: `npx vitest run tests/unit/directStream/torrent/find/dubGroups.test.ts`.
+- A torrent whose file tags no audio language is heard behind the play; a dub is kept on the torrent
+  (`stream_torrent_marks`), never tried again for the title, and moves the play by itself; a pasted one stays:
+  `npx vitest run tests/unit/directStream/torrentHearing.test.ts` (fake hearer and swarm). Live: the daemon log's
+  `torrent: audio of <release> (<hash>), whose file tags no language: <verdict>` line after a TM play of such a file.
+- The torrent candidates of a title and the blacklist (`GET /api/stream/torrents`, `POST|DELETE
+  /api/stream/torrents/:hash/blacklist`, `direct_stream_torrents`): `npx vitest run tests/unit/directStream/torrentCandidates.test.ts
+  tests/unit/directStream/torrentCandidatesRoutes.test.ts tests/unit/mcp.directStreamTools.test.ts web/src/components/movies/TorrentsModal.test.tsx`
+  and `npm run test:int -- tests/integration/directStream.torrentMarks.int.test.ts tests/integration/movies.forgetTorrent.int.test.ts`.
+  On `verify.sh up --torrent`: `curl -s "$BASE/api/stream/torrents?kind=movie&tmdb_id=<id>"` lists (the faked indexes),
+  and a blacklist through MCP (`direct_stream_torrents` `action: "blacklist"`, `info_hash`) shows in
+  `GET /api/stream/torrents/blacklist`. Live: `direct_stream_torrents` `action: "blacklisted"`.
+
 ## /sync-subtitle: a subtitle checked against the film's audio
 - `direct_stream_sync_subtitle` (the `/sync-subtitle` skill): Whisper hears a minute at six places of the
   film, the subtitle is judged for text (heard lines found in its cues) and timing (anchors' offsets), and a

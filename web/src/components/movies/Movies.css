@@ -227,3 +227,10 @@
 .mv-menu-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .mv-menu-label { display: flex; align-items: center; gap: 8px; font-size: 13.5px; white-space: nowrap; }
 .mv-menu-hint { font-family: var(--mono); font-size: 10px; letter-spacing: .02em; color: var(--muted); white-space: normal; }
+/* The Torrent stream row with its own button beside it (the torrent candidates list). */
+.mv-menu-row { display: grid; grid-template-columns: minmax(0, 1fr) 40px; border-bottom: 1px solid var(--line); }
+.mv-menu-row:last-child { border-bottom: 0; }
+.mv-menu-row .mv-menu-item { border-bottom: 0; }
+.mv-menu-side { all: unset; box-sizing: border-box; display: grid; place-items: center; cursor: pointer; font-size: 17px; color: var(--soft); border-left: 1px solid var(--line); }
+.mv-menu-side:hover, .mv-menu-side:focus-visible { background: var(--hover); color: var(--fg); }
+.mv-menu-side:disabled { opacity: .4; cursor: default; background: transparent; }

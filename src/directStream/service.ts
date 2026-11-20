@@ -21,6 +21,8 @@ import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, ty
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
 import { readMagnet } from './torrent/origins.js';
 import { namesCloud, namesTorrent, PREFERRED_TORRENT_HEIGHT, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type MagnetReport } from './torrent/source.js';
+import type { TorrentCandidateList } from './torrent/candidates.js';
+import type { TorrentMark, TorrentMarks } from './torrent/marks.js';
 import { TORRENT_WARP_AUTO, torrentThroughWarp, WARP_ATTEMPT, WarpHolds, type TorrentWarp } from './torrentWarp.js';
 import type { WarpSwitch } from '../streaming/warp.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
@@ -114,6 +116,8 @@ export interface DirectStreamHooks {
   releaseDate?: (ref: StreamRef) => Promise<string | null>;
   /** Every cloud provider (`cloud`) or every torrent (`torrent`) found nothing for the title. */
   channelFailed?: (ref: StreamRef, kind: 'cloud' | 'torrent') => Promise<void>;
+  /** A torrent was blacklisted: every title forgets it as the torrent it last played through. The ids of those titles. */
+  forgetTorrent?: (infoHash: string) => Promise<string[]>;
 }
 
 export interface SessionSubtitle {
@@ -837,7 +841,7 @@ export class DirectStreamService {
     track.stage = "looking at this machine's cache and downloads";
     let session: StreamSession;
     // The owner pasted a magnet: only that torrent is opened, for the title they named. No index, no cache.
-    if (magnet !== null) session = await this.magnetSession(ref, resumeS, magnet, track);
+    if (magnet !== null) session = await this.magnetSession(ref, resumeS, magnet, track, true);
     else if (only === null) session = await this.sessionFor(ref, resumeS, track);
     else if (namesTorrent(only)) session = (await this.diskSession(ref, resumeS)) ?? (await this.torrentAgain(ref, resumeS, track));
     else if (namesCloud(only)) session = (await this.cachedSession(ref, resumeS)) ?? (await this.cloudAgain(ref, resumeS, track));
@@ -1091,7 +1095,7 @@ export class DirectStreamService {
    * `torrent_off`; `no_source` with the one `Torrent: <name>` attempt when it does not play (a dub, no video
    * file in it, or the swarm sent nothing in time).
    */
-  private async magnetSession(ref: StreamRef, resumeS: number | null, magnet: string, track: PlayTrack | null = null): Promise<StreamSession> {
+  private async magnetSession(ref: StreamRef, resumeS: number | null, magnet: string, track: PlayTrack | null = null, pasted = false): Promise<StreamSession> {
     const source = this.torrentSource();
     if (source === null) throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).');
     const audioLang = await this.audioLang(ref);
@@ -1102,6 +1106,7 @@ export class DirectStreamService {
     const ask = (): Promise<TorrentResolve> =>
       source.playMagnet(ref, {
         magnet,
+        pasted,
         audioLang,
         imdbId,
         names,
@@ -1160,7 +1165,7 @@ export class DirectStreamService {
       const said = `audio heard: ${heard.verdict} (${heard.reason})`;
       session.attempts = session.attempts.map((a) => (a.provider === label && a.outcome === 'resolved' ? { ...a, detail: a.detail === '' ? said : `${a.detail}; ${said}` } : a));
       if (heard.verdict !== 'dubbed') return;
-      source.noteDubbed(session.ref, torrent.infoHash);
+      source.noteDubbed(session.ref, torrent.infoHash, heard.reason);
       if (session.pastedTorrent === torrent.infoHash) {
         this.log(`[notesd] direct stream: ${refLabel(session.ref)} keeps the pasted torrent ${torrent.name}, though it was heard as a dub (${heard.reason})`);
         return;
@@ -1754,7 +1759,9 @@ export class DirectStreamService {
   /** continueSession's session: the source the page was on first, then what a play with no source named finds. */
   private async sessionAgain(ref: StreamRef, from: ContinueFrom): Promise<StreamSession> {
     const resumeS = from.positionS !== null && from.positionS !== undefined && from.positionS > 0 ? from.positionS : null;
-    const hash = from.infoHash ?? null;
+    const marked = from.infoHash == null ? false : ((await this.torrentSource()?.leftOutByMarks(await this.audioLang(ref)))?.has(from.infoHash.toLowerCase()) ?? false);
+    // A torrent blacklisted, or heard as a dub, since: the play carries on the way a new one would.
+    const hash = marked ? null : (from.infoHash ?? null);
     if (hash !== null && this.torrentSource() !== null) {
       const disk = await this.diskSession(ref, resumeS);
       if (disk !== null) return disk;
@@ -2189,6 +2196,84 @@ export class DirectStreamService {
       reason: out.error,
       attempts: out.attempts,
     });
+  }
+
+  /**
+   * The torrent candidates of a film or episode (the title page's candidates list, `direct_stream_torrents`): what the
+   * indexes list, read fresh with `fresh` or from the last answer of the last ten minutes, the torrents this machine
+   * opened for it, the magnets pasted for it, each with its audio, its marks and how it went. Joins no swarm. Throws
+   * `torrent_off`.
+   */
+  async torrentCandidates(input: StreamRefInput, options: { fresh?: boolean } = {}): Promise<TorrentCandidateList & { ref: StreamRef }> {
+    const source = this.torrentSource();
+    if (source === null) throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).');
+    const ref = toStreamRef(input);
+    const audioLang = await this.audioLang(ref);
+    const imdbId = await this.imdbIdOf(ref);
+    const namesHook = this.opts.hooks?.titleNames;
+    const names = namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref));
+    const last = (await this.remembered(ref))?.methods?.torrent ?? null;
+    const remembered = last !== null && last.infoHash !== null && sameSlot(ref, last) ? last.infoHash : null;
+    return { ref, ...(await source.listCandidates(ref, { audioLang, imdbId, names, fresh: options.fresh === true, remembered })) };
+  }
+
+  /**
+   * The torrent "that one" means for a film or episode: the torrent a live session of it plays now, else the one the
+   * title last played through for that very film or episode. Null when there is neither. Asks no index.
+   */
+  async currentTorrent(input: StreamRefInput): Promise<{ infoHash: string; name: string | null } | null> {
+    const ref = toStreamRef(input);
+    const live = this.sessions
+      .live()
+      .filter((s) => s.torrent !== null && refLabel(s.ref) === refLabel(ref))
+      .sort((a, b) => b.lastUsedAt.getTime() - a.lastUsedAt.getTime())[0];
+    if (live?.torrent != null) return { infoHash: live.torrent.infoHash.toLowerCase(), name: live.torrent.name };
+    const last = (await this.remembered(ref))?.methods?.torrent ?? null;
+    if (last === null || last.infoHash === null || !sameSlot(ref, last)) return null;
+    return { infoHash: last.infoHash.toLowerCase(), name: null };
+  }
+
+  /** The torrent marks, or `torrent_off`. */
+  private torrentMarks(): TorrentMarks {
+    const marks = this.torrentSource()?.marks ?? null;
+    if (marks === null) throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).');
+    return marks;
+  }
+
+  /**
+   * The owner blacklisted a torrent, by info hash (a dub is a dub for every title): it is never a candidate again, no
+   * title remembers it as the torrent it last played through (the forgetTorrent hook), and a play on it now moves by
+   * itself to another source at the page's next report of the film playing (a pasted one too: the owner said so).
+   */
+  async blacklistTorrent(infoHash: string, options: { reason?: string | null; name?: string | null } = {}): Promise<{ mark: TorrentMark; forgotten: string[]; moving: string[] }> {
+    const hash = infoHash.trim().toLowerCase();
+    if (!/^[0-9a-f]{40}$/.test(hash)) throw new DirectStreamError('bad_info_hash', 'An info hash is 40 hexadecimal characters.');
+    const marks = this.torrentMarks();
+    const playing = this.sessions.live().filter((s) => s.torrent?.infoHash.toLowerCase() === hash);
+    const name = options.name ?? playing[0]?.torrent?.name ?? null;
+    const mark = await marks.blacklist(hash, name, options.reason ?? null);
+    const hook = this.opts.hooks?.forgetTorrent;
+    const forgotten = hook === undefined ? [] : ((await this.hookValue('forgetTorrent', () => hook(hash))) ?? []);
+    for (const session of playing) {
+      session.pastedTorrent = null;
+      session.pendingMove = 'the torrent was blacklisted';
+    }
+    this.log(`[notesd] direct stream: the torrent ${mark.name ?? hash} (${hash.slice(0, 8)}) is blacklisted${options.reason ? ` (${options.reason})` : ''}; ${forgotten.length === 0 ? 'no title remembered it' : `forgotten by ${forgotten.join(', ')}`}${playing.length === 0 ? '' : `; ${playing.length} play(s) on it move at the next report`}`);
+    return { mark, forgotten, moving: playing.map((s) => s.id) };
+  }
+
+  /** Takes a torrent off the blacklist; false when it was not on it. */
+  async unblacklistTorrent(infoHash: string): Promise<boolean> {
+    const hash = infoHash.trim().toLowerCase();
+    if (!/^[0-9a-f]{40}$/.test(hash)) throw new DirectStreamError('bad_info_hash', 'An info hash is 40 hexadecimal characters.');
+    const done = await this.torrentMarks().unblacklist(hash);
+    if (done) this.log(`[notesd] direct stream: the torrent ${hash.slice(0, 8)} is off the blacklist`);
+    return done;
+  }
+
+  /** Every blacklisted torrent, the most recent first. */
+  async blacklistedTorrents(): Promise<TorrentMark[]> {
+    return this.torrentMarks().blacklisted();
   }
 
   /**

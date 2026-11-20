@@ -1010,6 +1010,41 @@ export class MoviesRepo {
     });
   }
 
+  /**
+   * The owner blacklisted a torrent: no title on `host` remembers it any more. Its `torrent` method rows are deleted,
+   * and a channel row naming it falls back to the most recent other method the title played through (or to nothing,
+   * its failures kept), so the next Torrent Stream play asks the indexes. The ids of the titles that remembered it.
+   */
+  async forgetTorrent(infoHash: string, host: string, at: Date): Promise<string[]> {
+    const hash = infoHash.trim().toLowerCase();
+    return this.db.transaction(async (tx) => {
+      const methods = await tx
+        .delete(movieTitleMethods)
+        .where(and(eq(movieTitleMethods.host, host), eq(movieTitleMethods.method, 'torrent'), eq(movieTitleMethods.infoHash, hash)))
+        .returning({ titleId: movieTitleMethods.titleId });
+      const channels = await tx
+        .select({ titleId: movieTitleChannels.titleId })
+        .from(movieTitleChannels)
+        .where(and(eq(movieTitleChannels.host, host), eq(movieTitleChannels.channel, 'torrent'), eq(movieTitleChannels.infoHash, hash)));
+      for (const { titleId: id } of channels) {
+        const others = await tx
+          .select()
+          .from(movieTitleMethods)
+          .where(and(eq(movieTitleMethods.titleId, id), eq(movieTitleMethods.host, host), ne(movieTitleMethods.method, 'torrent')))
+          .orderBy(desc(movieTitleMethods.playedAt));
+        const back = others.find((m) => (m.method === 'cloud' ? m.provider !== null : m.siteUrl !== null)) ?? null;
+        const set =
+          back === null
+            ? { channel: null, provider: null, infoHash: null, siteUrl: null, season: null, episode: null, playedAt: null, updatedAt: at }
+            : back.method === 'cloud'
+              ? { channel: 'cloud' as const, provider: back.provider, infoHash: null, siteUrl: null, season: back.season, episode: back.episode, playedAt: back.playedAt, updatedAt: at }
+              : { channel: 'site' as const, provider: back.method, infoHash: null, siteUrl: back.siteUrl, season: back.season, episode: back.episode, playedAt: back.playedAt, updatedAt: at };
+        await tx.update(movieTitleChannels).set(set).where(and(eq(movieTitleChannels.titleId, id), eq(movieTitleChannels.host, host)));
+      }
+      return [...new Set([...methods, ...channels].map((r) => r.titleId))].sort();
+    });
+  }
+
   /** What last played the title through each method on `host` (`cloud`, `torrent`, a site's name); empty when nothing did. */
   async methodsOf(titleIdValue: string, host: string): Promise<MovieTitleMethodRow[]> {
     return this.db

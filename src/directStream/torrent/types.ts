@@ -249,3 +249,14 @@ export class TorrentError extends Error {
     super(message);
   }
 }
+
+/** One host's row of a torrent for one film or episode, as the candidates list reads it (TorrentStreams.downloadsOf). */
+export interface TorrentSlotRecord {
+  infoHash: string;
+  name: string;
+  release: string | null;
+  state: 'downloading' | 'ready' | 'failed';
+  error: string | null;
+  playedAt: Date | null;
+  fileLength: number | null;
+}

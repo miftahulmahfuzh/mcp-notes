@@ -39,6 +39,9 @@ import { normalizeName } from '../directStream/match.js';
 import type { ProviderView } from '../directStream/repo.js';
 import { DirectStreamError } from '../directStream/types.js';
 import type { MagnetReport } from '../directStream/torrent/source.js';
+import type { TorrentCandidateList } from '../directStream/torrent/candidates.js';
+import type { TorrentMark } from '../directStream/torrent/marks.js';
+import { markView } from '../http/streamTorrentCandidatesApi.js';
 import type { UpdateSourceAnswer, WatchPages } from '../directStream/updateSource.js';
 import { getTitle } from '../movies/read.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
@@ -50,7 +53,7 @@ import { libraryMarks, markedTitle, mergeCredits, movieErrorResult, type Library
 import { jsonResult, type ToolDeps } from './tools.js';
 
 const [FIND, PLAY] = DIRECT_STREAM_TOOL_NAMES;
-const [, , SOURCES, UPDATE_SOURCE, DISCOVER] = DIRECT_STREAM_TOOL_NAMES;
+const [, , SOURCES, UPDATE_SOURCE, DISCOVER, TORRENTS] = DIRECT_STREAM_TOOL_NAMES;
 
 export const DIRECT_STREAM_OFF =
   'direct_stream_off: direct streaming is not running on this server (NOTESD_DIRECT_STREAM=off, NOTESD_MOVIES=off, or the daemon was started without it), so nothing can be streamed here.';
@@ -95,6 +98,15 @@ export interface DirectStreamToolDeps {
   updateSource(site: string, pages?: WatchPages): Promise<UpdateSourceAnswer>;
   /** DirectStreamService.learnMagnet: a pasted magnet's index, swarm and trackers (/update-cloud-source <magnet>). Absent in tests' fakes. */
   learnMagnet?(magnet: string): Promise<MagnetReport>;
+  /** The torrent candidates of a film or episode and the torrent blacklist (DirectStreamService). Absent: direct_stream_torrents answers torrent_off. */
+  torrents?: {
+    list(target: StreamTarget, fresh: boolean): Promise<TorrentCandidateList>;
+    blacklist(infoHash: string, reason: string | null, name: string | null): Promise<{ mark: TorrentMark; forgotten: string[]; moving: string[] }>;
+    unblacklist(infoHash: string): Promise<boolean>;
+    blacklisted(): Promise<TorrentMark[]>;
+    /** The torrent a live play of the target is on, else the one it last played through; null when neither. */
+    current(target: StreamTarget): Promise<{ infoHash: string; name: string | null } | null>;
+  };
 }
 
 /**
@@ -160,6 +172,13 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
     providers: () => service.providers(),
     updateSource: (site, pages) => service.updateSource(site, pages),
     learnMagnet: (magnet) => service.learnMagnet(magnet),
+    torrents: {
+      list: (target, fresh) => service.torrentCandidates(target, { fresh }),
+      blacklist: (infoHash, reason, name) => service.blacklistTorrent(infoHash, { reason, name }),
+      unblacklist: (infoHash) => service.unblacklistTorrent(infoHash),
+      blacklisted: () => service.blacklistedTorrents(),
+      current: (target) => service.currentTorrent(target),
+    },
     setAudioLanguage: (target, language) => new MovieStreams(movies).setAudioLanguage(target, language),
   };
 }
@@ -850,8 +869,102 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
     },
   );
 
+  server.registerTool(
+    TORRENTS,
+    {
+      title: 'List, blacklist or play the torrent candidates of a film or episode',
+      description: TORRENTS_DESCRIPTION,
+      inputSchema: {
+        action: z.enum(['list', 'blacklist', 'unblacklist', 'play', 'blacklisted']).describe('list (the default): every candidate torrent of the title; blacklist / unblacklist one info hash; play one info hash for the title; blacklisted: every blacklisted torrent.'),
+        title: titleField.optional().describe('The film or series (words without the year, a movie id, or a title key): needed for list and play, and lets blacklist name the torrent on screen of that title when info_hash is left out.'),
+        year: yearField.optional(),
+        kind: kindField.optional(),
+        season: seasonField.optional().describe('A series: the season of the episode (with episode). Left out: the episode its Play carries on with.'),
+        episode: episodeField.optional(),
+        info_hash: z.string().trim().regex(/^[0-9a-fA-F]{40}$/, 'an info hash is 40 hexadecimal characters').optional().describe('The torrent (40 hex characters) for blacklist, unblacklist and play: an info_hash from list, or the session\'s torrent.'),
+        reason: z.string().trim().max(300).optional().describe('blacklist only: why, in a few words ("a Russian voice-over").'),
+        fresh: z.boolean().optional().describe('list only: ask the indexes now instead of reusing their answer of the last ten minutes.'),
+      },
+      annotations: { readOnlyHint: false, openWorldHint: true },
+    },
+    async ({ action, title, year, kind, season, episode, info_hash, reason, fresh }) => {
+      const d = deps.directStream;
+      if (!d) return off();
+      const torrents = d.torrents;
+      if (torrents === undefined) return failJson({ error: 'torrent_off', message: 'Torrents are off on this machine (NOTESD_TORRENT=off).' });
+      return respond(async () => {
+        try {
+          if (action === 'blacklisted') return ok({ torrents: (await torrents.blacklisted()).map(markView) });
+          if (action === 'unblacklist') {
+            if (info_hash === undefined) throw new LookupError('invalid_input', 'unblacklist needs info_hash.');
+            const was = await torrents.unblacklist(info_hash);
+            return ok({ ok: true, info_hash: info_hash.toLowerCase(), was_blacklisted: was, next: was ? 'Say it is off the blacklist: it can be a candidate again.' : 'It was not blacklisted; say so.' });
+          }
+          if (action === 'blacklist' && info_hash !== undefined) {
+            const done = await torrents.blacklist(info_hash, reason ?? null, null);
+            return ok({ ok: true, torrent: markView(done.mark), forgotten_by: done.forgotten, moving_sessions: done.moving, next: blacklistNext(done) });
+          }
+          if (title === undefined) throw new LookupError('invalid_input', `${action} needs title${action === 'blacklist' ? ' or info_hash' : ''}.`);
+          const result = await lookupTitle(parseTitleRequest(title, year ?? null, kind ?? null), d);
+          if (result.status === 'none') return ok({ ok: false, skipped: 'no_match', did_you_mean: result.nearMisses.map((c) => candidateView(c, wall)), next: 'No title has that name: show did_you_mean and ask which.' });
+          if (result.status === 'several') return ok({ ok: false, skipped: 'several_matches', candidates: result.candidates.map((c) => candidateView(c, wall)), next: 'List the candidates with their years and ask which one.' });
+          const c = result.candidate;
+          let target = targetFor(c, result.episode, season, episode);
+          if (target === null) {
+            if (season !== undefined || episode !== undefined) throw new LookupError('invalid_input', `${label(c)} is a series: pass season and episode together.`);
+            const choice = await chooseEpisode(c, d);
+            if (choice.pick === 'caught_up' || choice.pick === 'not_aired') throw new LookupError('invalid_input', `${label(c)}: name the season and episode.`);
+            target = { kind: 'tv', tmdbId: c.tmdbId, season: choice.season, episode: choice.episode };
+          }
+          const slot = target.kind === 'tv' ? { season: target.season, episode: target.episode } : { season: null, episode: null };
+          if (action === 'play') {
+            if (info_hash === undefined) throw new LookupError('invalid_input', 'play needs info_hash (one from list).');
+            const play = await d.play(target, undefined, info_hash);
+            const pending = pendingPlay(play);
+            return ok(
+              pending !== null
+                ? { started: false, pending: true, title: candidateView(c, wall), ...slot, ...pending, next: 'Still being started: call direct_stream_play with this title and magnet set to the info hash to join it.' }
+                : { started: true, title: candidateView(c, wall), ...slot, play, next: 'Say that torrent is playing full screen in the streaming Chrome window. A dub heard in it is said in its attempt, and the play stays on it: the owner picked it.' },
+            );
+          }
+          if (action === 'blacklist') {
+            // No info hash: the torrent on screen, else the one the title last played through: what "that's a dub, blacklist it" means.
+            const on = await torrents.current(target);
+            if (on === null) return ok({ ok: false, skipped: 'no_torrent', title: candidateView(c, wall), ...slot, next: 'No torrent plays or is remembered for this title: call with action list and ask which info_hash to blacklist.' });
+            const done = await torrents.blacklist(on.infoHash, reason ?? null, on.name);
+            return ok({ ok: true, title: candidateView(c, wall), ...slot, torrent: markView(done.mark), forgotten_by: done.forgotten, moving_sessions: done.moving, next: blacklistNext(done) });
+          }
+          const list = await torrents.list(target, fresh === true);
+          return ok({ title: candidateView(c, wall), ...slot, ...list, next: 'One short line per candidate: name, height, seeds, where from, audio (how it is known) and its tags (worked, failed with why, blacklisted, dub group, heard dub). Offer to blacklist a dub or play one by its info_hash.' });
+        } catch (err) {
+          const failure = playFailure(err);
+          if (failure === null || err instanceof LookupError) throw err;
+          return failJson({ error: failure.error, reason: failure.reason, message: failure.message, attempts: failure.attempts });
+        }
+      });
+    },
+  );
+
   registerDirectStreamSourceTools(server, deps);
 }
+
+function blacklistNext(done: { forgotten: string[]; moving: string[] }): string {
+  return (
+    'Say the torrent is blacklisted: it is never a candidate again, for any title.' +
+    (done.forgotten.length > 0 ? ` ${done.forgotten.join(', ')} no longer remember${done.forgotten.length === 1 ? 's' : ''} it, so the next Torrent Stream play asks the indexes.` : '') +
+    (done.moving.length > 0 ? ' The play on it moves to another source at the player\'s next report of the film playing.' : '')
+  );
+}
+
+const TORRENTS_DESCRIPTION =
+  'The torrent candidates of one film or episode, and the owner\'s torrent blacklist. ' +
+  'list (default): every candidate torrent of the title: what the indexes list (their answer of the last ten minutes is reused; fresh asks again), the torrents this machine opened for it before and the magnets pasted for it. ' +
+  'Each candidate has info_hash, name, height, size_bytes, seeds (the index\'s claim), scrape (what the trackers know now), from (index names, "magnet", "played before"), audio {languages, how: heard (Whisper heard it), tags (the file\'s own tags), name (the release name says), unknown}, ' +
+  'and its tags: worked, failed (why), blacklisted, dub_group (a known voice-over group in its name, e.g. ColdFilm), heard_dub, dub_named (the last-resort round), left_out (why the finder leaves it out), remembered (what Torrent Stream opens again first), on_disk. Listing joins no swarm. ' +
+  'blacklist: by info_hash, for every title (a dub is a dub everywhere): never a candidate again, every title forgets it as the torrent it last played through, and a play on it moves to another source. ' +
+  'With title and no info_hash it blacklists the torrent that title last played through: "that\'s a Russian dub, blacklist it" while it plays. Pass reason in a few words. ' +
+  'unblacklist takes one off. blacklisted lists them. play plays that exact torrent for the title (as a pasted magnet: the original-language rule still holds, and the play stays on it). ' +
+  'For a series pass season and episode, or neither for the episode its Play carries on with. Errors: torrent_off, bad_info_hash.';
 
 interface DiscoverArgs {
   kind?: TitleKind | undefined;

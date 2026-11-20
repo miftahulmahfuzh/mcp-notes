@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { CaretDown, Cloud, DownloadSimple, Globe, HardDrives, Magnet } from '@phosphor-icons/react';
+import { CaretDown, Cloud, DownloadSimple, Globe, HardDrives, ListMagnifyingGlass, Magnet } from '@phosphor-icons/react';
+import { isTorrentsModalOpen, TorrentsModal } from './TorrentsModal';
 import { continueTitle, fetchPahe, playFile, sitePlay, streamPlay, type EpisodeView, type PlayerState, type TitleDetail } from '../../moviesApi';
 import { continueNotice, methodDoing, methodErrorText, playErrorText, playMenu, playPlan, primaryFile, startedNotice, STREAM_OPENING_NOTICE, streamErrorText, type PlayMethodItem, type PlayMethodKey } from '../../lib/movies';
 
@@ -17,8 +18,8 @@ export interface PlayMenuProps {
   onRun: (act: () => Promise<string>, failed: (code: string, detail: string | null) => string, doing: string) => void;
 }
 
-/** Whether a play menu is open: its Esc closes the menu, not the pop-up it is in. */
-export const isPlayMenuOpen = (): boolean => document.querySelector('.mv-menu-list') !== null;
+/** Whether a play menu, or the torrent list opened from one, is open: its Esc closes it, not the pop-up it is in. */
+export const isPlayMenuOpen = (): boolean => document.querySelector('.mv-menu-list') !== null || isTorrentsModalOpen();
 
 function MethodIcon({ method }: { method: PlayMethodKey }) {
   if (method === 'file') return <HardDrives weight="duotone" />;
@@ -37,6 +38,8 @@ function MethodIcon({ method }: { method: PlayMethodKey }) {
  */
 export function PlayMenu({ detail: d, episode, player, busy, streamEnabled, size = 'row', onRun }: PlayMenuProps) {
   const [open, setOpen] = useState(false);
+  /** The torrent candidates list, opened from the Torrent stream row's own button. */
+  const [torrents, setTorrents] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -135,19 +138,62 @@ export function PlayMenu({ detail: d, episode, player, busy, streamEnabled, size
       {open && (
         <span className={size === 'page' ? 'mv-menu-list' : 'mv-menu-list right'} role="menu" aria-label={`Play ${what} from`}>
           <span className="mv-menu-head">play {what} from</span>
-          {menu.items.map((item) => (
-            <button key={item.key} type="button" role="menuitem" className={item.last ? 'mv-menu-item last' : 'mv-menu-item'} data-method={item.key} disabled={item.disabled} onClick={() => choose(item)}>
-              <MethodIcon method={item.key} />
-              <span className="mv-menu-t">
-                <span className="mv-menu-label">
-                  {item.label}
-                  {item.last && <span className="mv-flag">played last</span>}
+          {menu.items.map((item) => {
+            const row = (
+              <button key={item.key} type="button" role="menuitem" className={item.last ? 'mv-menu-item last' : 'mv-menu-item'} data-method={item.key} disabled={item.disabled} onClick={() => choose(item)}>
+                <MethodIcon method={item.key} />
+                <span className="mv-menu-t">
+                  <span className="mv-menu-label">
+                    {item.label}
+                    {item.last && <span className="mv-flag">played last</span>}
+                  </span>
+                  {item.hint !== null && <span className="mv-menu-hint">{item.hint}</span>}
                 </span>
-                {item.hint !== null && <span className="mv-menu-hint">{item.hint}</span>}
+              </button>
+            );
+            if (item.key !== 'torrent' || menu.target === null) return row;
+            // The Torrent stream row carries its own button: every candidate torrent of this film or episode.
+            return (
+              <span key={item.key} className="mv-menu-row">
+                {row}
+                <button
+                  type="button"
+                  className="mv-menu-side hov"
+                  data-tip={`Every torrent of ${what}`}
+                  data-tip-side="left"
+                  aria-label={`Every torrent of ${what}`}
+                  disabled={item.disabled}
+                  onClick={() => {
+                    setOpen(false);
+                    setTorrents(true);
+                  }}
+                >
+                  <ListMagnifyingGlass weight="duotone" />
+                </button>
               </span>
-            </button>
-          ))}
+            );
+          })}
         </span>
+      )}
+      {torrents && menu.target !== null && (
+        <TorrentsModal
+          target={menu.target.ref}
+          what={what}
+          onClose={() => setTorrents(false)}
+          onPlay={(infoHash, name) => {
+            const target = menu.target;
+            setTorrents(false);
+            if (target === null) return;
+            onRun(
+              async () => {
+                await streamPlay({ ...target.ref, magnet: infoHash });
+                return `${STREAM_OPENING_NOTICE}, from the torrent ${name}`;
+              },
+              (code, detail) => (code === 'no_source' ? `${name} could not stream ${what} now` : streamErrorText(code, detail, target, d.title)),
+              methodDoing('torrent', 'Torrent stream'),
+            );
+          }}
+        />
       )}
     </span>
   );

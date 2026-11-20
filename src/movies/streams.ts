@@ -458,6 +458,16 @@ export class MovieStreams {
     }
   }
 
+  /**
+   * The owner blacklisted a torrent: every title on this host forgets it as the torrent it last played through
+   * (MoviesRepo.forgetTorrent), so the next Torrent Stream play asks the indexes. The ids of those titles.
+   */
+  async forgetTorrent(infoHash: string): Promise<string[]> {
+    const ids = await this.movies.repo.forgetTorrent(infoHash, this.movies.host, this.now());
+    for (const id of ids) this.emit('stream', id);
+    return ids;
+  }
+
   /** Every cloud provider, or every torrent, found nothing for the target's title on this host. Never throws. */
   async channelFailed(target: StreamTarget, kind: 'cloud' | 'torrent'): Promise<void> {
     try {

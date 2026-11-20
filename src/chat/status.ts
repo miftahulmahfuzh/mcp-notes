@@ -98,6 +98,7 @@ export const DIRECT_STREAM_TOOL_NAMES = [
   'direct_stream_sources',
   'direct_stream_update_source',
   'direct_stream_discover',
+  'direct_stream_torrents',
 ] as const;
 
 export type DirectStreamToolName = (typeof DIRECT_STREAM_TOOL_NAMES)[number];

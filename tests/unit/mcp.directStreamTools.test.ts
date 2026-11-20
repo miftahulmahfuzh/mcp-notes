@@ -705,3 +705,61 @@ describe('direct-stream MCP tools', () => {
     });
   });
 });
+
+describe('direct_stream_torrents', () => {
+  const COLD = '67b07b417f6f8f7d367bbded3cd797a0840724b6';
+  const mark = { infoHash: COLD, name: 'Eternally.Yours.S01E07.1080p.ColdFilm.mkv', tagLanguages: [], heardLanguage: 'ru', heardProbability: 0.97, heardAt: new Date(), blacklistedAt: new Date('2026-11-20T08:00:00Z'), blacklistReason: 'a Russian voice-over' };
+  function torrentDeps(current: { infoHash: string; name: string | null } | null = { infoHash: COLD, name: mark.name }) {
+    const torrents = {
+      list: vi.fn(async () => ({ original_language: 'en', listed_at: null, cached: false, indexes: [], candidates: [] })),
+      blacklist: vi.fn(async () => ({ mark, forgotten: ['M-0BEA'], moving: [] })),
+      unblacklist: vi.fn(async () => true),
+      blacklisted: vi.fn(async () => [mark]),
+      current: vi.fn(async () => current),
+    };
+    return { ...fakeDeps({ torrents }), torrents };
+  }
+
+  it('lists an episode\'s candidates, and the episode its Play carries on with when none is named', async () => {
+    const { deps, torrents } = torrentDeps();
+    const s = await connect(deps);
+    const out = json(await s.call('direct_stream_torrents', { action: 'list', title: 'The Bear', season: 2, episode: 3 }));
+    expect(out).toMatchObject({ season: 2, episode: 3, original_language: 'en', candidates: [] });
+    expect(torrents.list).toHaveBeenCalledWith({ kind: 'tv', tmdbId: 136315, season: 2, episode: 3 }, false);
+    await s.call('direct_stream_torrents', { action: 'list', title: 'Saltburn', fresh: true });
+    expect(torrents.list).toHaveBeenLastCalledWith({ kind: 'movie', tmdbId: 930564 }, true);
+    await s.close();
+  });
+
+  it('blacklists the torrent a title plays now when no info hash is named, or the one named', async () => {
+    const { deps, torrents } = torrentDeps();
+    const s = await connect(deps);
+    const out = json(await s.call('direct_stream_torrents', { action: 'blacklist', title: 'The Bear', season: 2, episode: 3, reason: 'a Russian voice-over' }));
+    expect(torrents.blacklist).toHaveBeenCalledWith(COLD, 'a Russian voice-over', mark.name);
+    expect(torrents.list).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ ok: true, torrent: { info_hash: COLD, reason: 'a Russian voice-over' }, forgotten_by: ['M-0BEA'] });
+    await s.call('direct_stream_torrents', { action: 'blacklist', info_hash: COLD.toUpperCase() });
+    expect(torrents.blacklist).toHaveBeenLastCalledWith(COLD.toUpperCase(), null, null);
+    expect(json(await s.call('direct_stream_torrents', { action: 'unblacklist', info_hash: COLD }))).toMatchObject({ was_blacklisted: true });
+    expect(json(await s.call('direct_stream_torrents', { action: 'blacklisted' })).torrents).toHaveLength(1);
+    await s.close();
+  });
+
+  it('says so when no torrent plays or is remembered, and plays one info hash as a pasted magnet', async () => {
+    const { deps, play } = torrentDeps(null);
+    const s = await connect(deps);
+    expect(json(await s.call('direct_stream_torrents', { action: 'blacklist', title: 'Saltburn' }))).toMatchObject({ ok: false, skipped: 'no_torrent' });
+    const out = json(await s.call('direct_stream_torrents', { action: 'play', title: 'Saltburn', info_hash: COLD }));
+    expect(out).toMatchObject({ started: true });
+    expect(play).toHaveBeenCalledWith({ kind: 'movie', tmdbId: 930564 }, undefined, COLD);
+    await s.close();
+  });
+
+  it('answers torrent_off without the torrent deps', async () => {
+    const s = await connect(fakeDeps().deps);
+    const r = await s.call('direct_stream_torrents', { action: 'blacklisted' });
+    expect(r.isError).toBe(true);
+    expect(json(r)).toMatchObject({ error: 'torrent_off' });
+    await s.close();
+  });
+});

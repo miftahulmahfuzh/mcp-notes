@@ -2,7 +2,7 @@
 //
 //   npm run docs:shots -- --live movies                       the owner's real library (most pictures)
 //   DOCS_SHOTS_CHAT=1 npm run docs:shots -- --live movies     also the chat picture (billed)       
-//   DOCS_SHOTS_NAMES=1 npm run docs:shots -- --live movies    only person.png, studio.png, genre.png and play-menu.png
+//   DOCS_SHOTS_NAMES=1 npm run docs:shots -- --live movies    only person.png, studio.png, genre.png, play-menu.png and torrents.png
 //   npm run docs:shots -- movies                              unmatched.png and assign.png only
 //
 // The owner wants this guide to show their real library, so `live` below takes the grid, a film,
@@ -11,7 +11,7 @@
 // when its guide is already written: the first click is a model run), its play menu, and the Stream
 // side when this machine has a verified title (stream.png, the page of a streamed series as
 // stream-title.png, the Trending section as trending.png); no Play is pressed there. It only looks: it
-// clicks filters, opens the trailer pop-up, a person's pop-up and the play menu, and reads pages.
+// clicks filters, opens the trailer pop-up, a person's pop-up, the play menu and its torrent list, and reads pages.
 // It never presses Play, never marks, rates or reviews, and never starts or stops a VLC. The chat
 // picture sends a real, billed question (it is stored in the chat history), so it is retaken only
 // with DOCS_SHOTS_CHAT=1.
@@ -268,7 +268,16 @@ async function nameShots({ page, base, shot, fetchJson }) {
   await menu.waitFor();
   await page.mouse.move(900, 700);
   await shot('play-menu', { locator: page.locator('.mv-detail-info') });
+  // The Torrent stream row's own button: every candidate torrent of the film. Listing joins no swarm and plays
+  // nothing; the indexes are asked (or their answer of the last ten minutes read). No row's button is pressed.
+  await page.getByRole('button', { name: /^Every torrent of / }).first().click();
+  const torrents = page.getByRole('dialog', { name: /^Torrents of / });
+  await torrents.waitFor();
+  await torrents.locator('.mt-row, .mm-empty:not(:has-text("asking"))').first().waitFor({ timeout: 60000 });
+  await page.mouse.move(640, 20);
+  await shot('torrents', { locator: torrents });
   await page.keyboard.press('Escape');
+  await torrents.waitFor({ state: 'hidden' });
 }
 
 /** The owner's real library, from the live daemon. Looks only, except with DOCS_SHOTS_PLAY: see the header. */

@@ -478,11 +478,28 @@ would carry on with, and the menu's first line names it (`play S01E03 from`).
 | Downloaded file · VLC | Plays the file on this machine (a series: Continue), as Play does when there is one. |
 | Find the download on pahe.ink | In its place when no file is here: the daemon runs the `/pahe` search for the title's name and year, and its best release (BluRay first) opens in a new tab; when pahe lists none, its search page opens. Nothing is downloaded for you. |
 | Non Torrent stream | A cloud provider and never a torrent (`NTM`, `NTS`). The provider that streamed the title last is asked alone first, then the others. |
-| Torrent stream | A torrent (`TM`, `TS`). The very torrent that last played this film or this episode is opened again, with no index asked; the indexes are searched only when none is remembered or its swarm has nothing now. On another episode of the series the row reads `last from a torrent on Nov 17, 2026`, and the indexes are searched for that episode. |
+| Torrent stream | A torrent (`TM`, `TS`). The very torrent that last played this film or this episode is opened again, with no index asked; the indexes are searched only when none is remembered or its swarm has nothing now. On another episode of the series the row reads `last from a torrent on Nov 17, 2026`, and the indexes are searched for that episode. The button at the row's end opens [every torrent of it](#the-torrents-of-a-title). |
 | Idlix, Lk21, Flicksy, Dramacool | Plays on that streaming site, in the streaming Chrome: from the page it played from last time, else from the one page the site's search returns for the name and year. Lk21 and Flicksy play films only, so a series lists Idlix and Dramacool. |
 
 ![The play menu on a film's page: the file, the two kinds of stream and the four sites, each with what it remembers](img/movies/play-menu.png)
 
+<a id="the-torrents-of-a-title"></a>
+- **Every torrent of the film or the episode.** The list button at the end of the Torrent stream
+  row (on an episode row's menu too, for that episode) opens a pop-up with every candidate torrent:
+  what the indexes list (their answer of the last ten minutes, a play's own included; the arrows
+  ask them again), the torrents this machine opened for it before and the magnets pasted for it.
+  Each row gives the release name, its height (`other` when the name says none), size, the seeds
+  the index lists and the seeders the trackers know now, where it came from (the indexes, `magnet`,
+  `played before`) and its audio language with how that is known (`heard` by Whisper,
+  `file tags`, `name says`, `unknown`), then its flags: `played last` (what Torrent stream opens
+  again first), `worked`, `on disk`, `failed` (hover for why), `blacklisted`, `heard dub`,
+  `dub group ColdFilm`, `dub-named`, `left out: cam`. Two buttons per row: play that very torrent
+  (as a pasted magnet: the original-language rule still holds, and the play stays on it), and
+  blacklist it, or take it off the blacklist. A blacklist is per info hash, for every title: the
+  torrent is never a candidate again, the titles that remembered it forget it (the next Torrent
+  stream asks the indexes), and a play on it moves to another source. Listing joins no swarm.
+  The same list and blacklist are `direct_stream_torrents` in chat
+  ([streaming.md](streaming.md#the-torrent-candidates-of-a-title)).
 - **Each row says what it remembers**: `VidRock first, as on Nov 18, 2026`, `the same torrent as
   on Nov 17, 2026`, `played S01E03 · Nov 16, 2026`, or `found nothing on Nov 15, 2026`. The row the
   title last played through is flagged `played last`.
@@ -1247,9 +1264,10 @@ $V down RUN
     the grid, a film, the trailer pop-up, the pop-ups of the film's director (`person.png`), its
     studio (`studio.png`) and one of its genres (`genre.png`, only when that guide is already
     written: a first click is a model run) and its play menu (`play-menu.png`, opened and closed
-    with no row chosen), a series' episodes, the filter clip, and the page of the title VLC has
+    with no row chosen) with its torrent list (`torrents.png`: the indexes are read, no swarm is
+    joined and no row's button is pressed), a series' episodes, the filter clip, and the page of the title VLC has
     open (kept as it is when VLC has nothing open). `DOCS_SHOTS_NAMES=1` retakes only the three
-    pop-ups and the play menu. When this machine has at least one verified title it also takes the
+    pop-ups, the play menu and its torrent list. When this machine has at least one verified title it also takes the
     Stream side (`stream.png`), the Trending section under it (`trending.png`) and the page of a
     series streamed last (`stream-title.png`); it presses no Play there either. It only looks: no
     Play, no mark, no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks one

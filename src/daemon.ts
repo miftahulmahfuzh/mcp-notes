@@ -434,6 +434,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             titleNames: (ref) => movieStreams.titleNames(ref),
             channel: (ref) => movieStreams.channel(ref),
             channelFailed: (ref, kind) => movieStreams.channelFailed(ref, kind),
+            forgetTorrent: (infoHash) => movieStreams.forgetTorrent(infoHash),
             releaseDate: (ref) => movieStreams.releaseDate(ref),
           },
   });

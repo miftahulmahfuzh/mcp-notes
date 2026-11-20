@@ -709,10 +709,61 @@ export async function removeSiteTitle(id: number): Promise<void> {
 }
 
 /** Phase 3: resolve the title and open the player page full screen in the streaming Chrome. Throws ApiError `no_source`, `direct_stream_off`, ... */
-export async function streamPlay(ref: StreamRef): Promise<{ site: string | null }> {
+export async function streamPlay(ref: StreamRef & { magnet?: string }): Promise<{ site: string | null }> {
   const r = await postJson<{ site?: unknown }>('/api/stream/play', ref);
   // A title last played on a streaming site plays there again: the answer names the site and carries no session.
   return { site: typeof r?.site === 'string' ? r.site : null };
+}
+
+/** One torrent of a film or episode, as the candidates list shows it (GET /api/stream/torrents). */
+export interface TorrentCandidateView {
+  info_hash: string;
+  name: string;
+  height: number | null;
+  size_bytes: number | null;
+  seeds: number | null;
+  scrape: { seeders: number; leechers: number } | null;
+  from: string[];
+  audio: { languages: string[]; how: 'heard' | 'tags' | 'name' | 'unknown'; heard_probability: number | null };
+  worked: boolean;
+  failed: string | null;
+  blacklisted: { at: string; reason: string | null } | null;
+  dub_group: string | null;
+  heard_dub: boolean;
+  dub_named: boolean;
+  left_out: string | null;
+  remembered: boolean;
+  on_disk: boolean;
+}
+
+export interface TorrentCandidatesView {
+  original_language: string | null;
+  listed_at: string | null;
+  cached: boolean;
+  candidates: TorrentCandidateView[];
+}
+
+/** The torrent candidates of a film or episode; `fresh` asks the indexes now. Throws ApiError `torrent_off`, `direct_stream_off`. */
+export async function fetchTorrentCandidates(ref: StreamRef, fresh = false): Promise<TorrentCandidatesView> {
+  const q = new URLSearchParams({ kind: ref.kind, tmdb_id: String(ref.tmdb_id) });
+  if (ref.kind === 'tv') {
+    q.set('season', String(ref.season));
+    q.set('episode', String(ref.episode));
+  }
+  if (fresh) q.set('fresh', '1');
+  const r = await getJson<Partial<TorrentCandidatesView>>(`/api/stream/torrents?${q.toString()}`);
+  return { original_language: r.original_language ?? null, listed_at: r.listed_at ?? null, cached: r.cached === true, candidates: list(r.candidates) };
+}
+
+/** Blacklists a torrent for every title; the titles that remembered it forget it. */
+export async function blacklistTorrent(infoHash: string, reason: string | null, name: string | null): Promise<void> {
+  await postJson(`/api/stream/torrents/${encodeURIComponent(infoHash)}/blacklist`, { reason, name });
+}
+
+/** Takes a torrent off the blacklist. */
+export async function unblacklistTorrent(infoHash: string): Promise<void> {
+  const res = await fetch(`/api/stream/torrents/${encodeURIComponent(infoHash)}/blacklist`, { method: 'DELETE', headers: JSON_HEADERS });
+  if (!res.ok) throw await failure(res);
 }
 
 /** The streaming sites a title can be played on by name, in the play menu's order. */

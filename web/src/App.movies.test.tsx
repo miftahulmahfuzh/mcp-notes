@@ -61,6 +61,8 @@ beforeEach(() => {
       if (url.startsWith('/api/tags')) return json([]);
       if (method === 'POST' && url === '/api/chat') return new Response(chatSse, { headers: { 'content-type': 'text/event-stream' } });
       if (url.startsWith('/api/movies') && off) return json({ error: 'movies_off', message: 'off' }, 503);
+      if (url.startsWith('/api/stream/torrents?'))
+        return json({ original_language: 'en', listed_at: null, cached: false, candidates: [{ info_hash: 'c'.repeat(40), name: 'How.to.Make.a.Killing.2026.1080p.WEB', height: 1080, size_bytes: 2e9, seeds: 30, scrape: null, from: ['torrentio'], audio: { languages: [], how: 'unknown', heard_probability: null }, worked: false, failed: null, blacklisted: null, dub_group: null, heard_dub: false, dub_named: false, left_out: null, remembered: false, on_disk: false }] });
       if (url === '/api/movies') return json({ titles });
       if (url === '/api/movies/status') return json(STATUS);
       if (url === '/api/movies/player') return json(player);
@@ -505,6 +507,20 @@ describe('App: Movies', () => {
     openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: /Downloaded file/ }));
     await waitFor(() => expect(postsTo('/api/movies/files/11/play')).toHaveLength(1));
+  });
+
+  it('the Torrent stream row opens every torrent of the title, and one is played by its info hash', async () => {
+    at('/movies/movie-467905');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    fireEvent.click(within(article).getByRole('button', { name: 'Choose how to play How to Make a Killing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Every torrent of How to Make a Killing' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    const dialog = within(await screen.findByRole('dialog', { name: 'Torrents of How to Make a Killing' }));
+    expect(calls).toContain('GET /api/stream/torrents?kind=movie&tmdb_id=467905');
+    fireEvent.click(await dialog.findByRole('button', { name: 'Play How.to.Make.a.Killing.2026.1080p.WEB' }));
+    await waitFor(() => expect(postsTo('/api/stream/play')).toEqual([{ kind: 'movie', tmdb_id: 467905, magnet: 'c'.repeat(40) }]));
+    expect(screen.queryByRole('dialog', { name: 'Torrents of How to Make a Killing' })).toBeNull();
   });
 
   it('a play chosen in the menu says what the daemon is doing while it starts, then its outcome', async () => {
