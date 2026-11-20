@@ -275,6 +275,14 @@ export class TorrentStreams {
     return live === undefined ? null : live.handle.stats();
   }
 
+  /** The release name this host's row of a torrent keeps (as the index listed it), else its swarm name; null without a row. */
+  async releaseName(infoHash: string): Promise<string | null> {
+    const hash = normalizeInfoHash(infoHash);
+    if (hash === null) return null;
+    const row = await this.repo.get(this.host, hash);
+    return row === null ? null : (row.release ?? row.name ?? null);
+  }
+
   /** Bytes the torrent received from peers since it was opened; null when it is not in the swarm or its handle cannot say. */
   received(infoHash: string): number | null {
     const hash = normalizeInfoHash(infoHash);

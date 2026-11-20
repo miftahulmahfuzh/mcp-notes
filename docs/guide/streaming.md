@@ -1328,7 +1328,7 @@ first for episode 4.
 | The title last played through | A play with no source named |
 | --- | --- |
 | A cloud provider (`VidRock`) | Asks that provider alone. Only when it has no stream now are the others asked, without it, and then the torrents |
-| A torrent | Opens that very torrent again when the same film or episode is asked (no index is asked); else, or when its swarm has nothing now, asks the torrents first. No cloud provider is tried unless they find nothing |
+| A torrent | Opens that very torrent again when the same film or episode is asked (no index is asked; a remembered 720p only after the indexes found no 1080p); else, or when its swarm has nothing now, asks the torrents first. No cloud provider is tried unless they find nothing |
 | A streaming site (`/idlix`, `/lk21`, `/flicksy`, `/dramacool`) | Remembers nothing for direct streaming: the play goes the way it would for a title never streamed. The site is asked again only when that finds nothing ([The streaming sites, last](#the-streaming-sites-last)) |
 | Nothing yet, and its cloud search found nothing in the last 3 days | Asks the torrents first, then the cloud providers (unless the torrents also found nothing since: then the long way) |
 | Nothing yet | The long way: every cloud provider, then the torrents |
@@ -1341,7 +1341,10 @@ first for episode 4.
   (`movie_title_methods`: `cloud`, `torrent`, each site). So `TM`, `provider: "torrent"` or the
   [play menu](movies.md#the-play-menu)'s Torrent stream opens the very torrent that last played
   this film or this episode, with no index asked, even when a cloud provider played the title
-  since; the indexes are searched when none is remembered or its swarm has nothing now. `NTM`,
+  since; the indexes are searched when none is remembered or its swarm has nothing now. A remembered
+  torrent whose release name says another height than 1080p (a 720p) goes after the indexes instead:
+  they are asked for a 1080p first, and it is opened only when they have nothing that plays
+  (`the torrent that played ... last time is 720p; asking the indexes for 1080p first`). `NTM`,
   `provider: "cloud"` or Non Torrent stream asks the cloud provider that last streamed the title
   alone first, then the others without it, and never a torrent. A provider named by its own name
   (`VidLink`) is still asked alone.

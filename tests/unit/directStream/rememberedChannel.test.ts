@@ -38,6 +38,10 @@ interface Setup {
   torrentHasIt?: boolean;
   /** Torrents whose swarm answers nothing. */
   deadHashes?: string[];
+  /** The release names this host keeps for torrents (the remembered one's height is read from it). */
+  releaseNames?: Record<string, string>;
+  /** The release the indexes list; default a 720p. */
+  candidateName?: string;
   /** What the streaming command answers, or answers per site and arguments; unset: no streaming runner, so no site is asked. */
   site?: unknown;
   /** Held until opened: the streaming command's answer. */
@@ -63,9 +67,10 @@ function setup(o: Setup = {}) {
     filePath: () => null,
     localUrl: (infoHash, index) => `/api/stream/torrent/${infoHash}/f/${index}`,
     setDuration: () => undefined,
+    releaseName: async (infoHash) => o.releaseNames?.[infoHash] ?? null,
   };
   const answer: FindAnswer = {
-    candidates: o.torrentHasIt === false ? [] : [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')],
+    candidates: o.torrentHasIt === false ? [] : [candidate(h(1), o.candidateName ?? 'Film.2026.720p.WEB-DL.x264.AAC-A')],
     indexes: [{ index: 'torrentio', outcome: 'ok', detail: '', took_s: 0.1, listed: o.torrentHasIt === false ? 0 : 1 }],
     excluded: [],
     lastResort: [],
@@ -252,6 +257,23 @@ describe('a named method goes to what last played the title through that method'
     await post(other.app, { ...PLAY_EPISODE, provider: 'torrent' });
     expect(other.opened).not.toContain(h(9));
     expect(other.finds).toHaveBeenCalledTimes(1);
+  });
+
+  it('"torrent" asks the indexes for 1080p first when the torrent that played it last time is a 720p, and opens that one only when they have nothing', async () => {
+    const known = { channel: 'torrent' as const, infoHash: h(9), playedAt: daysAgo(1), methods: { torrent: method({ infoHash: h(9) }) } };
+    const names = { [h(9)]: 'Film.2026.720p.WEB-DL.x264.AAC-OLD' };
+    const better = setup({ known, releaseNames: names, candidateName: 'Film.2026.1080p.WEB-DL.x264.AAC-A' });
+    expect((await post(better.app, { ...PLAY_FILM, provider: 'torrent' })).json.session.torrent.info_hash).toBe(h(1));
+    expect(better.opened).not.toContain(h(9));
+
+    const nothing = setup({ known, releaseNames: names, torrentHasIt: false });
+    expect((await post(nothing.app, { ...PLAY_FILM, provider: 'torrent' })).json.session.torrent.info_hash).toBe(h(9));
+    expect(nothing.finds).toHaveBeenCalledTimes(1);
+
+    // A remembered 1080p is opened again with no index asked.
+    const tall = setup({ known, releaseNames: { [h(9)]: 'Film.2026.1080p.WEB-DL.x264.AAC-OLD' } });
+    expect((await post(tall.app, { ...PLAY_FILM, provider: 'torrent' })).json.session.torrent.info_hash).toBe(h(9));
+    expect(tall.finds).not.toHaveBeenCalled();
   });
 
   it('"cloud" asks the provider that streamed it first, though a torrent played it since; then the others, without it, and never a torrent', async () => {

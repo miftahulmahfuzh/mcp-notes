@@ -20,7 +20,7 @@ import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type Dir
 import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
 import { readMagnet } from './torrent/origins.js';
-import { namesCloud, namesTorrent, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type MagnetReport } from './torrent/source.js';
+import { namesCloud, namesTorrent, PREFERRED_TORRENT_HEIGHT, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type MagnetReport } from './torrent/source.js';
 import { TORRENT_WARP_AUTO, torrentThroughWarp, WARP_ATTEMPT, type TorrentWarp } from './torrentWarp.js';
 import type { WarpSwitch } from '../streaming/warp.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
@@ -831,6 +831,18 @@ export class DirectStreamService {
    */
   private async lastTorrentOrIndexes(ref: StreamRef, resumeS: number | null, last: Pick<RememberedChannel, 'infoHash' | 'season' | 'episode'> | null, track: PlayTrack | null): Promise<StreamSession> {
     if (last === null || last.infoHash === null || !sameSlot(ref, last)) return this.torrentSession(ref, resumeS, null, track);
+    // 1080p by default: a remembered torrent of a lower height (720p) goes after the indexes' search, not before it.
+    const height = (await this.torrentSource()?.releaseHeight(last.infoHash)) ?? null;
+    if (height !== null && height !== PREFERRED_TORRENT_HEIGHT) {
+      const infoHash = last.infoHash;
+      this.log(`[notesd] direct stream: the torrent that played ${refLabel(ref)} last time is ${height}p; asking the indexes for ${PREFERRED_TORRENT_HEIGHT}p first`);
+      try {
+        return await this.torrentSession(ref, resumeS, null, track);
+      } catch (err) {
+        if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
+        return this.after(err.attempts, () => this.magnetSession(ref, resumeS, infoHash, track));
+      }
+    }
     if (track !== null) track.stage = 'opening the torrent that played it last time';
     try {
       return await this.magnetSession(ref, resumeS, last.infoHash, track);

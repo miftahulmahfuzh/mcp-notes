@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { DEFAULT_TORRENT_FINDER_CONFIG, TORRENT_INDEX_NAMES, type Config, type TorrentIndexName } from '../../config.js';
 import type { SessionTorrent } from '../sessions.js';
 import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type ResolvedSource, type SourceAudio, type StreamRef } from '../types.js';
-import { candidateFromMagnet, deadLast, DEFAULT_TRACKERS, defaultIndexes, findCandidates, heightRank, IndexHealth, looksDead, pickFile, udpScraper, udpTrackerOf, type IndexAttempt, type ReleaseHeight, type ScrapeTrackers, type SwarmCount, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
+import { candidateFromMagnet, deadLast, DEFAULT_TRACKERS, defaultIndexes, findCandidates, heightRank, IndexHealth, looksDead, parseRelease, pickFile, udpScraper, udpTrackerOf, type IndexAttempt, type ReleaseHeight, type ScrapeTrackers, type SwarmCount, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
 import { readMagnet, TRACKER_BOOK_FILE, TrackerBook, trackerKey } from './origins.js';
 import { scrapeTrackerOrder } from './find/scrape.js';
 import type { TrackerLists } from './trackerLists.js';
@@ -38,6 +38,8 @@ export const FILE_FAILURE_KEEP_MS = 24 * 60 * 60_000;
 export const TORRENTS_LEFT = 'Torrents: not tried yet';
 /** A new tracker from a pasted magnet must answer a scrape within this to be kept (learnMagnet). */
 export const TRACKER_PROBE_MS = 2_500;
+/** The height a torrent play prefers (HEIGHT_PREFERENCE's first): a remembered torrent of another height goes after the indexes. */
+export const PREFERRED_TORRENT_HEIGHT = 1080;
 /** Torrents opened side by side: the index's seed count is not the swarm, so the swarms themselves are asked. */
 export const TORRENT_RACE_WIDTH = 3;
 /** Once one torrent's header has arrived, the others still opening get this long to arrive too before one is chosen. */
@@ -113,6 +115,8 @@ export interface TorrentSwarm {
   discard?(infoHash: string): unknown;
   /** The peers connected and the download rate of an open torrent, now; null when it is not in the swarm. Absent in tests' fakes. */
   stats?(infoHash: string): Pick<TorrentStats, 'peers' | 'down_kbps'> | null;
+  /** The release name this host keeps for a torrent; null when none. Absent in tests' fakes. */
+  releaseName?(infoHash: string): Promise<string | null>;
   /** Bytes an open torrent received from peers so far; null when it cannot say. Absent: the probe has the flat TORRENT_PROBE_TIMEOUT_MS. */
   received?(infoHash: string): number | null;
 }
@@ -632,6 +636,16 @@ export class TorrentSource {
     if (!torrent.held) return;
     torrent.held = false;
     this.letGo(torrent.infoHash);
+  }
+
+  /** The picture height a torrent's release name says (from this host's row), or null when nothing says. Never throws. */
+  async releaseHeight(infoHash: string): Promise<ReleaseHeight | null> {
+    try {
+      const name = (await this.opts.swarm.releaseName?.(infoHash)) ?? null;
+      return name === null ? null : parseRelease(name).height;
+    } catch {
+      return null;
+    }
   }
 
   /** True when this host holds a finished download of `ref`. */
