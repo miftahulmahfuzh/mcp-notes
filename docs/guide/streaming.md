@@ -686,16 +686,14 @@ provider's stream of a foreign-language title plays for the first time, the daem
 (`src/directStream/audioLang.ts`), in the same vet loop as the picture check (`vetted` in
 `service.ts`):
 
-1. `ffmpeg` cuts ~30 s of audio, 10 minutes in, from the manifest with the `Referer`, `Origin` and
-   `User-Agent` the resolve captured, to a 16 kHz mono WAV — the format the Whisper worker reads.
-   When ffmpeg cannot open the stream by itself, the segments are read instead, as the picture check reads a
-   frame: eight segments of the smallest rendition from that minute are fetched three at a time with the same
-   headers (asked once more after 1.5 s when the host refuses), each cut at its
-   MPEG-TS sync, and their transport stream is handed to ffmpeg. Some hosts wrap every segment in a small picture
-   file (HyperLink's are PNGs), so ffmpeg found "no stream" in the manifest and the check heard nothing: five of
-   six foreign-language streams in the soak of 2026-11-19 read `no audio could be read from the stream`, and a
-   dub would have played unheard. A stream that is encrypted, fragmented MP4 or carries its audio in a rendition of
-   its own is still `unsure`.
+1. ~30 s of audio, 10 minutes in, is cut to a 16 kHz mono WAV, the format the Whisper worker reads,
+   the way Wyzie Synced and `/sync-subtitle` cut a cloud stream
+   ([What the film's sound is read from](#what-the-films-sound-is-read-from)): an HLS stream from its
+   own segments first (its audio rendition, else its smallest one, fetched with the `Referer`,
+   `Origin` and `User-Agent` the resolve captured; MPEG-TS cut at its sync, so a host that wraps
+   every segment in a small picture file is read too, or fragmented MP4 behind its map part), and
+   by ffmpeg on the manifest with the same headers only when that gives nothing. A clip that comes
+   back empty or cut short is `unsure`, as is an encrypted stream.
 2. The Whisper worker's `detect` task answers which language it heard and how sure it is (the
    daemon's one worker, `src/directStream/torrent/subtitles/whisper.ts`; a play's `detect` goes ahead
    of transcriptions waiting their turn, once the one in progress ends).

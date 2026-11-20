@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AUDIO_CLIP_SEGMENTS, firstAudioOf, hlsSegmentAudioGrabber, type AudioGrabber } from '../../../src/directStream/audioLang.js';
-import { hlsTransportStream, lowestVariant, segmentsFrom } from '../../../src/directStream/picture.js';
+import { streamAudioGrabber } from '../../../src/directStream/audioLang.js';
+import { lowestVariant } from '../../../src/directStream/picture.js';
 import type { ResolvedSource } from '../../../src/directStream/types.js';
 
 const MEDIA = ['#EXTM3U', '#EXT-X-TARGETDURATION:6', '#EXTINF:6,', 'a.ts', '#EXTINF:6,', 'b.ts', '#EXTINF:6,', 'c.ts', '#EXTINF:6,', 'd.ts', '#EXT-X-ENDLIST'].join('\n');
@@ -12,19 +12,6 @@ const BASE = 'https://cdn.example/v/index.m3u8';
 const source = (over: Partial<ResolvedSource> = {}): ResolvedSource => ({
   provider: 'Alpha', embed_url: '', manifest_url: BASE, manifest_kind: 'hls', headers: { referer: 'https://alpha.example/', origin: null, user_agent: 'UA' },
   subtitles: [], best_height: 1080, en_subtitle: false, audio: null, took_s: 1, ...over,
-});
-
-describe('segmentsFrom', () => {
-  it('answers the segments in a row from the one that holds the second', () => {
-    expect(segmentsFrom(MEDIA, BASE, 0, 2)).toEqual(['https://cdn.example/v/a.ts', 'https://cdn.example/v/b.ts']);
-    expect(segmentsFrom(MEDIA, BASE, 7, 2)).toEqual(['https://cdn.example/v/b.ts', 'https://cdn.example/v/c.ts']);
-    expect(segmentsFrom(MEDIA, BASE, 13, 8)).toEqual(['https://cdn.example/v/c.ts', 'https://cdn.example/v/d.ts']);
-  });
-  it('a film shorter than the second gives its last segments; no segments, none', () => {
-    expect(segmentsFrom(MEDIA, BASE, 600, 2)).toEqual(['https://cdn.example/v/c.ts', 'https://cdn.example/v/d.ts']);
-    expect(segmentsFrom('#EXTM3U', BASE, 0, 4)).toEqual([]);
-    expect(segmentsFrom(MEDIA, BASE, 0, 0)).toEqual([]);
-  });
 });
 
 describe('lowestVariant', () => {
@@ -62,29 +49,10 @@ describe('the audio clip read from the segments themselves', () => {
     return { fetchImpl, asked };
   }
 
-  it('hlsTransportStream cuts each segment at its sync and joins them, asking with the captured headers', async () => {
+  it('the stream audio grabber writes the 16 kHz mono WAV Whisper reads, from segments wrapped in picture files', async () => {
     const h = host();
-    const ts = await hlsTransportStream(source(), 0, 8, h.fetchImpl, AbortSignal.timeout(10_000));
-    expect(ts?.length).toBe((segs[0] as Buffer).length + (segs[1] as Buffer).length);
-    expect(ts?.[0]).toBe(0x47);
+    const wav = await streamAudioGrabber({ ffmpegBin: 'ffmpeg', fetch: h.fetchImpl, retryMs: 1 })(source(), 0);
     expect(h.asked.every((a) => a.referer === 'https://alpha.example/')).toBe(true);
-  });
-
-  it('answers null for an encrypted stream, a stream that is not HLS, and segments that are not a transport stream', async () => {
-    expect(await hlsTransportStream(source(), 0, 8, host({ key: true }).fetchImpl, AbortSignal.timeout(10_000))).toBeNull();
-    expect(await hlsTransportStream(source({ manifest_kind: 'mp4' }), 0, 8, host().fetchImpl, AbortSignal.timeout(10_000))).toBeNull();
-    const notTs = (async (url: string) => (String(url) === BASE ? new Response(MEDIA) : new Response(Buffer.alloc(4096, 7)))) as unknown as typeof fetch;
-    expect(await hlsTransportStream(source(), 0, 8, notTs, AbortSignal.timeout(10_000))).toBeNull();
-  });
-
-  it('keeps the segments up to the first that is missing', async () => {
-    const ts = await hlsTransportStream(source(), 0, 8, host({ missing: 's1' }).fetchImpl, AbortSignal.timeout(10_000));
-    expect(ts?.length).toBe((segs[0] as Buffer).length);
-    expect(await hlsTransportStream(source(), 0, 8, host({ missing: 's0' }).fetchImpl, AbortSignal.timeout(10_000))).toBeNull();
-  });
-
-  it('hlsSegmentAudioGrabber writes the 16 kHz mono WAV Whisper reads, from segments ffmpeg could not open as a stream', async () => {
-    const wav = await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', fetch: host().fetchImpl })(source(), 0);
     expect(wav).not.toBeNull();
     const file = wav as string;
     try {
@@ -97,7 +65,6 @@ describe('the audio clip read from the segments themselves', () => {
     } finally {
       rmSync(path.dirname(file), { recursive: true, force: true });
     }
-    expect(AUDIO_CLIP_SEGMENTS).toBeGreaterThanOrEqual(4);
   });
 
   it('asks the segments once more when the host refused the first time', async () => {
@@ -110,26 +77,8 @@ describe('the audio clip read from the segments themselves', () => {
       }
       return h.fetchImpl(url, init);
     }) as unknown as typeof fetch;
-    const wav = await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', retryMs: 1, fetch: flaky })(source(), 0);
+    const wav = await streamAudioGrabber({ ffmpegBin: 'ffmpeg', retryMs: 1, fetch: flaky })(source(), 0);
     expect(wav).not.toBeNull();
     rmSync(path.dirname(wav as string), { recursive: true, force: true });
-  });
-
-  it('answers null, and leaves no folder, when the stream cannot be read this way', async () => {
-    expect(await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', retryMs: 1, fetch: host({ key: true }).fetchImpl })(source(), 0)).toBeNull();
-    const down = (async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch;
-    expect(await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', retryMs: 1, fetch: down })(source(), 0)).toBeNull();
-  });
-});
-
-describe('firstAudioOf', () => {
-  it('asks each grabber in turn until one reads a clip', async () => {
-    const calls: string[] = [];
-    const none: AudioGrabber = async () => (calls.push('manifest'), null);
-    const clip: AudioGrabber = async () => (calls.push('segments'), '/tmp/x/clip.wav');
-    const never: AudioGrabber = async () => (calls.push('never'), null);
-    expect(await firstAudioOf(none, clip, never)(source(), 600)).toBe('/tmp/x/clip.wav');
-    expect(calls).toEqual(['manifest', 'segments']);
-    expect(await firstAudioOf(none)(source(), 600)).toBeNull();
   });
 });

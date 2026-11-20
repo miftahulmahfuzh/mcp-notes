@@ -1,10 +1,9 @@
-import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { WhisperDetector } from './torrent/subtitles/whisper.js';
+import { ffmpegCutter, type AudioCutter, type WhisperDetector } from './torrent/subtitles/whisper.js';
+import { withHlsSegments } from './hlsCut.js';
 import { normalizeAudioLang } from './torrent/probe.js';
-import { hlsTransportStream } from './picture.js';
 import { refLabel, type ResolvedSource, type StreamRef } from './types.js';
 
 /**
@@ -52,99 +51,47 @@ export interface AudioFinding {
 /** One clip of the stream at `atS` seconds as a 16 kHz mono 16-bit PCM WAV, or null when it could not be read. Never throws. */
 export type AudioGrabber = (source: ResolvedSource, atS: number) => Promise<string | null>;
 
-/** ffmpeg's arguments for one audio clip: seek, the manifest's headers, 30 s of the first audio stream as 16 kHz mono PCM. */
-export function cutAudioArgs(source: ResolvedSource, atS: number, out: string): string[] {
+/** ffmpeg's arguments before `-i` for a stream: the Referer, Origin and User-Agent the resolve captured. */
+export function streamInputArgs(source: ResolvedSource): string[] {
   const { referer, origin, user_agent: userAgent } = source.headers;
   const headers = [referer === null ? null : `Referer: ${referer}`, origin === null ? null : `Origin: ${origin}`].filter((h): h is string => h !== null);
-  return [
-    '-v', 'error', '-y', '-ss', String(atS),
-    ...(userAgent === null ? [] : ['-user_agent', userAgent]),
-    ...(headers.length === 0 ? [] : ['-headers', headers.map((h) => `${h}\r\n`).join('')]),
-    '-i', source.manifest_url,
-    '-t', String(AUDIO_CLIP_S), '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',
-    '-map_metadata', '-1', '-fflags', '+bitexact',
-    out,
-  ];
+  return [...(userAgent === null ? [] : ['-user_agent', userAgent]), ...(headers.length === 0 ? [] : ['-headers', headers.map((h) => `${h}\r\n`).join('')])];
 }
 
 /**
- * The audio clip through ffmpeg: it reads the manifest with the Referer, Origin and User-Agent the
- * resolve captured (what the pass-through sends for the player), seeks, and writes 30 s of the first
- * audio stream as a 16 kHz mono PCM WAV, which is what the Whisper worker reads. The WAV is left for
- * the caller to remove; a failed cut takes its own temp folder with it.
+ * The audio clip through the subtitle cutters' path (hlsCut.ts): an HLS stream is cut from its own segments first
+ * (the stream's audio rendition, else its smallest; MPEG-TS cut at its sync, or fragmented MP4 behind its map part,
+ * which covers the hosts that wrap every segment in a picture file), and by ffmpeg on the manifest, with the headers
+ * the resolve captured, only when that gives nothing; any other source by ffmpeg alone. 30 s from `atS` as a 16 kHz
+ * mono PCM WAV, which is what the Whisper worker reads. The WAV is left for the caller to remove; a failed cut takes
+ * its own temp folder with it.
  */
-export function ffmpegAudioGrabber(options: { ffmpegBin: string; timeoutMs?: number }): AudioGrabber {
+export function cutterAudioGrabber(cutter: AudioCutter, options: { timeoutMs?: number } = {}): AudioGrabber {
   return async (source, atS) => {
     const dir = await mkdtemp(path.join(tmpdir(), 'notesd-audio-'));
     const out = path.join(dir, 'clip.wav');
-    const args = cutAudioArgs(source, atS, out);
     try {
-      await new Promise<void>((resolve, reject) => {
-        execFile(options.ffmpegBin, args, { timeout: options.timeoutMs ?? AUDIO_CLIP_TIMEOUT_MS, killSignal: 'SIGKILL' }, (err) => (err ? reject(err) : resolve()));
-      });
-      return (await stat(out)).size > 44 ? out : (await rm(dir, { recursive: true, force: true }), null);
+      const cut = await cutter(
+        { url: source.manifest_url, inputArgs: streamInputArgs(source), hls: source, startS: atS, lengthS: AUDIO_CLIP_S, out },
+        AbortSignal.timeout(options.timeoutMs ?? AUDIO_CLIP_TIMEOUT_MS),
+      );
+      if (cut.ok && cut.lengthS >= 1) return out;
     } catch {
-      await rm(dir, { recursive: true, force: true });
-      return null;
+      // A cutter answers its failures; anything else is a clip not read all the same.
     }
-  };
-}
-
-/** Segments read for a clip when ffmpeg cannot open the stream itself: eight of 4 to 10 s cover the 30 s Whisper is handed. */
-export const AUDIO_CLIP_SEGMENTS = 8;
-/** The pause before the segments are asked for a second time. */
-export const AUDIO_SEGMENTS_RETRY_MS = 1_500;
-
-/**
- * The audio clip of an HLS stream ffmpeg cannot open by itself: the segments from `atS` on are fetched here (as the
- * picture check does for a frame, picture.ts `hlsTransportStream`) and their transport stream is handed to ffmpeg on
- * stdin. Some hosts wrap every segment in a small picture file (HyperLink's are PNGs on an image host): ffmpeg then
- * reads the manifest, finds "no stream" and writes nothing, and a dub went unheard (five of six foreign-language
- * streams in the soak of 2026-11-19 read `no audio could be read from the stream`). Null when the stream is not
- * plain MPEG-TS, carries its audio in a rendition of its own, or cannot be fetched. Never throws.
- */
-export function hlsSegmentAudioGrabber(options: { ffmpegBin: string; fetch?: typeof fetch; timeoutMs?: number; segments?: number; retryMs?: number }): AudioGrabber {
-  const fetchImpl = options.fetch ?? fetch;
-  const timeoutMs = options.timeoutMs ?? AUDIO_CLIP_TIMEOUT_MS;
-  return async (source, atS) => {
-    if (source.manifest_kind !== 'hls') return null;
-    const dir = await mkdtemp(path.join(tmpdir(), 'notesd-audio-'));
-    const out = path.join(dir, 'clip.wav');
-    try {
-      const signal = AbortSignal.timeout(timeoutMs);
-      const read = (): Promise<Buffer | null> => hlsTransportStream(source, atS, options.segments ?? AUDIO_CLIP_SEGMENTS, fetchImpl, signal).catch(() => null);
-      // Once more after a moment: HyperLink's host refused the first ask and answered the next (2026-11-19).
-      const ts = (await read()) ?? (await new Promise((resolve) => setTimeout(resolve, options.retryMs ?? AUDIO_SEGMENTS_RETRY_MS)), await read());
-      if (ts === null) throw new Error('no transport stream');
-      await new Promise<void>((resolve, reject) => {
-        const child = execFile(
-          options.ffmpegBin,
-          ['-v', 'error', '-y', '-f', 'mpegts', '-i', 'pipe:0', '-t', String(AUDIO_CLIP_S), '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-map_metadata', '-1', '-fflags', '+bitexact', out],
-          { timeout: timeoutMs, killSignal: 'SIGKILL' },
-          (err) => (err ? reject(err) : resolve()),
-        );
-        // ffmpeg stops reading once it has its 30 s: the rest of the segments is not an error.
-        child.stdin?.on('error', () => undefined);
-        child.stdin?.end(ts);
-      });
-      if ((await stat(out)).size > 44) return out;
-      throw new Error('an empty clip');
-    } catch {
-      await rm(dir, { recursive: true, force: true });
-      return null;
-    }
-  };
-}
-
-/** Each grabber in turn until one reads a clip. */
-export function firstAudioOf(...grabbers: AudioGrabber[]): AudioGrabber {
-  return async (source, atS) => {
-    for (const grab of grabbers) {
-      const wav = await grab(source, atS);
-      if (wav !== null) return wav;
-    }
+    await rm(dir, { recursive: true, force: true });
     return null;
   };
+}
+
+/** The daemon's grabber: cutterAudioGrabber over ffmpeg and the stream's segments (hlsCut.ts). */
+export function streamAudioGrabber(options: { ffmpegBin: string; fetch?: typeof fetch; timeoutMs?: number; retryMs?: number }): AudioGrabber {
+  const timeoutMs = options.timeoutMs ?? AUDIO_CLIP_TIMEOUT_MS;
+  const plain = ffmpegCutter({ ffmpegBin: options.ffmpegBin, timeoutMs });
+  return cutterAudioGrabber(
+    withHlsSegments(plain, { ffmpegBin: options.ffmpegBin, timeoutMs, ...(options.fetch === undefined ? {} : { fetch: options.fetch }), ...(options.retryMs === undefined ? {} : { retryMs: options.retryMs }) }),
+    { timeoutMs },
+  );
 }
 
 /** One kept verdict. */

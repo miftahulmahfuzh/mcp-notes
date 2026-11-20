@@ -142,27 +142,6 @@ export function segmentAt(playlist: string, base: string, atS: number): string |
   return last;
 }
 
-/** The addresses of up to `count` segments in a row, from the one that holds second `atS` (the last ones for a shorter film). */
-export function segmentsFrom(playlist: string, base: string, atS: number, count: number): string[] {
-  const all: Array<{ url: string; from: number; to: number }> = [];
-  let at = 0;
-  let length: number | null = null;
-  for (const raw of playlist.split('\n')) {
-    const line = raw.trim();
-    const inf = /^#EXTINF:([\d.]+)/.exec(line);
-    if (inf !== null) length = Number(inf[1]);
-    else if (line !== '' && !line.startsWith('#') && length !== null) {
-      all.push({ url: new URL(line, base).href, from: at, to: at + length });
-      at += length;
-      length = null;
-    }
-  }
-  if (all.length === 0 || count < 1) return [];
-  const first = all.findIndex((s) => s.to > atS);
-  const start = first === -1 ? Math.max(0, all.length - count) : first;
-  return all.slice(start, start + count).map((s) => s.url);
-}
-
 /** The first rendition a master playlist names, or null when `playlist` is a media playlist already. */
 export function firstVariant(playlist: string, base: string): string | null {
   const lines = playlist.split('\n').map((l) => l.trim());
@@ -202,31 +181,6 @@ async function hlsSegment(source: ResolvedSource, atS: number, fetchImpl: typeof
   if (variant !== null) playlist = await text(variant);
   const segment = segmentAt(playlist.body, playlist.url, atS);
   return segment === null ? null : { segment, headers, encrypted: /#EXT-X-KEY:(?!METHOD=NONE)/.test(playlist.body), playlist: playlist.body, playlistUrl: playlist.url };
-}
-
-/**
- * The transport stream of up to `count` segments in a row from second `atS` of an HLS stream's smallest rendition, each
- * fetched with the headers the resolve captured and cut at its MPEG-TS sync (some hosts wrap every segment in a small
- * picture file). Null for anything but plain MPEG-TS: an encrypted stream, fragmented MP4, a playlist without
- * segments, a segment that does not answer or is larger than SEGMENT_MAX_BYTES. Throws when a playlist does not answer.
- */
-export async function hlsTransportStream(source: ResolvedSource, atS: number, count: number, fetchImpl: typeof fetch, signal: AbortSignal): Promise<Buffer | null> {
-  if (source.manifest_kind !== 'hls') return null;
-  const found = await hlsSegment(source, atS, fetchImpl, signal, lowestVariant);
-  if (found === null || found.encrypted) return null;
-  // Three at a time: one after another, eight segments took 18 s from a slow host; all eight at once, HyperLink's
-  // host refused most of them and the clip came out 5 s long.
-  const urls = segmentsFrom(found.playlist, found.playlistUrl, atS, count);
-  const fetched: Array<Buffer | null> = [];
-  for (let at = 0; at < urls.length; at += SEGMENTS_AT_ONCE) {
-    const batch = await Promise.all(urls.slice(at, at + SEGMENTS_AT_ONCE).map((url) => transportSegment(url, found.headers, fetchImpl, signal)));
-    fetched.push(...batch);
-    if (batch.includes(null)) break;
-  }
-  // The segments in a row up to the first that is missing: a gap would put two stretches of the film side by side.
-  const gap = fetched.findIndex((part) => part === null);
-  const parts = (gap === -1 ? fetched : fetched.slice(0, gap)) as Buffer[];
-  return parts.length === 0 ? null : Buffer.concat(parts);
 }
 
 /** One segment's transport stream, cut at its MPEG-TS sync; null when it does not answer, is too large or is not MPEG-TS. */
