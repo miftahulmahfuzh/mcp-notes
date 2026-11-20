@@ -52,9 +52,8 @@ import {
   streamTarget,
   titleAction,
   agoText,
-  magnetQuality,
 } from './movies';
-import type { SiteTitle, TrendingTitle } from '../moviesApi';
+import type { SiteTitle } from '../moviesApi';
 
 const ids = (f: MoviesFilter) => TITLES.filter((t) => matchesFilter(t, f)).map((t) => t.id);
 
@@ -365,37 +364,6 @@ describe('a title TMDB does not list', () => {
     const film: SiteTitle = { ...DRAMA, kind: 'movie', year: null, season: null, episode: null };
     expect(siteTitleCaption(film)).toBe('Dramacool');
     expect(siteTitleNext(film)).toEqual({ episode: null, label: 'Play X on Dramacool' });
-  });
-});
-
-describe('magnetQuality', () => {
-  const NOW = Date.parse('2026-11-17T12:00:00Z');
-  const title = (probe: TrendingTitle['trending']['probe']): TrendingTitle =>
-    ({ trending: { kind_rank: 1, seeds: 8401, index: 'apibay', release: 'x', size_bytes: null, listed_at: '2026-11-17T06:00:00Z', probe } }) as TrendingTitle;
-
-  it('is "not confirmed" until the swarm was opened: seeds alone are never the verdict', () => {
-    const q = magnetQuality(title(null), NOW);
-    expect(q.state).toBe('unconfirmed');
-    expect(q.label).toBe('not confirmed');
-    expect(q.tip).toContain('8,401 seeds listed by apibay');
-    expect(q.tip).toContain('has not been opened');
-  });
-
-  it('says confirmed, and when, only for a swarm a peer answered', () => {
-    const q = magnetQuality(title({ outcome: 'confirmed', detail: '1 video file of 2, 4 peers connected', at: '2026-11-17T09:00:00Z' }), NOW);
-    expect(q).toMatchObject({ state: 'confirmed', label: 'confirmed 3 h ago' });
-    expect(q.tip).toContain('4 peers connected');
-  });
-
-  it('marks a listed swarm nobody answered as dead, with the listing named as possibly stale', () => {
-    const q = magnetQuality(title({ outcome: 'no_peers', detail: 'no peer sent a file list within 20 s', at: '2026-11-17T11:50:00Z' }), NOW);
-    expect(q).toMatchObject({ state: 'dead', label: 'no peer answered 10 min ago' });
-    expect(q.tip).toContain('may be stale');
-  });
-
-  it('reads a failed check as unconfirmed, not dead', () => {
-    expect(magnetQuality(title({ outcome: 'error', detail: 'x', at: '2026-11-17T11:59:30Z' }), NOW).state).toBe('unconfirmed');
-    expect(magnetQuality(title({ outcome: 'no_video', detail: null, at: '2026-11-17T11:59:30Z' }), NOW).state).toBe('dead');
   });
 });
 

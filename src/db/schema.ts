@@ -1573,16 +1573,10 @@ export const streamProviderHealth = pgTable(
   ],
 )
 
-/** What the daily swarm probe found for a trending title's torrent (src/directStream/trending/). The CHECK below keeps the same list. */
-export const TRENDING_PROBE_OUTCOMES = ['confirmed', 'no_peers', 'no_video', 'error'] as const
-export type TrendingProbeOutcome = (typeof TRENDING_PROBE_OUTCOMES)[number]
-
 /**
  * The Stream side's "Trending" section: per host, the titles with the most seeders on the torrent indexes
  * that the owner has not seen (src/directStream/trending/). The only writer is TrendingRepo; a build replaces
- * the host's rows. `seeds`/`index`/`info_hash`/`release_name` are the best listing (the index's claim);
- * `probe_*` is what opening that torrent's swarm showed: `confirmed` means a peer sent a file list holding a
- * video, which a listed seed count does not promise. Null `probe_outcome`: listed, not probed yet.
+ * the host's rows. `seeds`/`index`/`info_hash`/`release_name` are the best listing (the index's claim).
  * Seen, watched and not-interested are not stored here: they are read from movie_titles at read time.
  */
 export const streamTrending = pgTable(
@@ -1602,19 +1596,12 @@ export const streamTrending = pgTable(
     releaseName: text('release_name').notNull(),
     sizeBytes: bigint('size_bytes', { mode: 'number' }),
     listedAt: timestamp('listed_at', { withTimezone: true, mode: 'date' }).notNull(),
-    probeOutcome: text('probe_outcome').$type<TrendingProbeOutcome>(),
-    probeDetail: text('probe_detail'),
-    probedAt: timestamp('probed_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     primaryKey({ columns: [t.host, t.titleId] }),
     index('stream_trending_rank_idx').on(t.host, t.kind, t.rank),
     check('stream_trending_kind_check', sql`${t.kind} in ('movie', 'tv')`),
     check('stream_trending_seeds_check', sql`${t.seeds} >= 0 and ${t.rank} > 0`),
-    check(
-      'stream_trending_probe_check',
-      sql`(${t.probeOutcome} is null) = (${t.probedAt} is null) and (${t.probeOutcome} is null or ${t.probeOutcome} in ('confirmed', 'no_peers', 'no_video', 'error'))`,
-    ),
   ],
 )
 

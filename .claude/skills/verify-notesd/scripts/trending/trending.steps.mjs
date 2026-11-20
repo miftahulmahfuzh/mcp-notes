@@ -10,10 +10,9 @@ export default async ({ page, base, shot, log }) => {
     if (!cond) throw new Error(what)
   }
   need(lines.length === 3, `3 trending posters expected, got ${lines.length}`)
-  need(lines.some((l) => /9,000/.test(l) && /confirmed/.test(l)), 'the 9,000-seed film should read confirmed')
-  need(lines.some((l) => /5,000/.test(l) && /no peer answered/.test(l)), 'the 5,000-seed film should read no peer answered')
-  const dots = await section.locator('.mv-q[data-state="confirmed"]').count()
-  need(dots === 2, `2 confirmed marks expected, got ${dots}`)
+  need(lines.some((l) => /9,000 seeds/.test(l)), 'the 9,000-seed film should show its seeds')
+  need(lines.some((l) => /5,000 seeds/.test(l)), 'the 5,000-seed film should show its seeds')
+  need(!lines.some((l) => /confirmed|no peer/.test(l)), 'no swarm state may be shown')
   await shot('trending-section')
   // A poster's crossed-eye icon: the poster leaves at the click, without a reload.
   const cell = section.getByRole('listitem').filter({ hasText: 'The Rivals of Amziah King' })

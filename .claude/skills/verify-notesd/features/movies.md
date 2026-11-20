@@ -56,14 +56,12 @@
   seeded into `movie_genre_guides` with `$V exec`).
 - Trending on torrents (Stream side, second section under the grid). `GET /api/movies/trending` is this
   host's daily list (`stream_trending`) of the most seeded films and series from apibay's top-100 and EZTV's
-  newest pages, with a swarm probe per title (`TorrentStreams.peek`: file list only, no download row, no
-  folder): `trending.probe.outcome` is `confirmed`, `no_peers`, `no_video`, `error` or null (not probed), and
-  `seeds` is only the index's claim. Seen, started, watched and not-interested titles are read from
+  newest pages; no swarm is joined and `seeds` is only the index's claim. Seen, started, watched and not-interested titles are read from
   `movie_titles` on every request and on every build, so a mark removes a title at once. `POST
   /api/movies/trending/refresh` runs a pass now. Needs `verify.sh up --web --trending` (fake index serves the
   top lists from `$TORRENT/trending.json`; fake TMDB answers `/find/<imdb>`); `NOTESD_TRENDING=off` is pinned
-  otherwise. Proof: `scripts/trending/journey.sh RUN` (listing, filters, confirmed vs no_peers, nothing left
-  behind by a probe, mark after build, then `trending.steps.mjs` in the page; the dead-swarm probe takes 20 s),
+  otherwise. Proof: `scripts/trending/journey.sh RUN` (listing, filters, no swarm joined, mark after
+  build, then `trending.steps.mjs` in the page),
   `npx vitest run tests/unit/directStream/trending web/src/lib/movies.test.tsx`,
   `npm run test:int -- tests/integration/trending.int.test.ts`.
 - VLC health (phase 9). Every `NOTESD_VLC_HEALTH_MS` (default 30 s; off at 0 or with no roots) each

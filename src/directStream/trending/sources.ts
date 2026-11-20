@@ -1,4 +1,4 @@
-import { DEFAULT_TRACKERS, isUsableHash, normalizeInfoHash, normalizeImdbId } from '../torrent/find/candidate.js';
+import { isUsableHash, normalizeInfoHash, normalizeImdbId } from '../torrent/find/candidate.js';
 import { asCount, asList, asRecord, asText, getIndexJson } from '../torrent/find/http.js';
 import { DEFAULT_INDEX_BASES, TORRENT_INDEX_USER_AGENT } from '../torrent/find/find.js';
 import { parseRelease } from '../torrent/find/release.js';
@@ -197,6 +197,3 @@ export function selectTrends(rows: readonly TrendRow[], options: SelectOptions =
   }
   return [...best.values()].sort((a, b) => b.seeds - a.seeds || a.imdbId.localeCompare(b.imdbId));
 }
-
-/** The trackers a probe joins with (DEFAULT_TRACKERS only: a listing here carries none of its own). */
-export const TRENDING_TRACKERS: readonly string[] = DEFAULT_TRACKERS;

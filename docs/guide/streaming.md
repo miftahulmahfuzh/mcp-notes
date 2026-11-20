@@ -1823,13 +1823,11 @@ A torrent is the third way direct streaming gets a film, beside a cloud provider
 daemon joins the torrent's swarm, downloads the one video file (and its subtitle files) in playing order,
 and serves it from its own disk to the player page.
 
-The Stream side of the Movies page lists, once a day, the most seeded films and series on these indexes and
-probes their swarms: see [Trending on torrents](movies.md#trending-on-torrents). That job never plays or
-downloads anything; it reads the indexes' top lists and uses `TorrentStreams.peek`. A probe of a torrent
-being played or opened answers from it and leaves it alone, and a probe deletes only the files its own join
-made: a torrent with a row or a folder on this machine keeps them.
+The Stream side of the Movies page lists, once a day, the most seeded films and series on these indexes:
+see [Trending on torrents](movies.md#trending-on-torrents). That job never plays, downloads or joins a
+swarm; it reads the indexes' top lists.
 
-![Trending on torrents, on the Stream side: the index's seed count and what the swarm said when it was opened](img/movies/trending.png)
+![Trending on torrents, on the Stream side: the index's seed count](img/movies/trending.png)
 
 ### The torrent engine and its file route
 
@@ -1870,7 +1868,7 @@ DHT node and no peer.
 8. Peers are reached over TCP only, with no switch. uTP beside it made things worse from this machine, WSL 2
    behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP alone fetched 183, 226, 184
    and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB.
-9. A late peer never ends the daemon. A torrent that was left (a swarm probe, a torrent that lost the race) may
+9. A late peer never ends the daemon. A torrent that was left (a torrent that lost the race) may
    still get a peer's handshake bytes just after; the engine ignores a handshake for a torrent it no longer
    holds (`handshakeGuard.ts`).
 

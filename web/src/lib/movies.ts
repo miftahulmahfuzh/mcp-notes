@@ -23,7 +23,6 @@ import type {
   TitleListItem,
   UnmatchedFile,
   WatchState,
-  TrendingTitle,
 } from '../moviesApi';
 import { STREAMING_SITES, type StreamingSite } from '../moviesApi';
 import type { MoviesRoute } from './route';
@@ -1144,7 +1143,7 @@ export function trendingOffText(reason: string): string {
   return TRENDING_OFF_TEXT[reason] ?? 'The trending list is off on this machine.';
 }
 
-/** "3 h ago", "2 days ago": for a probe's age. */
+/** "3 h ago", "2 days ago": for a list's age. */
 export function agoText(iso: string, now: number = Date.now()): string {
   const minutes = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60_000));
   if (minutes < 2) return 'just now';
@@ -1152,36 +1151,4 @@ export function agoText(iso: string, now: number = Date.now()): string {
   const hours = Math.round(minutes / 60);
   if (hours < 36) return `${hours} h ago`;
   return `${Math.round(hours / 24)} days ago`;
-}
-
-export type QualityState = 'confirmed' | 'dead' | 'unconfirmed';
-
-export interface MagnetQuality {
-  state: QualityState;
-  /** The short line under the poster. */
-  label: string;
-  /** What the mark means, in full, for the tooltip. */
-  tip: string;
-}
-
-/**
- * The "magnet quality" line of a trending poster. Seeds are what an index lists, which a dead swarm also shows, so they are
- * never the verdict: only a probe that saw a peer send the file list says "confirmed", and it says when.
- */
-export function magnetQuality(t: TrendingTitle, now: number = Date.now()): MagnetQuality {
-  const seeds = `${t.trending.seeds.toLocaleString('en-US')} seeds listed by ${t.trending.index}`;
-  const probe = t.trending.probe;
-  if (probe === null) return { state: 'unconfirmed', label: 'not confirmed', tip: `${seeds}. The swarm has not been opened yet, so nobody has confirmed a peer answers.` };
-  const when = agoText(probe.at, now);
-  const detail = probe.detail === null ? '' : ` ${probe.detail}.`;
-  switch (probe.outcome) {
-    case 'confirmed':
-      return { state: 'confirmed', label: `confirmed ${when}`, tip: `${seeds}. A peer sent the file list ${when}.${detail}` };
-    case 'no_peers':
-      return { state: 'dead', label: `no peer answered ${when}`, tip: `${seeds}, but no peer sent a file list ${when}.${detail} The listing may be stale.` };
-    case 'no_video':
-      return { state: 'dead', label: `no video file ${when}`, tip: `${seeds}. The swarm answered ${when} but holds no video file.${detail}` };
-    default:
-      return { state: 'unconfirmed', label: `could not check ${when}`, tip: `${seeds}. The check failed ${when}.${detail}` };
-  }
 }

@@ -121,13 +121,11 @@ export interface StreamingConfig {
 export interface TrendingConfig {
   /**
    * `NOTESD_TRENDING`, default on: once a day the torrent indexes' most seeded films and series that the owner has
-   * not seen are listed on the Stream side, and their swarms probed. `off`, or unset in a literal: nothing is asked.
+   * not seen are listed on the Stream side. `off`, or unset in a literal: nothing is asked.
    */
   enabled: boolean
   /** `NOTESD_TRENDING_SIZE`, default 100: titles of each kind (films, series) on the list. */
   size: number
-  /** `NOTESD_TRENDING_PROBE`, default 200: swarms opened a day, most seeded first, films and series alternating. `0`: none. */
-  probe: number
   /**
    * `NOTESD_TRENDING_SKIP_LANGUAGES`, default `hi,ta,te,ml,kn,bn,mr,pa` (Indian cinema): TMDB original-language codes (comma separated) whose titles never
    * make the list, and leave it at once when one is already there. `none`: nothing is skipped.
@@ -138,10 +136,9 @@ export interface TrendingConfig {
 export const DEFAULT_TRENDING_SIZE = 100
 /** Hindi and the other languages of Indian cinema the owner does not want recommended. */
 export const DEFAULT_TRENDING_SKIP_LANGUAGES = ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa']
-export const DEFAULT_TRENDING_PROBE = 200
 
 /** Trending off. Tests build `Config` literals with it (or leave `trending` out, which is the same). */
-export const DEFAULT_TRENDING_CONFIG: TrendingConfig = { enabled: false, size: DEFAULT_TRENDING_SIZE, probe: DEFAULT_TRENDING_PROBE, skipLanguages: DEFAULT_TRENDING_SKIP_LANGUAGES }
+export const DEFAULT_TRENDING_CONFIG: TrendingConfig = { enabled: false, size: DEFAULT_TRENDING_SIZE, skipLanguages: DEFAULT_TRENDING_SKIP_LANGUAGES }
 
 export const DEFAULT_STREAM_FRESH_DAYS = 7
 /** `claude/streaming/direct/cli.mjs` in this checkout: the resolver the daemon runs (direct streaming phase 1). */
@@ -972,13 +969,9 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
 }
 
 export function parseTrending(env: Record<string, string | undefined>): TrendingConfig {
-  const probeRaw = env.NOTESD_TRENDING_PROBE
-  const probe = probeRaw === undefined || probeRaw.trim() === '' ? DEFAULT_TRENDING_PROBE : Number(probeRaw.trim())
-  if (!Number.isInteger(probe) || probe < 0) throw new ConfigError(`NOTESD_TRENDING_PROBE must be a whole number of 0 or more (got ${probeRaw})`)
   return {
     enabled: parseSwitch('NOTESD_TRENDING', env.NOTESD_TRENDING),
     size: parsePositiveInt('NOTESD_TRENDING_SIZE', env.NOTESD_TRENDING_SIZE, DEFAULT_TRENDING_SIZE),
-    probe,
     skipLanguages: parseSkipLanguages(env.NOTESD_TRENDING_SKIP_LANGUAGES),
   }
 }

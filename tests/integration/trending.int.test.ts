@@ -1,8 +1,7 @@
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_DIRECT_STREAM_CONFIG } from '../../src/config.js';
-import { streamTrending } from '../../src/db/schema.js';
 import { DisabledTrending, type TrendingHandle, type TrendingStatus } from '../../src/directStream/trending/job.js';
 import { TrendingRepo, type TrendingEntry } from '../../src/directStream/trending/repo.js';
 import { moviesApiRoutes, type TrendingListResponse } from '../../src/http/moviesApi.js';
@@ -21,7 +20,7 @@ let here: MoviesService;
 let repo: TrendingRepo;
 let asked = 0;
 
-const STATUS: TrendingStatus = { enabled: true, off_reason: null, host: HOST_HERE, running: false, next_check_at: null, settings: { size: 100, probe: 200 }, last_pass: null };
+const STATUS: TrendingStatus = { enabled: true, off_reason: null, host: HOST_HERE, running: false, next_check_at: null, settings: { size: 100 }, last_pass: null };
 const handle = (over: Partial<TrendingHandle> = {}): TrendingHandle => ({
   enabled: true,
   startLine: () => '',
@@ -37,7 +36,7 @@ const handle = (over: Partial<TrendingHandle> = {}): TrendingHandle => ({
 
 function appFor(trending: TrendingHandle | null): Hono {
   const app = new Hono();
-  app.route('/', moviesApiRoutes({ ...h.deps, config: { ...h.deps.config, movies: MOVIES_TEST_CONFIG, directStream: { ...(h.deps.config.directStream ?? DEFAULT_DIRECT_STREAM_CONFIG), trending: { enabled: true, size: 100, probe: 200, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] } } }, movies: here, directStream: {} as never, trending }));
+  app.route('/', moviesApiRoutes({ ...h.deps, config: { ...h.deps.config, movies: MOVIES_TEST_CONFIG, directStream: { ...(h.deps.config.directStream ?? DEFAULT_DIRECT_STREAM_CONFIG), trending: { enabled: true, size: 100, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] } } }, movies: here, directStream: {} as never, trending }));
   return app;
 }
 
@@ -51,7 +50,6 @@ const entry = (n: number, over: Partial<TrendingEntry> = {}): TrendingEntry => (
   infoHash: hash(n),
   releaseName: `Film ${n} 2026 1080p`,
   sizeBytes: 2e9,
-  probe: null,
   ...over,
 });
 
@@ -84,13 +82,13 @@ beforeEach(async () => {
 });
 
 describe('TrendingRepo', () => {
-  it('replaces this host\'s rows only, ordered by kind then rank, and keeps a probe it was given', async () => {
-    await repo.replace(HOST_HERE, [entry(2), entry(1, { probe: { outcome: 'confirmed', detail: '1 video file', at: AT } }), entry(9, { titleId: 'tv-9', kind: 'tv', rank: 1 })], AT);
+  it('replaces this host\'s rows only, ordered by kind then rank', async () => {
+    await repo.replace(HOST_HERE, [entry(2), entry(1), entry(9, { titleId: 'tv-9', kind: 'tv', rank: 1 })], AT);
     await repo.replace(OTHER, [entry(3)], AT);
-    expect((await repo.rows(HOST_HERE)).map((r) => [r.titleId, r.rank, r.probeOutcome])).toEqual([
-      ['movie-1', 1, 'confirmed'],
-      ['movie-2', 2, null],
-      ['tv-9', 1, null],
+    expect((await repo.rows(HOST_HERE)).map((r) => [r.titleId, r.rank])).toEqual([
+      ['movie-1', 1],
+      ['movie-2', 2],
+      ['tv-9', 1],
     ]);
     await repo.replace(HOST_HERE, [entry(4)], new Date(AT.getTime() + 1000));
     expect((await repo.rows(HOST_HERE)).map((r) => r.titleId)).toEqual(['movie-4']);
@@ -99,31 +97,22 @@ describe('TrendingRepo', () => {
     expect(await repo.listedAt('nobody')).toBeNull();
   });
 
-  it('writes a probe for the torrent that was listed, and leaves a row whose torrent changed alone', async () => {
+  it('refuses a title that is not stored', async () => {
     await repo.replace(HOST_HERE, [entry(1)], AT);
-    await repo.recordProbe(HOST_HERE, 'movie-1', hash(77), 'confirmed', 'stale hash', AT);
-    expect((await repo.rows(HOST_HERE))[0]?.probeOutcome).toBeNull();
-    await repo.recordProbe(HOST_HERE, 'movie-1', hash(1), 'no_peers', 'no peer sent a file list within 20 s', AT);
-    expect((await repo.rows(HOST_HERE))[0]).toMatchObject({ probeOutcome: 'no_peers', probeDetail: 'no peer sent a file list within 20 s', probedAt: AT });
-  });
-
-  it('refuses a probe outcome without its time, and a title that is not stored', async () => {
-    await repo.replace(HOST_HERE, [entry(1)], AT);
-    await expect(h.deps.db.update(streamTrending).set({ probeOutcome: 'confirmed' }).where(eq(streamTrending.titleId, 'movie-1'))).rejects.toThrow();
     await expect(repo.replace(HOST_HERE, [entry(1, { titleId: 'movie-404' })], AT)).rejects.toThrow();
     expect((await repo.rows(HOST_HERE)).map((r) => r.titleId)).toEqual(['movie-1']);
   });
 });
 
 describe('GET /api/movies/trending', () => {
-  it('lists the titles with their seeds and what the swarm probe showed', async () => {
-    await repo.replace(HOST_HERE, [entry(1, { probe: { outcome: 'confirmed', detail: '1 video file of 2, 4 peers connected', at: AT } }), entry(2)], AT);
+  it('lists the titles with their seeds', async () => {
+    await repo.replace(HOST_HERE, [entry(1), entry(2)], AT);
     const body = await read(appFor(handle()));
     expect(body.enabled).toBe(true);
     expect(body.listed_at).toBe(AT.toISOString());
-    expect(body.titles.map((t) => [t.id, t.trending.kind_rank, t.trending.seeds, t.trending.index, t.trending.probe?.outcome ?? null])).toEqual([
-      ['movie-1', 1, 999, 'apibay', 'confirmed'],
-      ['movie-2', 2, 998, 'apibay', null],
+    expect(body.titles.map((t) => [t.id, t.trending.kind_rank, t.trending.seeds, t.trending.index])).toEqual([
+      ['movie-1', 1, 999, 'apibay'],
+      ['movie-2', 2, 998, 'apibay'],
     ]);
     expect(body.titles[0]).toMatchObject({ title: 'Film 1', state: 'unwatched', not_interested: false });
   });

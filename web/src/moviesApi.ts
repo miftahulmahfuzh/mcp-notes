@@ -472,10 +472,7 @@ export interface SiteTitle {
 /** The body of phase 3's `POST /api/stream/play`. A series always names its episode. `provider` asks that one provider only (`torrent`). */
 export type StreamRef = ({ kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb_id: number; season: number; episode: number }) & { provider?: string };
 
-/** What opening a trending torrent's swarm showed: `confirmed` (a peer sent a file list with a video), `no_peers`, `no_video`, `error`. */
-export type TrendingProbeOutcome = 'confirmed' | 'no_peers' | 'no_video' | 'error';
-
-/** One poster of the Trending section: the grid's shape plus what the indexes and the swarm probe said of its torrent. */
+/** One poster of the Trending section: the grid's shape plus what the indexes listed of its torrent. */
 export interface TrendingTitle extends TitleListItem {
   trending: {
     kind_rank: number;
@@ -484,13 +481,12 @@ export interface TrendingTitle extends TitleListItem {
     release: string;
     size_bytes: number | null;
     listed_at: string;
-    probe: { outcome: TrendingProbeOutcome; detail: string | null; at: string } | null;
   };
 }
 
 /** `GET /api/movies/trending`. Off is an answer, not an error. */
 export type TrendingListResponse =
-  | { enabled: true; titles: TrendingTitle[]; listed_at: string | null; running: boolean; probe: number; /** The last pass found no torrent peer even for its control torrent: this network cannot judge a swarm. */ network_blocked: boolean }
+  | { enabled: true; titles: TrendingTitle[]; listed_at: string | null; running: boolean }
   | { enabled: false; reason: string; titles: TrendingTitle[]; listed_at: null };
 
 export const MOVIES_EVENTS_URL = '/api/movies/events';
@@ -683,21 +679,19 @@ export async function fetchStreamTitles(signal?: AbortSignal): Promise<StreamLis
 
 /** The Stream side's Trending section. Anything but a well-formed `enabled: true` reads as off. */
 export async function fetchTrending(signal?: AbortSignal): Promise<TrendingListResponse> {
-  const j = await getJson<{ enabled?: unknown; reason?: unknown; titles?: TrendingTitle[] | null; listed_at?: unknown; status?: { running?: unknown; settings?: { probe?: unknown } | null; last_pass?: { stopped?: unknown } | null } | null }>('/api/movies/trending', signal);
+  const j = await getJson<{ enabled?: unknown; reason?: unknown; titles?: TrendingTitle[] | null; listed_at?: unknown; status?: { running?: unknown } | null }>('/api/movies/trending', signal);
   if (j.enabled === true) {
     return {
       enabled: true,
       titles: list(j.titles),
       listed_at: typeof j.listed_at === 'string' ? j.listed_at : null,
       running: j.status?.running === true,
-      probe: typeof j.status?.settings?.probe === 'number' ? j.status.settings.probe : 0,
-      network_blocked: j.status?.last_pass?.stopped === 'no_peers_here',
     };
   }
   return { enabled: false, reason: typeof j.reason === 'string' ? j.reason : 'setting_off', titles: [], listed_at: null };
 }
 
-/** Asks for a new trending list and its probes now (the section's refresh icon). Throws `trending_off` when the job is off. */
+/** Asks for a new trending list now (the section's refresh icon). Throws `trending_off` when the job is off. */
 export async function askTrendingRefresh(): Promise<void> {
   await postJson<unknown>('/api/movies/trending/refresh', {});
 }

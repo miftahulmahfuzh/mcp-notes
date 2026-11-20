@@ -37,7 +37,6 @@ import { siteTitleView, type SiteTitleView } from '../streaming/sitePlays.js';
 import { sameOriginOnly } from './sameOrigin.js';
 import { isFreshForTrending, isSkippedLanguage, type TrendingOffReason, type TrendingStatus } from '../directStream/trending/job.js';
 import { TrendingRepo } from '../directStream/trending/repo.js';
-import type { TrendingProbeOutcome } from '../db/schema.js';
 
 /**
  * /api/movies/* (MOVIES_LIBRARY_PLAN phase 4): the read model, user state (watched, rating, review note), the
@@ -94,7 +93,7 @@ export type StreamListResponse =
   | { enabled: true; titles: TitleListItem[]; fresh_days: number; /** The titles played on a streaming site that TMDB does not list, this machine's, the one played last first. */ site_titles: SiteTitleView[] }
   | { enabled: false; reason: 'direct_stream_off'; titles: TitleListItem[] };
 
-/** One title of the Trending section: the grid's shape plus what the indexes and the swarm probe said of its torrent. */
+/** One title of the Trending section: the grid's shape plus what the indexes listed of its torrent. */
 export type TrendingTitle = TitleListItem & {
   trending: {
     kind_rank: number;
@@ -103,8 +102,6 @@ export type TrendingTitle = TitleListItem & {
     release: string;
     size_bytes: number | null;
     listed_at: string;
-    /** What opening the torrent's swarm showed; null while it has not been probed. */
-    probe: { outcome: TrendingProbeOutcome; detail: string | null; at: string } | null;
   };
 };
 
@@ -386,7 +383,6 @@ export function moviesApiRoutes(
             release: row.releaseName,
             size_bytes: row.sizeBytes,
             listed_at: row.listedAt.toISOString(),
-            probe: row.probeOutcome === null || row.probedAt === null ? null : { outcome: row.probeOutcome, detail: row.probeDetail, at: row.probedAt.toISOString() },
           },
         });
       }
@@ -396,7 +392,7 @@ export function moviesApiRoutes(
     }),
   );
 
-  /** The refresh icon: one trending pass now (a new list, then the probes). Answers at once; the pass runs on. */
+  /** The refresh icon: one trending pass now (a new list). Answers at once; the pass runs on. */
   api.post(
     '/api/movies/trending/refresh',
     sameOriginOnly,

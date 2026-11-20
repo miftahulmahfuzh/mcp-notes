@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # journey.sh RUN: the Stream side's daily trending list, end to end, on a `verify.sh up --web --trending` run.
 # The fake index (scripts/torrent/fake-index.mjs) lists, as apibay's and EZTV's top lists, titles of the fake TMDB:
-#   467905 How to Make a Killing  the seeded fixture film       -> confirmed
-#   990001 The Rivals of Amziah King  a hash nobody seeds        -> no_peers (the probe waits 20 s); marked
+#   467905 How to Make a Killing  the seeded fixture film       -> listed
+#   990001 The Rivals of Amziah King  a hash nobody seeds        -> listed (no swarm is joined); marked
 #                                 not interested AFTER the list was built -> leaves at once, back on undo
 #   990004 Oldboy                 the owner's watched flag set before the pass -> never listed
 #   990003 Bad Apples             a cinema recording (HDCAM)     -> never listed
 #   990002 The Dog Stars          in the fixture library partway through (state dropped) -> never listed: started
-#   247718 MobLand                the seeded season pack (EZTV)  -> a series, confirmed
+#   247718 MobLand                the seeded season pack (EZTV)  -> a series, listed
 # Every stage drives the real daemon over HTTP, then the page with Playwright. The first failed check stops it.
 set -euo pipefail
 
@@ -80,7 +80,7 @@ done
 jq -e '.status.last_pass.finished_at != null' <<<"$s" >/dev/null || fail "the pass did not finish in 90 s: $(jq -c .status <<<"$s")"
 echo "$s" >"$DIR/evidence/trending-after-pass.json"
 jq -e '.status.last_pass.stopped == "done"' <<<"$s" >/dev/null || fail "the pass stopped with $(jq -c .status.last_pass <<<"$s")"
-ok "pass finished: $(jq -c '.status.last_pass | {movies, series, probed, confirmed, stopped}' <<<"$s")"
+ok "pass finished: $(jq -c '.status.last_pass | {movies, series, stopped}' <<<"$s")"
 
 stage list
 [ "$(ids <<<"$s")" = "movie-467905 movie-990001 tv-247718" ] || fail "wrong titles: $(ids <<<"$s") (Oldboy is watched, The Dog Stars is partway through and Bad Apples is a cinema recording: none may be listed)"
@@ -89,22 +89,14 @@ jq -e '[.titles[] | select(.kind == "movie") | .trending.seeds] == [9000, 5000]'
 jq -e '.titles[] | select(.id == "tv-247718") | .trending.seeds == 700 and .trending.index == "eztv"' <<<"$s" >/dev/null || fail "the series is not listed from eztv with 700 seeds"
 ok "films by seeds 9000, 5000; the series from eztv with 700"
 
-stage quality
-q() { jq -r --arg id "$1" '.titles[] | select(.id == $id) | .trending.probe.outcome // "none"' <<<"$s"; }
-[ "$(q movie-467905)" = confirmed ] || fail "the seeded film should be confirmed, got $(q movie-467905)"
-[ "$(q tv-247718)" = confirmed ] || fail "the seeded pack should be confirmed, got $(q tv-247718)"
-[ "$(q movie-990001)" = no_peers ] || fail "the unseeded hash should be no_peers, got $(q movie-990001)"
-ok "magnet quality: film confirmed, pack confirmed, the unseeded 5000-seed listing no_peers (listed seeds are not a swarm)"
-jq -e '.titles[] | select(.id == "movie-467905") | .trending.probe.detail | test("video")' <<<"$s" >/dev/null || fail "no detail on the confirmed film"
-
-stage nothing-left-behind
-# A probe leaves no download: no stream_torrents row and nothing in the torrent folder for the probed hashes.
+stage no-swarm
+jq -e '[.titles[].trending | has("probe")] | any | not' <<<"$s" >/dev/null || fail "a title still carries a probe field"
 n="$("$V" exec "$RUN" "select count(*) from stream_torrents" 2>/dev/null | grep -E '^ +[0-9]+$' | tr -d ' ')"
-[ "${n:-x}" = 0 ] || fail "a probe wrote $n stream_torrents row(s)"
+[ "${n:-x}" = 0 ] || fail "the pass wrote $n stream_torrents row(s)"
 for h in "$FILM_HASH" "$PACK_HASH" "$DEAD_HASH"; do
-  [ ! -e "$DIR/data/movies/torrents/$h" ] || fail "a probe left the folder of $h"
+  [ ! -e "$DIR/data/movies/torrents/$h" ] || fail "the pass left the folder of $h"
 done
-ok "no stream_torrents row and no folder left by 3 probes"
+ok "no probe field, no stream_torrents row and no torrent folder: no swarm was joined"
 
 stage requests
 if grep -E '"path":"/(precompiled|api/get-torrents)' "$T/index.jsonl" >/dev/null; then ok "the indexes were asked: $(grep -cE '/precompiled|/api/get-torrents' "$T/index.jsonl") requests, all to the fake index"; else fail "the fake index was never asked"; fi
@@ -119,6 +111,6 @@ ok "the undo puts it back"
 
 stage page
 "$V" ui "$RUN" "$HERE/trending.steps.mjs" >/dev/null || fail "the page steps failed (see the ui transcript in $DIR/evidence)"
-ok "the page shows the section, the quality lines and takes a poster off at the click"
+ok "the page shows the section, the seed lines and takes a poster off at the click"
 echo "trending PASS"
 "$V" note "$RUN" "trending PASS"

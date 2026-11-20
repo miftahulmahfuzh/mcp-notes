@@ -27,7 +27,7 @@ a fake TMDB, a fake VLC), so their titles, ids and paths are the fixture's.
 | It knows how far you got | Play starts VLC at the second you stopped and reads its position every 5 seconds; a film opened from Explorer is seen through VLC's recent list. Watch state is derived from that, never stored | [Playback](#playback), [Watch state](#watch-state) |
 | One Play, every source | Play goes where the title last played. The caret names the source by hand: the file, a cloud stream, a torrent, or one of four sites, each row saying what it remembers | [The play menu](#the-play-menu) |
 | Every name opens a list | A person, a studio or a genre on a title's page opens its titles with your marks on each. A genre's guide is written for that one title, with web search, once | [Names you can click](#names-you-can-click) |
-| A watch list and a shortlist | "Interested" keeps a title for later. Trending on torrents lists the most seeded films and series you have not seen, each swarm opened to see whether a peer answers | [The Stream side](#the-stream-side), [Trending on torrents](#trending-on-torrents) |
+| A watch list and a shortlist | "Interested" keeps a title for later. Trending on torrents lists the most seeded films and series you have not seen | [The Stream side](#the-stream-side), [Trending on torrents](#trending-on-torrents) |
 | An episode's whole story | The book icon on an episode retells it from its own dialogue | [The Movies page](#the-movies-page) |
 | Ask it | Seven tools in Claude Code and the wall's chat: history, filmographies, "play something", marks, who is on the poster. An answer about a title you are halfway through stops where you stopped | [What you can ask](#what-you-can-ask) |
 | A broken VLC explains itself | A health log of every `vlc.exe`, driver resets and a lost picture included, and `/trace-vlc-bug` to read it | [The VLC health log](#the-vlc-health-log), [Tracing a VLC problem](#tracing-a-vlc-problem-trace-vlc-bug) |
@@ -616,7 +616,7 @@ and series with the most seeders on the torrent indexes that you have not seen. 
 asked to play, so nothing in this section is "verified to stream"; it is a shortlist to pick from, and
 the Stream grid above it stays what it was (titles that actually resolved on this machine).
 
-![Trending on torrents: under each poster the seeds the index lists and what the swarm said when it was opened; a film has a play icon](img/movies/trending.png)
+![Trending on torrents: under each poster the seeds the index lists; a film has a play icon](img/movies/trending.png)
 
 **Where the list comes from.** Once a day (the job looks every hour whether the list is a day old, and
 builds the first one two minutes after notesd starts) the daemon reads the torrent indexes' own top
@@ -640,53 +640,22 @@ poster's check and crossed-eye icons work here as on the Stream grid, take the p
 and the next build does not list the title. The notice offers an undo, which puts it back: nothing was
 deleted from the list.
 
-**Magnet quality.** Each poster has a line under it: the seeds the index lists, a dot and a short
-verdict. The seed count is the index's claim and a dead swarm shows one too (several were hit on
-2026-11-16: listed seeders, no peer within 20 s), so it is never the verdict:
-
-| Line | Meaning |
-| --- | --- |
-| filled dot, "confirmed 3 h ago" | The swarm was opened and a peer sent its file list, with at least one video file, at that time. |
-| dashed dot, "not confirmed" | Listed, swarm not opened yet (probes run after the list is built, or `NOTESD_TRENDING_PROBE` is lower than the list). |
-| dashed dot, struck through, "no peer answered 10 min ago" | The swarm was opened and no peer sent a file list within 20 s. The listing may be stale. |
-| dashed dot, struck through, "no video file 10 min ago" | A peer answered, but the torrent holds no video file. |
-| dashed dot, "could not check 10 min ago" | The check itself failed (the engine, not the swarm); not a verdict on the torrent. |
-
-The line under the heading says when the list was built and how many of its titles are confirmed
-(`Listed 7 h ago; 130 of 166 confirmed`). Hover a poster's line for the full text: seeds and the
-index that listed them, what the swarm showed, and when. "Confirmed" says a file list arrived, not that the film will play at speed: the real play still
-opens the swarm, probes the header and may remux.
-
-**The probe.** After a build, the daemon opens the swarms of the most seeded titles, films and series
-alternating, up to `NOTESD_TRENDING_PROBE` (200) a day, three at a time, each for at most 20 s. A probe
-(`TorrentStreams.peek`) joins the swarm only to see the file list, selects and downloads nothing,
-writes no download record and leaves the swarm at once, so it leaves nothing on disk and no row among
-the downloads. A torrent already open for a play, or finished on this machine, answers from what it
-holds. Nothing is probed while a VLC play, a stream on screen or a stream being started exists; the
-pass stops and the rest are probed at the next hourly check. 200 swarms take a few minutes when most are alive and at
-most about 20 minutes when most are dead. A confirmation of the last 12 hours is carried over when a refresh
-lists the same torrent again; a failure never is, because it may be this machine's network (an office
-firewall hid every peer once), so it is tried again. This is a daily snapshot, not a promise for tonight: a swarm that was
-alive at 06:00 can be dead at 22:00, which is why the line says when.
-
-**A network that cannot reach peers.** Before judging any swarm a pass opens a control torrent that is
-alive everywhere (Blender's open-licensed Sintel, 30 s). When it finds no peer either, the network is
-what failed (an office firewall hid every peer once), so the pass records nothing, stops with
-`no_peers_here`, the section says the network cannot reach torrent peers, and the probes run again at
-the next hourly check. A failed control caused by the engine, not by silence, is not a verdict on the network.
+**Seeds.** Each poster has a line under it: the seeds the index lists. That is the index's claim and
+a dead swarm shows one too, so nothing here promises the torrent plays; no swarm is joined to check
+(a daily check said "confirmed" for 188 of 197 titles and made every pass take minutes, so it was
+dropped on 2026-11-20). The line under the heading says when the list was built (`Listed 7 h ago`).
 
 **Playing one.** A poster opens the title's page, like any Stream poster. On a film a play icon beside
 its line plays it from its torrent (`provider: "torrent"`, the same as the codename TM): the finder asks
 the indexes by IMDb id again and picks by swarm, so it need not be the torrent the line speaks of. A
 series is opened on its page, where you pick the episode.
 
-**Refresh.** The refresh icon beside the heading builds the list again now and probes it; it turns while
-the pass runs. `NOTESD_TRENDING=off` shows the section with one line saying it is off; with it off nothing
-is asked of an index or TMDB and no swarm is opened. The list is also off while torrents, direct
+**Refresh.** The refresh icon beside the heading builds the list again now; it turns while the pass
+runs. `NOTESD_TRENDING=off` shows the section with one line saying it is off; with it off nothing is
+asked of an index or TMDB. The list is also off while torrents, direct
 streaming, the movie library or the TMDB credential are.
 
-**Two machines.** Each machine builds and probes its own list from its own network (a swarm answers
-differently from another network). Nothing of it is carried to the other machine.
+**Two machines.** Each machine builds its own list. Nothing of it is carried to the other machine.
 
 ## Playback
 
@@ -1226,7 +1195,7 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/ids.ts` | Movie id shape and lookup (ids are written by the database) |
 | `src/movies/reviewNote.ts` | The review as a note through `NotesService` |
 | `src/movies/continue.ts` | The continue rule and `playSomething` |
-| `src/directStream/trending/` | The trending list: `sources.ts` (the indexes' top lists, the choice of one listing per title), `repo.ts` (`TrendingRepo`, the only writer of `stream_trending`), `job.ts` (the daily build, the swarm probes, the off reasons) |
+| `src/directStream/trending/` | The trending list: `sources.ts` (the indexes' top lists, the choice of one listing per title), `repo.ts` (`TrendingRepo`, the only writer of `stream_trending`), `job.ts` (the daily build, the off reasons) |
 | `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position, and how a title was last streamed (`channel`, `channelFailed`, `recordSitePlay`) |
 | `src/movies/streamLive.ts` | The stream on screen, in memory, for `GET /api/movies/player` |
 | `src/movies/story.ts` | An episode's story |

@@ -91,7 +91,7 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
 
   const refreshStore = store.refresh;
 
-  // The Trending section's refresh: a new list and its swarm probes, now. The page asks again every few seconds while it runs.
+  // The Trending section's refresh: a new list, now. The page asks again every few seconds while it runs.
   const [trendBusy, setTrendBusy] = useState(false);
   const trendRunning = trendBusy || store.trending?.enabled === true && store.trending.running;
   useEffect(() => {

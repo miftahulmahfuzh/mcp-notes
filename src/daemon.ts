@@ -533,7 +533,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             busy: playing,
           });
   // The daily trending list of the Stream side: a DisabledTrending unless NOTESD_TRENDING is on.
-  deps.trending = buildTrending({ config, db, movies, torrents: deps.torrents ?? null, busy: playing });
+  deps.trending = buildTrending({ config, db, movies, torrents: deps.torrents ?? null });
   // Started and closed by startBackground; never in a play's path.
   deps.trackerLists = trackerLists.job;
   // Torrent phase 8: closed by startBackground's stop, which ends a running Whisper worker.

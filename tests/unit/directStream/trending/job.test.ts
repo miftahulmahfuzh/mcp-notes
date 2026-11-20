@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../../../src/config.js';
-import type { StreamTrendingRow, TrendingProbeOutcome } from '../../../../src/db/schema.js';
-import { buildTrending, DisabledTrending, isFreshForTrending, isSkippedLanguage, TrendingJob, type PeekResult, type TrendingJobOptions } from '../../../../src/directStream/trending/job.js';
+import type { StreamTrendingRow } from '../../../../src/db/schema.js';
+import { buildTrending, DisabledTrending, isFreshForTrending, isSkippedLanguage, TrendingJob, type TrendingJobOptions } from '../../../../src/directStream/trending/job.js';
 import type { TrendingEntry, TrendingStore } from '../../../../src/directStream/trending/repo.js';
 import type { TrendRow } from '../../../../src/directStream/trending/sources.js';
-import { TorrentError } from '../../../../src/directStream/torrent/types.js';
 import type { TitleListItem } from '../../../../src/movies/read.js';
 
-const CONTROL = '08ada5a7a6183aae1e09d831df6748d566095a10';
 const NOW = new Date('2026-11-17T06:00:00Z');
 const hash = (n: number): string => n.toString(16).padStart(40, 'b');
 
@@ -28,9 +26,6 @@ class MemoryStore implements TrendingStore {
       releaseName: e.releaseName,
       sizeBytes: e.sizeBytes,
       listedAt: at,
-      probeOutcome: e.probe?.outcome ?? null,
-      probeDetail: e.probe?.detail ?? null,
-      probedAt: e.probe?.at ?? null,
     }));
   }
   async rows(): Promise<StreamTrendingRow[]> {
@@ -38,10 +33,6 @@ class MemoryStore implements TrendingStore {
   }
   async listedAt(): Promise<Date | null> {
     return this.data[0]?.listedAt ?? null;
-  }
-  async recordProbe(_h: string, titleId: string, infoHash: string, outcome: TrendingProbeOutcome, detail: string | null, at: Date): Promise<void> {
-    const r = this.data.find((d) => d.titleId === titleId && d.infoHash === infoHash);
-    if (r !== undefined) Object.assign(r, { probeOutcome: outcome, probeDetail: detail, probedAt: at });
   }
 }
 
@@ -61,10 +52,9 @@ const item = (id: string, over: Partial<TitleListItem> = {}): TitleListItem =>
 function make(rows: TrendRow[], over: Partial<TrendingJobOptions> & { states?: Record<string, Partial<TitleListItem>> } = {}) {
   const store = new MemoryStore();
   const asked: string[] = [];
-  const peeked: string[] = [];
   const { states = {}, ...rest } = over;
   const job = new TrendingJob({
-    config: { size: 2, probe: 10 },
+    config: { size: 2 },
     host: 'laptop',
     store,
     tmdb: {
@@ -76,23 +66,18 @@ function make(rows: TrendRow[], over: Partial<TrendingJobOptions> & { states?: R
     },
     ensureTitle: async (t) => `${t.kind}-${t.tmdbId}`,
     titles: async (ids) => ids.map((id) => item(id, states[id] ?? {})),
-    peek: async (h): Promise<PeekResult> => {
-      if (h !== CONTROL) peeked.push(h);
-      return { files: 2, videos: 1, peers: 4, live: true };
-    },
-    busy: () => false,
     changed: () => undefined,
     fetchTrends: async () => ({ rows, attempts: [{ index: 'apibay', outcome: 'ok', detail: '', listed: rows.length }] }),
     now: () => NOW,
     log: () => undefined,
     ...rest,
   });
-  return { job, store, asked, peeked };
+  return { job, store, asked };
 }
 
 describe('TrendingJob', () => {
-  it('lists the top of each kind by seeds, ranked, and probes them', async () => {
-    const { job, store, peeked } = make([listing(1, 'movie', 100), listing(2, 'movie', 900), listing(3, 'movie', 500), listing(50, 'tv', 300), listing(51, 'tv', 800)]);
+  it('lists the top of each kind by seeds, ranked, and joins no swarm', async () => {
+    const { job, store } = make([listing(1, 'movie', 100), listing(2, 'movie', 900), listing(3, 'movie', 500), listing(50, 'tv', 300), listing(51, 'tv', 800)]);
     await job.pass(false);
     expect(store.data.map((r) => [r.titleId, r.rank, r.seeds])).toEqual([
       ['movie-2', 1, 900],
@@ -100,9 +85,7 @@ describe('TrendingJob', () => {
       ['tv-51', 1, 800],
       ['tv-50', 2, 300],
     ]);
-    expect(store.data.every((r) => r.probeOutcome === 'confirmed')).toBe(true);
-    expect(peeked).toHaveLength(4);
-    expect(job.status().last_pass).toMatchObject({ movies: 2, series: 2, probed: 4, confirmed: 4, stopped: 'done' });
+    expect(job.status().last_pass).toMatchObject({ movies: 2, series: 2, stopped: 'done' });
   });
 
   it('never lists a title the owner has seen, started, or marked, and fills the place from further down', async () => {
@@ -117,7 +100,7 @@ describe('TrendingJob', () => {
   it('never lists a title whose original language is skipped (Hindi), and fills the place from further down', async () => {
     const lang: Record<string, string | null> = { 'movie-1': 'hi', 'movie-2': null, 'movie-3': 'en' };
     const { job, store } = make([listing(1, 'movie', 900), listing(2, 'movie', 800), listing(3, 'movie', 700)], {
-      config: { size: 2, probe: 0, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] },
+      config: { size: 2, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] },
       languages: async (ids) => new Map(ids.map((id) => [id, lang[id] ?? null])),
     });
     await job.pass(false);
@@ -127,7 +110,7 @@ describe('TrendingJob', () => {
   it('asks TMDB for a title with no language, keeps the answer, and skips it when it is Hindi', async () => {
     const saved: [string, string][] = [];
     const { job, store } = make([listing(1, 'movie', 900), listing(2, 'movie', 800)], {
-      config: { size: 5, probe: 0, skipLanguages: ['hi'] },
+      config: { size: 5, skipLanguages: ['hi'] },
       languages: async () => new Map(),
       tmdb: { findByImdb: async (imdb) => ({ kind: 'movie', tmdbId: Number(imdb.slice(2)) - 1000000 }), originalLanguage: async (_k, id) => (id === 1 ? 'hi' : 'en') },
       saveLanguage: async (id, language) => {
@@ -141,23 +124,21 @@ describe('TrendingJob', () => {
 
   it('skips a title with no known language whose release names only a skipped one', async () => {
     const rows = [{ ...listing(1, 'movie', 900), name: 'Scene (2026) 1080p Telugu DVDScr x264 AAC' }, listing(2, 'movie', 800)];
-    const { job, store } = make(rows, { config: { size: 5, probe: 0, skipLanguages: ['te'] }, languages: async () => new Map() });
+    const { job, store } = make(rows, { config: { size: 5, skipLanguages: ['te'] }, languages: async () => new Map() });
     await job.pass(false);
     expect(store.data.map((r) => r.titleId)).toEqual(['movie-2']);
   });
 
-  it('keeps the old list and probes nothing when the indexes list nothing', async () => {
-    const { job, store, peeked } = make([listing(1, 'movie', 100)]);
+  it('keeps the old list when the indexes list nothing', async () => {
+    const { job, store } = make([listing(1, 'movie', 100)]);
     await job.pass(false);
     const before = store.data.map((r) => r.titleId);
     const again = make([], { fetchTrends: async () => ({ rows: [], attempts: [{ index: 'apibay', outcome: 'error', detail: 'HTTP 503', listed: 0 }] }) });
     again.store.data = store.data;
-    peeked.length = 0;
     await again.job.pass(false);
     expect(again.store.data.map((r) => r.titleId)).toEqual(before);
     expect(again.store.replaced).toBe(0);
     expect(again.job.status().last_pass).toMatchObject({ stopped: 'no_listing' });
-    expect(peeked).toEqual([]);
   });
 
   it('skips a title TMDB does not know, and asks TMDB once per IMDb id that is new', async () => {
@@ -166,100 +147,6 @@ describe('TrendingJob', () => {
     expect(store.data.map((r) => r.titleId)).toEqual(['movie-1']);
     await job.pass(false);
     expect(asked.filter((i) => i === 'tt1000001')).toHaveLength(1);
-  });
-
-  it('says confirmed only for a swarm that answered, and tells why one did not', async () => {
-    const answers: Record<string, () => Promise<PeekResult>> = {
-      [hash(1)]: async () => ({ files: 3, videos: 1, peers: 2, live: true }),
-      [hash(2)]: async () => {
-        throw new TorrentError('no_metadata', 'no peers');
-      },
-      [hash(3)]: async () => ({ files: 2, videos: 0, peers: 1, live: true }),
-      [hash(4)]: async () => {
-        throw new Error('engine exploded');
-      },
-    };
-    const { job, store } = make([listing(1, 'movie', 400), listing(2, 'movie', 300), listing(3, 'movie', 200), listing(4, 'movie', 100)], {
-      config: { size: 4, probe: 10 },
-      peek: (h) => (answers[h] as () => Promise<PeekResult>)(),
-    });
-    await job.pass(false);
-    expect(store.data.map((r) => r.probeOutcome)).toEqual(['confirmed', 'no_peers', 'no_video', 'error']);
-    expect(store.data[1]?.probeDetail).toContain('20 s');
-    expect(store.data.every((r) => r.probedAt?.getTime() === NOW.getTime())).toBe(true);
-  });
-
-  it('opens no more swarms than NOTESD_TRENDING_PROBE, alternating films and series', async () => {
-    const { job, store, peeked } = make([listing(1, 'movie', 900), listing(2, 'movie', 800), listing(50, 'tv', 700), listing(51, 'tv', 600)], { config: { size: 2, probe: 3 } });
-    await job.pass(false);
-    expect(peeked).toEqual([hash(1), hash(50), hash(2)]);
-    expect(store.data.filter((r) => r.probeOutcome === null).map((r) => r.titleId)).toEqual(['tv-51']);
-  });
-
-  it('judges no swarm when the control torrent finds no peer either, records nothing, and says so', async () => {
-    const { job, store, peeked } = make([listing(1, 'movie', 900), listing(2, 'movie', 800)], {
-      peek: async (h) => {
-        peeked.push(h);
-        throw new TorrentError('no_metadata', 'no peers');
-      },
-    });
-    await job.pass(false);
-    expect(peeked).toEqual([CONTROL]);
-    expect(store.data.every((r) => r.probeOutcome === null)).toBe(true);
-    expect(job.status().last_pass).toMatchObject({ stopped: 'no_peers_here', probed: 0 });
-  });
-
-  it('judges the swarms once the control answers, and an engine error on the control is not a verdict on the network', async () => {
-    const hashes: string[] = [];
-    const { job, store } = make([listing(1, 'movie', 900)], {
-      peek: async (h) => {
-        hashes.push(h);
-        if (h === CONTROL) throw new Error('engine exploded');
-        return { files: 1, videos: 1, peers: 2, live: true };
-      },
-    });
-    await job.pass(false);
-    expect(hashes).toHaveLength(2);
-    expect(store.data[0]?.probeOutcome).toBe('confirmed');
-  });
-
-  it('opens none with probe 0', async () => {
-    const { job, peeked } = make([listing(1, 'movie', 900)], { config: { size: 2, probe: 0 } });
-    await job.pass(false);
-    expect(peeked).toEqual([]);
-  });
-
-  it('stops probing while something plays, and says so', async () => {
-    const { job, peeked } = make([listing(1, 'movie', 900), listing(2, 'movie', 800)], { busy: () => true });
-    await job.pass(false);
-    expect(peeked).toEqual([]);
-    expect(job.status().last_pass?.stopped).toBe('busy');
-  });
-
-  it('carries a recent probe of the same torrent into a new list and probes the rest', async () => {
-    const { job, store, peeked } = make([listing(1, 'movie', 900), listing(2, 'movie', 800)]);
-    await job.pass(false);
-    expect(peeked).toHaveLength(2);
-    peeked.length = 0;
-    await job.pass(true);
-    expect(peeked).toEqual([]);
-    expect(store.data.every((r) => r.probeOutcome === 'confirmed')).toBe(true);
-  });
-
-  it('probes a fresh list again at the next check when a play cut the probes short, without listing again', async () => {
-    let busy = true;
-    let clock = NOW.getTime();
-    const { job, store, peeked } = make([listing(1, 'movie', 900), listing(2, 'movie', 800)], { busy: () => busy, now: () => new Date(clock), initialDelayMs: 1, checkMs: 5 });
-    job.start();
-    await new Promise((r) => setTimeout(r, 40));
-    expect(store.replaced).toBe(1);
-    expect(peeked).toEqual([]);
-    busy = false;
-    await new Promise((r) => setTimeout(r, 40));
-    expect(store.replaced).toBe(1);
-    expect(peeked).toHaveLength(2);
-    expect(store.data.every((r) => r.probeOutcome === 'confirmed')).toBe(true);
-    await job.close();
   });
 
   it('a pass never throws: a store failure is the pass\'s error', async () => {
@@ -322,7 +209,7 @@ describe('isFreshForTrending', () => {
 
 describe('buildTrending', () => {
   const config = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: 'postgres://u:p@127.0.0.1:5432/a', ...env }, envFile: false });
-  const inputs = { db: {} as never, busy: () => false };
+  const inputs = { db: {} as never };
 
   it('is a DisabledTrending that says why, and does nothing', async () => {
     const off = buildTrending({ ...inputs, config: config({ NOTESD_TRENDING: 'off' }), movies: {} as never, torrents: {} as never });
@@ -344,12 +231,11 @@ describe('buildTrending', () => {
   });
 
   it('reads its settings', () => {
-    expect(config({}).directStream?.trending).toEqual({ enabled: true, size: 100, probe: 200, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] });
-    expect(config({ NOTESD_TRENDING_SIZE: '40', NOTESD_TRENDING_PROBE: '0' }).directStream?.trending).toEqual({ enabled: true, size: 40, probe: 0, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] });
+    expect(config({}).directStream?.trending).toEqual({ enabled: true, size: 100, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] });
+    expect(config({ NOTESD_TRENDING_SIZE: '40' }).directStream?.trending).toEqual({ enabled: true, size: 40, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] });
     expect(config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'HI, ta,hi' }).directStream?.trending?.skipLanguages).toEqual(['hi', 'ta']);
     expect(config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'none' }).directStream?.trending?.skipLanguages).toEqual([]);
     expect(() => config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'hindi' })).toThrow(/NOTESD_TRENDING_SKIP_LANGUAGES/);
-    expect(() => config({ NOTESD_TRENDING_PROBE: '-1' })).toThrow(/NOTESD_TRENDING_PROBE/);
     expect(() => config({ NOTESD_TRENDING_SIZE: '0' })).toThrow(/NOTESD_TRENDING_SIZE/);
   });
 });
