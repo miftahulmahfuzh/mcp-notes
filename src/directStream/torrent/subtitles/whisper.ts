@@ -576,6 +576,11 @@ export class WhisperTier {
         const cut = await this.opts.cutter({ url, startS, lengthS: stretchS, out: wav }, signal);
         signal.throwIfAborted();
         if (!cut.ok) throw new Error(`the audio at ${startS} s could not be cut: ${cutFailureText(cut.reason)}`);
+        // With the film's length known, only its last stretch may come back short: a short cut before it failed (a host
+        // that stopped answering), and is never read as the film's end.
+        const known = endS;
+        const lastStretch = known === null || startS + stretchS >= known - 1;
+        if (!lastStretch && cut.lengthS < stretchS - 1) throw new Error(`the cut at ${startS} s gave ${Math.round(cut.lengthS)} s of the ${stretchS} s asked for, before the film's end`);
         if (cut.lengthS < 0.5) {
           endS = startS;
           await save(false);

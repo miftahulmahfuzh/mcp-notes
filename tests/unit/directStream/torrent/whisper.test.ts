@@ -204,6 +204,19 @@ describe('WhisperTier', () => {
     expect(feed.cues.map((cue) => cue.start_s)).toEqual([301, 601, 1]);
   });
 
+  it('a short cut before the end of a film of known length is a failed cut, not the end', async () => {
+    const cuts: number[] = [];
+    const feed = new FakeFeed();
+    const transcriber = new FakeTranscriber();
+    const full = fakeCutter(1000, cuts);
+    const cutter: AudioCutter = async (request, signal) => (request.startS === 300 ? (cuts.push(300), { ok: true, lengthS: 120 }) : full(request, signal));
+    await tier({ cutter, transcriber, feed }).find(ctx());
+    await until(() => transcriber.stops === 1);
+    expect(cuts).toEqual([0, 300, 600, 900]);
+    expect(feed.cues.map((cue) => cue.start_s)).toEqual([1, 601, 901]);
+    expect(feed.completed).toBe(0);
+  });
+
   it('gives up after three failed stretches in a row and leaves the track growing', async () => {
     const cuts: number[] = [];
     const feed = new FakeFeed();
