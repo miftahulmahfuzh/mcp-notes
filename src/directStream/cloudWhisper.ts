@@ -96,6 +96,8 @@ export class CloudWhisper {
     const key = titleKey(session.ref);
     if (!TITLE_KEY_PATTERN.test(key)) return null;
     this.inputs.set(key, input);
+    // The session's audio goes with it: no closure over an ended session is kept.
+    session.outside.stop.signal.addEventListener('abort', () => (this.inputs.get(key) === input ? void this.inputs.delete(key) : undefined), { once: true });
     const found = await this.tier.find({ infoHash: key, fileIndex: 0, audioLang: session.audioLang ?? null, resumeS: session.resumeS ?? null, probe: { durationS: null }, signal: session.outside.stop.signal });
     return found[0] ?? null;
   }

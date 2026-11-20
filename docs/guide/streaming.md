@@ -2313,7 +2313,8 @@ With the film's length known, only its last stretch may come back short: a short
 film's end.
 
 When the session lets go of the torrent the stretch in progress is dropped; restarting notesd stops
-the worker too. Cues already made stay in the feed, and
+the worker too, and the next start deletes the WAV of any stretch (of a sync, a transcript or a
+check) that was being cut, and the empty `notesd-sync` folders. Cues already made stay in the feed, and
 `<NOTESD_TORRENT_DIR>/<info hash>/notesd-whisper/` remembers the finished stretches, so a replay
 carries on from there, and a file transcribed to the end plays with its finished track and runs
 nothing.

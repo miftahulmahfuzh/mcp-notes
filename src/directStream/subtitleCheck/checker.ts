@@ -242,8 +242,12 @@ export class SubtitleChecker {
     }
   }
 
+  /** Aborted by close(): a cut or a transcription in progress stops with notesd. */
+  private readonly stopping = new AbortController();
+
   /** Ends the Whisper worker: notesd is stopping. */
   async close(): Promise<void> {
+    this.stopping.abort(new Error('notesd is stopping'));
     await this.opts.transcriber.stop();
   }
 
@@ -421,10 +425,11 @@ export class SubtitleChecker {
     heard: HeardLine[],
     stage: (text: string) => void,
   ): Promise<void> {
-    const signal = new AbortController().signal;
+    const signal = this.stopping.signal;
     await mkdir(this.opts.workDir, { recursive: true });
     let short = false;
     for (const [i, { startS, lengthS, hint }] of stretches.entries()) {
+      if (signal.aborted) return;
       const mark = hint === true ? { hint } : {};
       // A film of unknown length: the first window cut short was the end.
       if (short) break;

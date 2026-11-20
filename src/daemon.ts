@@ -45,6 +45,7 @@ import { ffmpegAssConverter } from './directStream/torrent/subtitles/files.js';
 import { OutsideSubtitles } from './directStream/outsideSubtitles.js';
 import { buildCloudWhisper, titleCueFeeds } from './directStream/cloudWhisper.js';
 import { TITLE_SUBS_SUBDIR, TitleSubtitleShelf } from './directStream/titleSubtitles.js';
+import { sweepAudioLeftovers } from './directStream/leftovers.js';
 import { SubtitleChecker, WINDOW_CUT_TIMEOUT_MS } from './directStream/subtitleCheck/checker.js';
 import { CheckSubjects, SubtitleCheckService } from './directStream/subtitleCheck/subjects.js';
 import { SubtitleShelf } from './directStream/torrent/subtitles/disk.js';
@@ -318,6 +319,11 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     log: (line) => console.log(line),
   });
   const titleSubtitles = new TitleSubtitleShelf(join(config.dataDir, TITLE_SUBS_SUBDIR));
+  // The WAVs and empty work folders a stretch in progress left when notesd last stopped (leftovers.ts); in the background.
+  void sweepAudioLeftovers(
+    { perItem: [join(config.dataDir, TITLE_SUBS_SUBDIR), ...(config.torrent?.dir === undefined ? [] : [config.torrent.dir])], flat: [join(config.dataDir, 'movies', 'subtitle-check')] },
+    (line) => console.log(line),
+  );
   // The last resort of a cloud stream the services have nothing for: a Whisper transcript of its own audio, as a
   // torrent has (cloudWhisper.ts). Null with NOTESD_TORRENT_WHISPER=off or before install.sh has made Whisper's Python.
   const titleCues = titleCueFeeds(titleSubtitles);
