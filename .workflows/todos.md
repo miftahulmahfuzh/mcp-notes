@@ -3,11 +3,11 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-20
-**Total Active Tasks**: 19
+**Total Active Tasks**: 20
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 19
+- P1 High: 20
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
@@ -21,6 +21,27 @@
 ### [P0] Critical
 
 ### [P1] High
+
+- [x] **P1-NOTES-A140** Phase 2: Torrent previews: file, remux, partial download
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/previews/torrentSource.ts` and its registry line: phase 1's `LocalSource('torrent', …)` over `TorrentVideos` (a `LocalVideos`), with a `LocalVideo` for a torrent file whole on disk (read from its path), for a remux (its init and segments through ffmpeg's `concat:`, whole or growing), and for a file partly on disk that plays as is; each names its home `<hash>/`. For the partly downloaded file: reading only what is on disk, through an in-process 127.0.0.1 gate (`loopback: true`) that serves verified pieces only and answers 416 for anything else; a read that would need a piece that is not there ends the sheet at once as `PreviewNotYet` (never a try used up) instead of waiting or reading a hole's zeros; the byte-to-time map is used only to decide when a sheet is worth trying. Sheets kept in `<hash>/notesd-previews/<file index>/`; `ownersOf` giving them to their episode so a one-episode delete takes them; sizes counting them; the budget clearing and whole-folder delete taking them (already recursive: prove it). Remux only: sheets made from the original stay valid when the original is deleted; a film that lives as its remux gets its sheets from the remux. The sweep for whole torrent files and whole remuxes with no previews (an episode fetched ahead has its previews before it is played). Does not touch: `web/`, `claude/streaming/`, the cache source, the builder and queue of phase 1 (uses them as they are), `src/daemon.ts`, `src/background.ts`, `scripts/docs/httpRoutes.ts`, `passThrough.ts`, the guides' prose. Exit criteria: a torrent session's previews list frames for what is on disk, for all three shapes; no preview code path calls `use`, selects a file or reads through the swarm (a test proves the engine saw nothing); deleting one episode or the whole download leaves no preview file.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/seek-preview-thumbnails/PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R1, R2 — "user hover on the timeline and see miniscreen showing the scene of that timestamp. [...] can we build it here?"; "this so we ship a robust feature" · criteria: R1.3, R2.4, R2.5
+  - **Depends on**: P1-NOTES-A139
+  - **Plan**: `.workflows/plan/P1-NOTES-A140.md`
+  - **Completed**: 2026-11-20 21:03
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/usage.ts, src/directStream/torrent/service.ts, src/directStream/previews/torrentSource.ts, src/directStream/previews/sources.ts, tests/unit/directStream/torrent/previewFiles.test.ts, tests/unit/directStream/previews/torrentSource.test.ts, tests/unit/directStream/previews/torrentSource.ffmpeg.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A140.md, .workflows/plan/SEEK_PREVIEW_THUMBNAILS_PLAN.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/phase2-seek-preview-evidence
+  - **Drift**:
+    - The plan's two real-ffmpeg tests (torrentSource.ffmpeg.test.ts) and their beforeAll ran past vitest's 5 s default inside the full suite; each now has the 60 s limit the repo's other ffmpeg tests use. No assertion changed.
+    - todos.py mint returned an id already in use for this todos.md (it scans 0 live entries), so the TaskID was minted by hand as A139+1; phase 3/5 minting the same way in their own worktrees may also pick A140.
+  - **Decided**:
+    - J4 'play as in J1 (now the MKV)' on J1's run replays the film already on disk and never reaches the remux -> J4 ran on its own fresh run with offer-remux.sh before the first play, assertions unchanged (rung 6: the harness's convention, torrent-remux.steps.mjs)
+    - J5's pack half after J4 resolved both episodes to the offered MKV (the fake index's only answer) -> pack delete ran on a clean run, the film size/delete half on J1's and J4's runs, assertions unchanged (rung 6, same)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching phase 1 of this set, to avoid conflicts with phases 3 and 5 in their own worktrees; the coordinator's integrator reconciles them. No successor to unblock: phases 3 and 5 mint their own tasks.
 
 - [x] **P1-NOTES-A139** Phase 1: Preview core: builder, store, routes, the cloud-cache source
   - **Difficulty**: HARD
