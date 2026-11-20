@@ -120,6 +120,14 @@ its test, in the same change.
   for the film, three of them held 18 to 20 s by the subtitle host (a 522, a slow answer, a time-out).
   A play of it five minutes earlier had started nothing after 241 s. `slow_start`, the page's 3 s
   hold for subtitle files and the picture check's reach probe exist because of it.
+- 2026-11-21: Common Side Effects S01E01 (FLUX pack, h264/eac3), Dexter: Resurrection S02E04 (h264/eac3) and
+  Infamia 1x1 (avi h264/mp3) each answered `unplayable: the remux did not start (ffmpeg wrote no segment in N s)`.
+  The same remux arguments on a local copy of an h264/eac3 file write segments in under 2 s, and the reference
+  download timed out while Common Side Effects failed: the swarm starved ffmpeg, the file was fine. A remux with no
+  segment in time is now read against the bytes the swarm sent meanwhile (`no_stream` when under two segments of the
+  film), and its detail says how many MB came in. A full-magnet retry a minute later had been answered the same
+  failure without joining the swarm: the outcome kept for a `pending` caller was handed out twice. Read a remux
+  failure's MB before blaming the codec.
 - A torrent session: the index's seed count is not the swarm (16 listed, 3 connected). The daemon
   opens at most five torrents in 90 s, and a torrent's header must arrive within 30 s. The download
   goes on while the film is paused; there is no pause cache, since the file is already on disk.

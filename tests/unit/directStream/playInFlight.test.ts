@@ -225,6 +225,21 @@ describe('playWithin: the caller is answered before it gives up', () => {
     await expect(again).rejects.toMatchObject({ code: 'no_source' });
   });
 
+  it('an outcome a joining caller already took is not handed out again: the next ask is a new play', async () => {
+    // Common Side Effects: answered pending, the same call joined and got no_source, then a retry a minute later with
+    // the full magnet read that same answer back and started nothing.
+    const held = gate();
+    const t = setup({ hold: held.wait, failOpen: true });
+    expect((await t.svc.playWithin(FILM, { provider: 'torrent' }, 10)).pending).toBe(true);
+    const joined = t.svc.playWithin(FILM, { provider: 'torrent' }, 5_000);
+    held.open();
+    await expect(joined).rejects.toMatchObject({ code: 'no_source' });
+    const started = (): number => t.logged.filter((l) => l.includes('started nothing')).length;
+    expect(started()).toBe(1);
+    await expect(t.svc.playWithin(FILM, { provider: 'torrent' }, 5_000)).rejects.toMatchObject({ code: 'no_source' });
+    expect(started()).toBe(2);
+  });
+
   it('a failed play nobody waited for is logged with every attempt too (a cloud no_source, then the torrents)', async () => {
     const t = setup({ resolve: NO_SOURCE, failOpen: true });
     await expect(t.svc.play(FILM)).rejects.toMatchObject({ code: 'no_source' });

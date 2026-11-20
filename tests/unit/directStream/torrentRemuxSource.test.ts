@@ -7,7 +7,7 @@ import type { StreamRef } from '../../../src/directStream/types.js';
 import { parseRelease, type TorrentCandidate } from '../../../src/directStream/torrent/find/index.js';
 import type { MediaProbe } from '../../../src/directStream/torrent/probe.js';
 import { REMUX_DONE_FILE, REMUX_PROBE_FILE, remuxDir, TorrentRemux } from '../../../src/directStream/torrent/remux.js';
-import { TorrentSource, type DownloadOnDisk, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
+import { REMUX_STARVED_BYTES, remuxTimeoutOutcome, TorrentSource, type DownloadOnDisk, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
 import { eventPlaylist, fakeFfmpeg } from './remuxFakes.js';
 
 const FILM: StreamRef = { kind: 'movie', tmdbId: 467905 };
@@ -162,5 +162,18 @@ describe('TorrentSource with the remux (torrent phase 5, R2.8)', () => {
     await rm(path.join(files, REMUX_PROBE_FILE));
     expect(await t.source.fromDisk(FILM, { audioLang: 'en' })).toBeNull();
     expect(t.probed).toEqual([]);
+  });
+});
+
+describe('remuxTimeoutOutcome: a remux with no segment in time, read against what the swarm delivered', () => {
+  it('is no_stream when the swarm sent under two segments of the film, unplayable when ffmpeg had the bytes', () => {
+    // A 9.6 Mbps film: two 6 s segments are 14.4 MB.
+    expect(remuxTimeoutOutcome(3_000_000, 9_600)).toBe('no_stream');
+    expect(remuxTimeoutOutcome(20_000_000, 9_600)).toBe('unplayable');
+    // Without the film's bitrate, a flat 8 MiB.
+    expect(remuxTimeoutOutcome(REMUX_STARVED_BYTES - 1, null)).toBe('no_stream');
+    expect(remuxTimeoutOutcome(REMUX_STARVED_BYTES, null)).toBe('unplayable');
+    // A swarm that cannot say what it received: the verdict stays as before.
+    expect(remuxTimeoutOutcome(null, 9_600)).toBe('unplayable');
   });
 });

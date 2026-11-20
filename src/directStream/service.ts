@@ -683,8 +683,19 @@ export class DirectStreamService {
     const late = new Promise<null>((resolve) => {
       timer = setTimeout(() => resolve(null), Math.max(0, waitMs));
     });
-    const result = await Promise.race([entry.promise, late]).finally(() => clearTimeout(timer));
-    if (result !== null) return { pending: false, result };
+    // A caller that gets the outcome here takes it: the copy kept for a later ask is dropped, or a new ask of the same
+    // play (another try of a pasted magnet a minute later) would read this answer again and start nothing.
+    let result: PlayAnswer | null;
+    try {
+      result = await Promise.race([entry.promise, late]).finally(() => clearTimeout(timer));
+    } catch (err) {
+      this.outcomes.delete(key);
+      throw err;
+    }
+    if (result !== null) {
+      this.outcomes.delete(key);
+      return { pending: false, result };
+    }
     entry.waited = true;
     return {
       pending: true,

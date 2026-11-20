@@ -1013,7 +1013,9 @@ A play is in flight from the moment it is asked for until its player page report
   `{started: false, pending: true, since, waited_s, stage, attempts}` with the attempts finished
   so far. The play goes on in the daemon and opens the player by itself. The same call again joins
   it, or answers its outcome (kept 10 minutes for that, the newest 50): `started: true`, or the error with every
-  attempt. An outcome is answered once, and a session's only while that session lives and its page has not said
+  attempt. An outcome is answered once, to whichever caller takes it first: a call that joined the play and got its
+  outcome takes the kept copy too, so the next ask is a new play (a pasted magnet tried again a minute later used to
+  be answered the earlier failure with no swarm joined). A session's outcome is answered only while that session lives and its page has not said
   it closed or ended: an ask after the play ended plays the title again. `POST /api/stream/play` (the Movies page) waits for the play as before.
 - **A play that started nothing is in the daemon's log**, whoever waited:
   `direct stream: play of TMDB movie 818647 (torrent) started nothing after 96.2 s: no_source, 8 attempt(s)`,
@@ -2453,8 +2455,12 @@ plain file. When the probe says the file is not one Chrome plays as is, the sess
   film's length from the probe). The player starts at the resume position or at 0, never at a live edge; its timeline
   is the whole film; a seek past what is remuxed waits there until the remux reaches it. The torrent's map
   (`GET /api/stream/torrent/<hash>/map`) answers the remuxed stretch, so the grey bar shows how far the remux is.
-- **When it is not played.** The play starts once the first segment is written. ffmpeg that writes none in time, or
-  stops with an error first, makes the torrent `unplayable` with the reason, and the next one is tried. Video other
+- **When it is not played.** The play starts once the first segment is written. ffmpeg that writes none in time is
+  read against what the swarm sent while it waited: under two segments of the film (8 MiB when its bitrate is not
+  known) the swarm starved it, and the torrent is `no_stream` ("the swarm sent too little for the remux's first
+  segment"), like a probe that stalled; with the bytes there it is `unplayable`. Either detail says how many MB came in
+  and the swarm's peers and rate (`remuxTimeoutOutcome` in `src/directStream/torrent/source.ts`). ffmpeg that stops
+  with an error first makes the torrent `unplayable` with the reason. Either way the next one is tried. Video other
   than H.264, HEVC, AV1 or VP9 (MPEG-2, VC-1, MPEG-4 Part 2) is `unplayable` without running ffmpeg.
 - **Stopping and replaying.** A session that lets go of its torrent stops its ffmpeg, and the half-made remux is
   deleted once ffmpeg has exited; it starts over the next time. A finished remux stays with the download and plays again from disk with no ffmpeg; it goes when the

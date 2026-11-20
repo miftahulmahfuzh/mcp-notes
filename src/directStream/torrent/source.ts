@@ -7,7 +7,7 @@ import { readMagnet, TRACKER_BOOK_FILE, TrackerBook, trackerKey } from './origin
 import { scrapeTrackerOrder } from './find/scrape.js';
 import type { TrackerLists } from './trackerLists.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
-import { canRemux, pickAudioStream, type TorrentRemux } from './remux.js';
+import { canRemux, pickAudioStream, REMUX_SEGMENT_S, RemuxError, type TorrentRemux } from './remux.js';
 import { runSubtitleChain, type SubtitleContext, type SubtitleTier } from './subtitles/chain.js';
 import { rankOf } from './subtitles/disk.js';
 import { hasEnglishSubtitleFile } from './subtitles/files.js';
@@ -380,6 +380,21 @@ export function hearAt(durationS: number | null, startS: number | null): number 
 }
 
 /** A file's bitrate in kbit/s: its bytes over its length; null when either is unknown. */
+/** Without the film's bitrate, a remux that received less than this while it waited was starved, not refused by ffmpeg. */
+export const REMUX_STARVED_BYTES = 8 * 1024 * 1024;
+
+/**
+ * A remux that wrote no segment in time, read against what the swarm delivered meanwhile: under two segments' worth of
+ * the film (or REMUX_STARVED_BYTES) the swarm starved it (`no_stream`, like a probe that stalled); otherwise ffmpeg had
+ * the bytes and still wrote nothing (`unplayable`). Common Side Effects (FLUX, h264/eac3) was called unplayable after
+ * 59 s on a connection whose reference download timed out at the same moment.
+ */
+export function remuxTimeoutOutcome(receivedBytes: number | null, filmKbps: number | null): 'no_stream' | 'unplayable' {
+  if (receivedBytes === null) return 'unplayable';
+  const needed = filmKbps === null ? REMUX_STARVED_BYTES : Math.max(PROBE_STALL_BYTES, (filmKbps * 1000 * REMUX_SEGMENT_S * 2) / 8);
+  return receivedBytes < needed ? 'no_stream' : 'unplayable';
+}
+
 function filmKbpsOf(length: number | null, durationS: number | null): number | null {
   return length !== null && durationS !== null && durationS > 0 ? Math.round((length * 8) / 1000 / durationS) : null;
 }
@@ -1466,6 +1481,15 @@ export class TorrentSource {
       .catch((err: unknown) => this.log(`[notesd] torrent: could not release ${infoHash}: ${messageOf(err)}`));
   }
 
+  /** The bytes a torrent received so far; null when the swarm cannot say or the torrent is gone. */
+  private receivedBytes(infoHash: string): number | null {
+    try {
+      return this.opts.swarm.received?.(infoHash) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** What a torrent received so far, for a log line: `4.1 MB, 5 peers, 1.3 Mbps`; empty words when the swarm cannot say. */
   private receivedText(infoHash: string): string {
     let bytes: number | null = null;
@@ -1739,10 +1763,21 @@ export class TorrentSource {
     const audioLang = play.audioLang;
     try {
       let page: { manifestUrl: string; manifestKind: 'mp4' | 'hls' };
+      const before = this.receivedBytes(c.infoHash);
+      const waitFrom = this.now();
       try {
         page = await this.fileForPage(c.infoHash, p.video, probe, audioLang, budgetMs);
       } catch (err) {
-        return { ok: false, attempt: { provider: torrentLabel(c.name), outcome: 'unplayable', took_s: p.tookS, detail: `${describeProbe(probe)}: the remux did not start (${messageOf(err)})` } };
+        const after = this.receivedBytes(c.infoHash);
+        const got = before === null || after === null ? null : Math.max(0, after - before);
+        const meanwhile = got === null ? '' : `; ${(got / 1e6).toFixed(1)} MB came in while it waited ${seconds(waitFrom, this.now())} s (${this.receivedText(c.infoHash)})`;
+        const filmKbps = filmKbpsOf(p.opened.files.find((f) => f.index === p.video)?.length ?? null, probe.durationS);
+        const outcome = err instanceof RemuxError && err.code === 'remux_timeout' ? remuxTimeoutOutcome(got, filmKbps) : 'unplayable';
+        const detail =
+          outcome === 'no_stream'
+            ? `${describeProbe(probe)}: the swarm sent too little for the remux's first segment (${messageOf(err)}${meanwhile})`
+            : `${describeProbe(probe)}: the remux did not start (${messageOf(err)}${meanwhile})`;
+        return { ok: false, attempt: { provider: torrentLabel(c.name), outcome, took_s: p.tookS, detail } };
       }
       this.noteDuration(c.infoHash, probe, p.video);
       const stop = new AbortController();
