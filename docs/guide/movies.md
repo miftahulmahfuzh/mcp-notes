@@ -427,7 +427,7 @@ characters (the first 18, with an icon for the rest).
   and "finished" buttons stay. The fold is kept per title in this browser, so a long series opens
   the way you left it; the season of an episode opened by its movie id is always shown.
 
-![A series' episodes: the season's trailer icon, the first episode in progress at 5 %, the rest unwatched](img/movies/episodes.png)
+![A series' episodes: the season's trailer icon and its story icon, the first episode in progress at 7 %, the rest unwatched](img/movies/episodes.png)
 
 **The pill.** The bar at the bottom asks the wall's chat about the page. On the grid it reads "Ask
 about your movies"; on a title's page it reads "Ask about <title>", and "this film", "this
@@ -704,7 +704,7 @@ copies, cue files and seek-preview sheets) and its cloud stream cache (`NOTESD_S
 seek-preview sheets included; see [Seek previews](streaming.md#seek-previews)). Only this machine's: the
 other laptop's rows are never listed.
 
-![The Cache page: the total against the torrent budget, the two bulk buttons, every title holding cache, Dan Da Dan unfolded to its episodes](img/movies/cache.png)
+![The Cache page: the total against the torrent budget, the Downloading filter, the two bulk buttons, every title holding cache, Percy Jackson and the Olympians unfolded to its episodes](img/movies/cache.png)
 
 - **The header** says the total against the torrent budget, split by kind: `41.2 of 40 GB · torrents
   35.8 · cloud 5.4`. Sizes are blocks on disk, as the budget's prune measures them, never a file's
