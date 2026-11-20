@@ -1805,16 +1805,12 @@ DHT node and no peer.
    minutes after its last file request.
 7. A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
    A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
-8. Peers are reached over TCP only. uTP beside it (webtorrent's default, and notesd's until 2026-11-20) made things
-   worse from this machine, WSL 2 behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP
-   alone fetched 183, 226, 184 and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB. Films with a hundred seeders
-   at the trackers had been failing with one or two peers connected. `NOTESD_TORRENT_UTP=on` turns uTP back on.
-9. A peer's socket error never ends the daemon. A uTP connection that a peer resets reports its error when it
-   closes, often after the engine has let go of the peer; with nobody listening, that error ended notesd and
-   every stream with it. The engine now hears such an error itself (`utpGuard.ts`) and logs it, at most once a
-   minute: `torrent engine: 3 uTP connection error(s) nobody was listening for (last: UTP_ECONNRESET); ignored`.
-   The same file guards the engine's handshake with a peer whose torrent was already left (a swarm probe, a
-   torrent that lost the race): its late answer used to throw `Cannot read properties of null (reading 'dht')`.
+8. Peers are reached over TCP only, with no switch. uTP beside it made things worse from this machine, WSL 2
+   behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP alone fetched 183, 226, 184
+   and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB.
+9. A late peer never ends the daemon. A torrent that was left (a swarm probe, a torrent that lost the race) may
+   still get a peer's handshake bytes just after; the engine ignores a handshake for a torrent it no longer
+   holds (`handshakeGuard.ts`).
 
 A download belongs to the machine that made it. A row of another host (copied in from the old shared
 database, or made by a second daemon on the same Postgres) is listed with `available: false`, and its

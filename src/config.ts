@@ -443,11 +443,6 @@ export interface TorrentConfig {
   subtitleWaitMs?: number
   /** `NOTESD_TORRENT_DISCOVERY`, default on. `off`: no DHT and no trackers; peers come only from `peers`. */
   discovery: boolean
-  /**
-   * `NOTESD_TORRENT_UTP`, default off (unset): peers are reached over TCP only. `on`: uTP beside TCP, as before
-   * 2026-11-20. From this machine (WSL 2 behind NAT) uTP fetched 2.5 to 10 times less than TCP alone.
-   */
-  utp?: boolean
   /** `NOTESD_TORRENT_PEERS`: `host:port` addresses (comma-separated) added as a peer to every torrent. Empty by default. */
   peers: string[]
   /**
@@ -1117,7 +1112,6 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
       ? {}
       : { subtitleWaitMs: parsePositiveInt('NOTESD_TORRENT_SUBTITLE_WAIT_MS', env.NOTESD_TORRENT_SUBTITLE_WAIT_MS, 1500) }),
     discovery: parseSwitch('NOTESD_TORRENT_DISCOVERY', env.NOTESD_TORRENT_DISCOVERY),
-    ...(parseSwitchDefaultOff('NOTESD_TORRENT_UTP', env.NOTESD_TORRENT_UTP) ? { utp: true } : {}),
     peers: parsePeers(env.NOTESD_TORRENT_PEERS),
     trackerLists: parseSwitch('NOTESD_TORRENT_TRACKER_LISTS', env.NOTESD_TORRENT_TRACKER_LISTS),
     finder: parseTorrentFinder(env),

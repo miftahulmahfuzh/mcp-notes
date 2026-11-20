@@ -590,7 +590,7 @@ export function buildTorrentStreams(
   const folder = new TorrentFolder(t.dir);
   const log = overrides.log ?? ((line: string) => console.log(line));
   return new TorrentStreams({
-    engine: overrides.engine ?? new WebTorrentEngine({ folder, uploadKbps: t.uploadKbps, discovery: t.discovery, peers: t.peers, log, ...(t.utp === true ? { utp: true } : {}) }),
+    engine: overrides.engine ?? new WebTorrentEngine({ folder, uploadKbps: t.uploadKbps, discovery: t.discovery, peers: t.peers, log }),
     repo: new TorrentsRepo(db),
     folder,
     host: directStream.host,

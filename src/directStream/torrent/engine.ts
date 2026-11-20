@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import type WebTorrent from 'webtorrent';
 import type { Torrent, TorrentFile } from 'webtorrent';
 import type { TorrentFolder } from './store.js';
-import { installPeerGuard, installUtpGuard } from './utpGuard.js';
+import { installPeerGuard } from './handshakeGuard.js';
 import {
   BYTES_PER_KB,
   kilobits,
@@ -26,11 +26,6 @@ export interface WebTorrentEngineOptions {
   /** `host:port` addresses added as a peer to every torrent (NOTESD_TORRENT_PEERS). */
   peers: readonly string[];
   log: (line: string) => void;
-  /**
-   * uTP beside TCP; default false (NOTESD_TORRENT_UTP=on turns it on). Measured from this machine on four well
-   * seeded swarms, 40 s each, 2026-11-20: TCP alone fetched 183 to 251 MB, uTP beside it 18 to 98 MB.
-   */
-  utp?: boolean;
 }
 
 /**
@@ -166,7 +161,8 @@ class WebTorrentHandle implements TorrentHandle {
 /**
  * The real engine: one WebTorrent client, made with the first torrent and destroyed after the last one leaves,
  * so the daemon has no torrent port, DHT node or peer while nothing is open. UPnP, NAT-PMP, local discovery
- * and web seeds are always off (WSL 2 NAT: only outgoing connections work anyway). Upload is capped for all
+ * and web seeds are always off (WSL 2 NAT: only outgoing connections work anyway). Peers are reached over TCP only:
+ * uTP beside it fetched 2.5 to 10 times less from the same swarms on this machine. Upload is capped for all
  * torrents together. Files are written under `folder.dirOf(infoHash)`; a torrent whose file list names a
  * path outside that folder is destroyed before anything is written (unsafe_path).
  */
@@ -258,9 +254,7 @@ export class WebTorrentEngine implements TorrentEngine {
       throw new TorrentError('engine_error', `webtorrent could not be loaded: ${messageOf(err)}`);
     }
     const discovery = this.opts.discovery;
-    // A peer's uTP error must never leave the process (utpGuard.ts): installed before the first swarm is joined.
-    if (this.opts.utp === true) installUtpGuard(this.opts.log);
-    // Nor a peer whose torrent was already left (the same file).
+    // A peer whose torrent was already left must never end the process (handshakeGuard.ts): installed before the first swarm is joined.
     await installPeerGuard(this.opts.log);
     const client = new Ctor({
       dht: discovery,
@@ -269,7 +263,7 @@ export class WebTorrentEngine implements TorrentEngine {
       natUpnp: false,
       natPmp: false,
       webSeeds: false,
-      utp: this.opts.utp === true,
+      utp: false,
       uploadLimit: Math.max(1, Math.round(this.opts.uploadKbps * BYTES_PER_KB)),
     });
     client.on('error', (err: unknown) => this.opts.log(`[notesd] torrent engine: ${messageOf(err)}`));

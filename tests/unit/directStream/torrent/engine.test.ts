@@ -86,7 +86,6 @@ beforeAll(async () => {
     discovery: false,
     peers: [`127.0.0.1:${seeder.address()?.port}`],
     log: () => undefined,
-    utp: false,
   });
 }, 30_000);
 
