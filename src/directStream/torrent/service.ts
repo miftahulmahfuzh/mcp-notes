@@ -1,7 +1,8 @@
 import path from 'node:path';
 import type { Config } from '../../config.js';
 import type { Db } from '../../db/client.js';
-import type { StreamTorrentFile, StreamTorrentRow } from '../../db/schema.js';
+import { and, inArray, isNotNull, or } from 'drizzle-orm';
+import { movieTitles, type StreamTorrentFile, type StreamTorrentRow } from '../../db/schema.js';
 import { jsonError } from '../passThrough.js';
 import type { StreamRef } from '../types.js';
 import { WebTorrentEngine } from './engine.js';
@@ -54,6 +55,11 @@ export interface TorrentStreamsOptions {
   budgetBytes?: number;
   /** NOTESD_TORRENT_DISCOVERY, for the status. */
   discovery: boolean;
+  /**
+   * Of these title ids (`movie-<tmdb id>`, `tv-<tmdb id>`), the ones the owner marked watched or not interested: the
+   * budget deletes their downloads first. Unset: none is.
+   */
+  marked?: (titleIds: readonly string[]) => Promise<ReadonlySet<string>>;
   /**
    * Sweep folders no row of this host names (default true). False while the old shared database is still to be
    * merged (`importPending`): a download whose row is only there yet must keep its files.
@@ -511,8 +517,9 @@ export class TorrentStreams {
 
   /**
    * Deletes whole torrents (folder with its remux and cue files, and every row) until the torrent folder takes less
-   * than `budgetBytes`. Never one in use. First the never played ones, oldest first, then the played ones, least
-   * recently played first; a download played or finished within TORRENT_RECENT_MS goes only when that was not enough.
+   * than `budgetBytes`. Never one in use. First the downloads of titles the owner marked watched or not interested
+   * (`marked`), then the never played ones, oldest first, then the played ones, least recently played first; a
+   * download played or finished within TORRENT_RECENT_MS goes only when that was not enough (within each group).
    */
   private async keepBudget(held: (hash: string) => boolean): Promise<number> {
     const budget = this.opts.budgetBytes;
@@ -522,11 +529,22 @@ export class TorrentStreams {
     let total = [...sizes.values()].reduce((a, b) => a + b, 0);
     if (total <= budget) return 0;
     const recentFrom = this.nowMs() - TORRENT_RECENT_MS;
-    const order = [...this.lastActivity(await this.hostRows())]
+    const rows = await this.hostRows();
+    // The titles the owner marked watched or not interested go first, whatever their age.
+    const titleOf = (r: Pick<StreamTorrentRow, 'kind' | 'tmdbId'>): string => `${r.kind}-${r.tmdbId}`;
+    let marked: ReadonlySet<string> = new Set();
+    try {
+      marked = (await this.opts.marked?.([...new Set(rows.map(titleOf))])) ?? new Set();
+    } catch (err) {
+      this.log(`[notesd] torrent: could not read which titles are watched or not interested: ${messageOf(err)}`);
+    }
+    const dismissed = new Set(rows.filter((r) => marked.has(titleOf(r))).map((r) => r.infoHash));
+    const order = [...this.lastActivity(rows)]
       .filter(([hash]) => !held(hash) && (sizes.get(hash) ?? 0) > 0)
-      .map(([hash, last]) => ({ hash, ...last, recent: last.touched >= recentFrom }))
+      .map(([hash, last]) => ({ hash, ...last, recent: last.touched >= recentFrom, dismissed: dismissed.has(hash) }))
       .sort(
         (a, b) =>
+          Number(b.dismissed) - Number(a.dismissed) ||
           Number(a.recent) - Number(b.recent) ||
           Number(a.played !== null) - Number(b.played !== null) ||
           (a.played ?? a.touched) - (b.played ?? b.touched),
@@ -539,7 +557,7 @@ export class TorrentStreams {
       await this.repo.delete(this.host, t.hash);
       total -= size;
       cleared += 1;
-      const why = t.played !== null ? `last played ${new Date(t.played).toISOString().slice(0, 10)}` : 'never played';
+      const why = `${t.dismissed ? 'watched or not interested, ' : ''}${t.played !== null ? `last played ${new Date(t.played).toISOString().slice(0, 10)}` : 'never played'}`;
       this.log(`[notesd] torrent: cleared ${t.name} (${gb(size)}, ${why}): the downloads took more than the ${gb(budget)} budget, ${gb(total)} now`);
     }
     if (total > budget) this.log(`[notesd] torrent: the downloads take ${gb(total)}, over the ${gb(budget)} budget, and what is left is in use`);
@@ -817,6 +835,14 @@ export function buildTorrentStreams(
     keepDays: t.keepDays,
     budgetBytes: t.budgetGb * GIB,
     discovery: t.discovery,
+    marked: async (ids) => {
+      if (ids.length === 0) return new Set<string>();
+      const found = await db
+        .select({ id: movieTitles.id })
+        .from(movieTitles)
+        .where(and(inArray(movieTitles.id, [...ids]), or(isNotNull(movieTitles.watchedAt), isNotNull(movieTitles.notInterestedAt))));
+      return new Set(found.map((r) => r.id));
+    },
     log,
     ...(overrides.sweepOrphans === undefined ? {} : { sweepOrphans: overrides.sweepOrphans }),
     ...(overrides.now === undefined ? {} : { now: overrides.now }),

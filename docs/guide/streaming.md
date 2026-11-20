@@ -1912,7 +1912,8 @@ DHT node and no peer.
    finder's limit for one release). It counts everything under each torrent's folder: the downloaded files, a
    remux's segments, subtitle cue files and kept subtitles (blocks on disk, so an unfinished download counts what
    it holds). At start, every six hours and after a download finishes, whole torrents are deleted until the folder
-   is under it: never-played ones first, oldest first, then the least recently played. A torrent played or
+   is under it: first the downloads of titles the owner marked Watched or Not interested (whenever they were
+   played), then never-played ones, oldest first, then the least recently played. A torrent played or
    finished in the last 24 hours goes only when that was not enough, and one in use (a session, the next episode
    being fetched ahead) never goes. Its remux and cue files go with it. Each deletion is one log line:
    `torrent: cleared <name> (4.2 GB, last played 2026-11-12): the downloads took more than the 40.0 GB budget,

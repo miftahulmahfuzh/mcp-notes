@@ -26,7 +26,7 @@ const MIB = 1_048_576;
 let root: string;
 let clock: number;
 
-function build(options: { records?: MemoryTorrentRecords; engine?: FakeTorrentEngine; budgetBytes?: number } = {}) {
+function build(options: { records?: MemoryTorrentRecords; engine?: FakeTorrentEngine; budgetBytes?: number; marked?: string[] } = {}) {
   const records = options.records ?? new MemoryTorrentRecords();
   const engine = options.engine ?? new FakeTorrentEngine([{ infoHash: PACK, name: SHOW, files: PACK_FILES }]);
   const folder = new TorrentFolder(root);
@@ -40,6 +40,7 @@ function build(options: { records?: MemoryTorrentRecords; engine?: FakeTorrentEn
     keepDays: 7,
     discovery: true,
     ...(options.budgetBytes === undefined ? {} : { budgetBytes: options.budgetBytes }),
+    ...(options.marked === undefined ? {} : { marked: async (ids: readonly string[]) => new Set(ids.filter((id) => options.marked!.includes(id))) }),
     now: () => new Date(clock),
     log: (line) => lines.push(line),
     every: () => () => undefined,
@@ -54,9 +55,9 @@ async function put(folder: TorrentFolder, hash: string, filePath: string, data: 
 }
 
 /** A torrent of this host with `mib` MiB on disk (and a remux segment of 1 MiB, which counts too). */
-async function download(records: MemoryTorrentRecords, folder: TorrentFolder, hash: string, name: string, o: { mib: number; madeAt: number; playedAt?: number }): Promise<void> {
+async function download(records: MemoryTorrentRecords, folder: TorrentFolder, hash: string, name: string, o: { mib: number; madeAt: number; playedAt?: number; tmdbId?: number }): Promise<void> {
   const slot = { infoHash: hash, season: 0, episode: 0 };
-  await records.record('host-a', { infoHash: hash, ref: { kind: 'movie', tmdbId: 7 }, name, release: null, trackers: [] }, new Date(o.madeAt));
+  await records.record('host-a', { infoHash: hash, ref: { kind: 'movie', tmdbId: o.tmdbId ?? 7 }, name, release: null, trackers: [] }, new Date(o.madeAt));
   await records.chosen('host-a', slot, { files: [{ index: 0, path: `${name}/${name}.mkv`, length: o.mib * MIB }], fileIndex: 0, fileLength: o.mib * MIB }, new Date(o.madeAt));
   await records.ready('host-a', slot, o.mib * MIB, new Date(o.madeAt));
   if (o.playedAt !== undefined) await records.played('host-a', slot, new Date(o.playedAt));
@@ -168,6 +169,21 @@ describe('the torrent budget', () => {
     expect(lines.filter((l) => l.includes('budget'))).toEqual([
       '[notesd] torrent: cleared Never.Played (4 MB, never played): the downloads took more than the 5 MB budget, 8 MB now',
       '[notesd] torrent: cleared Played.Long.Ago (4 MB, last played 2026-11-15): the downloads took more than the 5 MB budget, 4 MB now',
+    ]);
+  });
+
+  it('deletes the downloads of titles marked watched or not interested first, even one played today', async () => {
+    const records = new MemoryTorrentRecords();
+    const folder = new TorrentFolder(root);
+    const NEVER = 'a1'.repeat(20);
+    const SEEN = 'b2'.repeat(20);
+    await download(records, folder, NEVER, 'Never.Played', { mib: 4, madeAt: clock - 3 * DAY, tmdbId: 1 });
+    await download(records, folder, SEEN, 'Watched.Today', { mib: 4, madeAt: clock - DAY, playedAt: clock - 60_000, tmdbId: 2 });
+    const { streams, lines } = build({ records, budgetBytes: 5 * MIB, marked: ['movie-2'] });
+    expect(await streams.prune()).toBe(1);
+    expect((await readdir(root)).sort()).toEqual([NEVER]);
+    expect(lines.filter((l) => l.includes('budget'))).toEqual([
+      '[notesd] torrent: cleared Watched.Today (4 MB, watched or not interested, last played 2026-11-20): the downloads took more than the 5 MB budget, 4 MB now',
     ]);
   });
 
