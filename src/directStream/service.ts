@@ -17,7 +17,7 @@ import { observeForward, refusedRecord, safeRecord, sessionRecord, sessionSource
 import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
 import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
-import { SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
+import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
 import { namesCloud, namesTorrent, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource , type MagnetReport } from './torrent/source.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
@@ -332,6 +332,21 @@ export interface SwitchSourceAnswer {
   session: SessionInfo;
 }
 
+/** `from` in leaveCache's answer: the session was on this machine's cache, not on a provider. */
+export const CACHE_SOURCE = 'cache';
+
+/** What a player page whose session the daemon lost says of its play (continueSession). */
+export interface ContinueFrom {
+  /** The session id the page holds. */
+  was?: string | null;
+  /** The provider it streamed from; ignored for a torrent. */
+  provider?: string | null;
+  /** The torrent it played, lower-case hex. */
+  infoHash?: string | null;
+  /** Where the film is, in seconds: the new session starts there. */
+  positionS?: number | null;
+}
+
 /** A local subtitle (a cache's file, a torrent's file or cue feed) as the page reads it. */
 function localSubtitle(view: CacheSubtitleView): SessionSubtitle {
   return {
@@ -368,6 +383,9 @@ export class DirectStreamService {
   private readonly inFlight = new Map<string, PlayInFlight>();
   /** The outcomes of plays that were answered `pending`, for the next ask of the same play. */
   private readonly outcomes = new Map<string, { at: number; result: PlayResult | null; error: unknown }>();
+  /** The session made for a page whose own session a restart ended, by the id that page holds; and those being made (continueSession). */
+  private readonly continued = new Map<string, string>();
+  private readonly continuing = new Map<string, Promise<StreamSession>>();
   /** The next episode, fetched while this one plays; null when the daemon does not (ahead.ts). */
   private readonly ahead: EpisodeAhead | null;
 
@@ -1233,6 +1251,110 @@ export class DirectStreamService {
       }`,
     );
     return this.sessionInfo(next);
+  }
+
+  /**
+   * The player page holds a session this daemon does not know: the daemon restarted while the film played
+   * (sessions live in memory). The page says what it was playing (`was`: its session id; the provider, or the
+   * torrent's info hash; where the film is) and gets a fresh session for the same source, with no page opened:
+   *
+   * - a torrent: this host's finished download, else that very torrent again with no index asked;
+   * - anything else: this host's stream cache of the title (ready or downloading), else the provider it streamed
+   *   from, asked alone;
+   * - and when that has nothing now, what a play with no source named does (`sessionFor`).
+   *
+   * `continued: false`: the page's session is still alive here (the daemon was only slow to answer), and it is
+   * answered as it is. One session per `was`: a second ask of the same page joins the first or gets its session.
+   * Throws what a play throws (`no_source`, `resolve_failed`, `torrent_off`).
+   */
+  async continueSession(input: StreamRefInput, from: ContinueFrom = {}): Promise<{ continued: boolean; session: SessionInfo }> {
+    const ref = toStreamRef(input);
+    const was = from.was ?? null;
+    if (was !== null) {
+      const alive = this.sessions.get(was);
+      if (alive !== null) return { continued: false, session: await this.sessionInfo(alive) };
+      const made = this.sessions.get(this.continued.get(was) ?? '');
+      if (made !== null) return { continued: true, session: await this.sessionInfo(made) };
+    }
+    const key = was ?? playKey(ref, null);
+    let run = this.continuing.get(key);
+    if (run === undefined) {
+      run = this.sessionAgain(ref, from).finally(() => this.continuing.delete(key));
+      this.continuing.set(key, run);
+    }
+    const session = await run;
+    if (was !== null) {
+      this.continued.set(was, session.id);
+      if (this.continued.size > MAX_SESSIONS) this.continued.delete(this.continued.keys().next().value as string);
+    }
+    this.log(
+      `[notesd] direct stream: ${refLabel(ref)} carries on${session.resumeS === null ? '' : ` at ${Math.round(session.resumeS)} s`} after a restart, ${
+        session.torrent !== null ? `from the torrent ${session.torrent.name}` : session.cache === null ? `from ${session.source.provider}` : `from the cache ${session.cache.id}`
+      }`,
+    );
+    return { continued: true, session: await this.sessionInfo(session) };
+  }
+
+  /** continueSession's session: the source the page was on first, then what a play with no source named finds. */
+  private async sessionAgain(ref: StreamRef, from: ContinueFrom): Promise<StreamSession> {
+    const resumeS = from.positionS !== null && from.positionS !== undefined && from.positionS > 0 ? from.positionS : null;
+    const hash = from.infoHash ?? null;
+    if (hash !== null && this.torrentSource() !== null) {
+      const disk = await this.diskSession(ref, resumeS);
+      if (disk !== null) return disk;
+      try {
+        return await this.magnetSession(ref, resumeS, hash);
+      } catch (err) {
+        if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
+        this.log(`[notesd] direct stream: the torrent ${refLabel(ref)} played before the restart does not play now; asking as a new play does`);
+        return this.after(err.attempts, () => this.sessionFor(ref, resumeS));
+      }
+    }
+    const cached = await this.cachedSession(ref, resumeS);
+    if (cached !== null) return cached;
+    const provider = from.provider ?? null;
+    if (hash === null && provider !== null && provider !== TORRENT_PROVIDER) {
+      const tried: ResolveAttempt[] = [];
+      const again = await this.rememberedCloud(ref, provider, resumeS, null, tried);
+      if (again !== null) return again;
+      return this.after(tried, () => this.resolveOrTorrent(ref, resumeS, null, [provider]));
+    }
+    return this.sessionFor(ref, resumeS);
+  }
+
+  /**
+   * The player says a play from this machine's cache keeps stalling, or cannot be played at all: the session
+   * leaves the cache for the live stream of the same title, under the same id (the reverse of `cacheSession`'s
+   * move). The provider the cache was downloaded from is asked alone first, then the others; the recordResolve
+   * hook runs only for a resolve that found a source. The cache and its download are left as they are.
+   * `switched: false` with `no_other_source` leaves the session on the cache. A session not on a cache is
+   * `switchSource`'s. Throws `unknown_session`.
+   */
+  async leaveCache(id: string): Promise<SwitchSourceAnswer> {
+    const session = this.sessions.get(id);
+    if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
+    const cache = session.cache;
+    if (cache === null) return this.switchSource(id);
+    this.ahead?.stalled(session.id);
+    const provider = session.source.provider;
+    let out: ResolveOutput = await this.runResolve(session.ref, { only: provider });
+    if (out.ok) {
+      const hook = this.opts.hooks?.recordResolve;
+      if (hook !== undefined) await this.hookValue('recordResolve', async () => (await hook(session.ref, out), null));
+    } else {
+      try {
+        const skip = [...session.avoid, provider];
+        out = await this.resolveQuietly(session.ref, [...skip, ...(await this.rejectedProviders(session.ref, skip))]);
+      } catch (err) {
+        this.log(`[notesd] direct stream: ${refLabel(session.ref)} stalls on the cache ${cache.id} and no provider streams it now (${err instanceof DirectStreamError ? (err.reason ?? err.code) : messageOf(err)})`);
+        return { switched: false, reason: 'no_other_source', from: CACHE_SOURCE, session: await this.sessionInfo(session) };
+      }
+    }
+    if (!out.ok) return { switched: false, reason: 'no_other_source', from: CACHE_SOURCE, session: await this.sessionInfo(session) };
+    this.sessions.replaceSource(session, out.source, out.attempts);
+    safeRecord(this.evidence, sessionRecord(session, 'switched', null));
+    this.log(`[notesd] direct stream: ${refLabel(session.ref)} left the cache ${cache.id} for the stream of ${out.source.provider} (the cached play stalled)`);
+    return { switched: true, reason: null, from: CACHE_SOURCE, session: await this.sessionInfo(session) };
   }
 
   /**

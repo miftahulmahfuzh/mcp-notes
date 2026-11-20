@@ -721,8 +721,9 @@ provider's stream of a foreign-language title plays for the first time, the daem
 
 A resolve makes a session, kept in the daemon's memory: a 32-character random id, the source, and
 the hosts it may reach. It ends 4 hours after its last request or 24 hours after it began, and a
-restart ends every session. At most 32 sessions live at once; one more ends the oldest. The player
-page reads it from `GET /api/stream/sessions/<id>`.
+restart ends every session (the player page then carries its play on in a fresh one: see "A daemon
+restart" under [The player](#the-player)). At most 32 sessions live at once; one more ends the
+oldest. The player page reads it from `GET /api/stream/sessions/<id>`.
 
 Stream hosts check `Referer`, which a page cannot set, so every request the player makes goes
 through `/api/stream/sessions/<id>/p?u=<address>`:
@@ -969,8 +970,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   answer carries `X-Notesd-Upstream`), the page calls `POST /api/stream/sessions/<id>/refresh`,
   reads the session again and carries on from where it was. It does this at most three times for
   one session (the count starts over when the page moves to another episode), and stops with a message when a refreshed stream is refused before it plays. A 403
-  without that header is notesd's own (the session ended, or the daemon restarted): the page says
-  the session has ended and does not refresh. HLS and DASH behave the same: hls.js reports the
+  without that header is notesd's own: the page does not refresh. When the daemon no longer knows
+  the session (it restarted), the play is carried on (below); else the page says the session has
+  ended. HLS and DASH behave the same: hls.js reports the
   refused load through its error event, dash.js through a response interceptor, and a refusal
   that arrives from the replaced player after the refresh began is dropped.
 - **A network error.** When a load fails for another reason than a refused token (hls.js's
@@ -980,12 +982,29 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   2, 4, 8, 16 and 16 seconds it loads again from where the film is; the first piece that loads ends
   the recovery and the count starts over. Only when the fifth restart fails too does the page give
   the stream up: a cloud play first asks the daemon for another provider
-  ([What played last time plays first](#what-played-last-time-plays-first)), and with none, or on
-  a cached or torrent play, it stops with the message, such as
+  ([What played last time plays first](#what-played-last-time-plays-first)), a cached play goes
+  back to the live stream ([Playing from the cache](#playing-from-the-cache)), and with none, or on
+  a torrent play, it stops with the message, such as
   `Playback stopped (networkError fragLoadError).` Positions are still
   reported meanwhile, and each try is a line in the page's log
   (`recovering 2/5 after networkError fragLoadError at 1312.4 s`, then `recovered at 1320 s`), which
   the page sends to the daemon with its other log lines.
+- **A daemon restart.** Sessions live in the daemon's memory, so a restart ends the one on screen.
+  The page keeps what it knows of its play (the film or episode, the provider or the torrent's info
+  hash, the position) in memory and in the tab's `sessionStorage`. When a position report answers
+  404 `unknown_session`, the session read at load answers 403, notesd refuses a segment, or the
+  daemon cannot be reached, the page asks `POST /api/stream/continue` for a fresh session for the
+  same play. The film plays on from its buffer meanwhile, and the line over the picture reads
+  `Reconnecting to notesd…`. While the daemon is down the page asks again every 5 s; only after 3
+  minutes does it say the stream has ended. The daemon picks the source as a replay would: this
+  machine's finished download of a torrent, else that very torrent again with no index asked; this
+  machine's stream cache of the title, else the provider it streamed from, alone; and when that
+  has nothing now, what a play with no source named finds. The page then plays the new session
+  at the position the film reached (paused if it was), its address changes to the new session,
+  and the position reports go to it. The first of those opens a new `movie_plays` row; the old
+  session's row was closed at the daemon's start at its last position. A reload of the tab after a
+  restart carries the play on the same way. Not covered: a `?muted=1` check, and a page whose tab
+  storage is gone (another tab, a closed window) after the restart, which says the stream has ended.
 - **Buffer.** An HLS play keeps up to 120 seconds loaded ahead of the picture, so a slow stretch of
   the stream host is ridden out. A `?muted=1` check keeps 30 seconds, so the expiry check still finds
   pieces that are not loaded when the token runs out. A DASH play keeps dash.js's own amount.
@@ -1619,6 +1638,12 @@ the session plays the local copy:
   from. A refresh of a cached session reads the cache again and keeps playing it; once the cache
   is cleared or failed, the refresh resolves the title and the page goes on through the
   pass-through.
+- **A cached play that keeps stalling** (a part not on disk yet, fetched from a slow stream host:
+  three stalls within two minutes), or that cannot be played at all, goes back to the live stream
+  of the same title under the same session (`POST /api/stream/sessions/<id>/source` with
+  `leave_cache: true`): the provider the cache was downloaded from first, then the others. The
+  cache and its download stay as they are, and a pause does not move the play back onto it. With
+  no provider streaming the title now, the play stays on the cache.
 - **On the page.** A drive icon beside the title says the film plays from this machine's cache (a
   cloud with an arrow while it still downloads); its tooltip names the quality.
   `window.notesdStream.cached` holds the same.

@@ -20,6 +20,11 @@ import {
   switchSource,
   type SourceSwitch,
   cacheSession,
+  continueSession,
+  isDaemonDown,
+  readPlayMemory,
+  writePlayMemory,
+  type PlayMemory,
   fetchCacheMap,
   fetchTorrentMap,
   fetchTorrentStatus,
@@ -72,6 +77,10 @@ export function cueText(raw: string): string {
     .join('\n');
 }
 export const PAUSE_CACHE_DELAY_MS = 2_000;
+/** While the daemon is down (a restart), the page asks to carry its play on this often... */
+export const RECONNECT_RETRY_MS = 5_000;
+/** ...and gives up, showing that the stream has ended, after this long. */
+export const RECONNECT_GIVE_UP_MS = 180_000;
 /** How often the page asks where the download stands, and what is on disk. */
 export const CACHE_POLL_MS = 4_000;
 /** How often a torrent session asks for its peers, its speed and what is on disk, while it downloads and the tab shows. */
@@ -182,6 +191,8 @@ export interface StreamState {
   log: string[];
   /** The report button's state for this session; back to idle when the page plays another session. */
   bugReport: BugReportState;
+  /** The daemon lost the session (a restart) or cannot be reached: the page is asking for a fresh session for its play. */
+  reconnecting: boolean;
 }
 
 export const INITIAL_STATE: StreamState = {
@@ -211,6 +222,7 @@ export const INITIAL_STATE: StreamState = {
   errors: [],
   log: [],
   bugReport: { status: 'idle' },
+  reconnecting: false,
 };
 
 export interface ControllerDeps {
@@ -225,6 +237,8 @@ export interface ControllerDeps {
   onSession?: (sessionId: string) => void;
   /** Where the subtitle delay of a title is kept between plays (localStorage in the browser). Without it nothing is kept. */
   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+  /** Where the page keeps what it knows of its play, so a reload after a daemon restart can carry it on (sessionStorage in the browser). */
+  memory?: Pick<Storage, 'getItem' | 'setItem'>;
 }
 
 interface FileTrack {
@@ -286,6 +300,12 @@ export class StreamController {
   /** Log lines waiting for this tick's post to the daemon, each under the session it was written in. */
   private unsent: { sessionId: string; line: PlayerLogLine }[] = [];
   private readonly mutedMode: boolean;
+  /** What the page knows of its play (title, provider or torrent, position), to carry it on after the daemon lost the session. */
+  private memory: PlayMemory | null = null;
+  /** The page is asking the daemon to carry the play on (carryOn). */
+  private carrying = false;
+  /** The page is asking the daemon whether it still holds the session (endedOrCarryOn). */
+  private judging = false;
   /** Resolved the first time the stream is ready or the play has failed (playWithSound waits on it). */
   private settle: () => void = () => {};
   private readonly settled: Promise<void>;
@@ -352,7 +372,11 @@ export class StreamController {
     try {
       session = await fetchSession(this.sessionId, this.deps.fetch);
     } catch (err) {
-      if (!this.disposed) this.fail(err);
+      if (this.disposed) return;
+      // A reload after the daemon restarted: the tab still knows what it played.
+      this.memory = readPlayMemory(this.deps.memory, this.sessionId);
+      if (this.memory !== null && (isDaemonDown(err) || (err instanceof SessionError && err.code === 'unknown_session'))) void this.carryOn((err as SessionError).code);
+      else this.fail(err);
       return;
     }
     if (this.disposed) return;
@@ -362,6 +386,7 @@ export class StreamController {
   /** Plays a session read from the daemon: its name, neighbours, cache or torrent, its subtitle files, then the engine at its resume position. */
   private async open(session: StreamSession): Promise<void> {
     this.session = session;
+    this.remember(session, session.resumeS > 0 ? session.resumeS : null);
     this.set({
       title: session.title,
       kind: session.manifestKind,
@@ -781,8 +806,8 @@ export class StreamController {
             if (current()) void this.refresh(status);
           },
           onSessionOver: (status) => {
-            // notesd's own refusal (no X-Notesd-Upstream): the session is gone; a refresh cannot help.
-            if (current() && this.state.stage !== 'error') this.fail(new SessionError('session_over', status));
+            // notesd's own refusal (no X-Notesd-Upstream): the session is gone (a restart); a refresh cannot help, a fresh session can.
+            if (current() && this.state.stage !== 'error') void this.endedOrCarryOn(new SessionError('session_over', status));
           },
           onRecovering: (attempt, message) => {
             if (current()) this.onRecovering(attempt, message);
@@ -879,18 +904,25 @@ export class StreamController {
    */
   private async changeSource(byOwner = false): Promise<void> {
     const now = Date.now();
-    if (this.disposed || this.askingSource || this.mutedMode || this.session === null || this.session.cached !== null || !this.onFilm()) return;
+    if (this.disposed || this.askingSource || this.carrying || this.mutedMode || this.session === null || !this.onFilm()) return;
     if (!byOwner && this.session.torrent !== null) return;
+    // A cached play that keeps stalling (a part not on disk fetched from a slow host) goes back to the live stream.
+    const leaveCache = this.session.cached !== null;
+    if (leaveCache && byOwner) return;
     // The page's own asks are limited; the owner's (the button, S) are not.
     if (!byOwner && (this.sourceSwitches >= MAX_SOURCE_SWITCHES || (this.lastSourceAskAt > 0 && now - this.lastSourceAskAt < SOURCE_SWITCH_COOLDOWN_MS))) return;
     this.askingSource = true;
     this.lastSourceAskAt = now;
     const asked = this.sessionId;
-    this.note(byOwner ? 'asked for another source' : `${this.stalls.length} stalls in ${Math.round(STALL_WINDOW_MS / 1000)} s: asking for another source`);
+    this.note(
+      byOwner
+        ? 'asked for another source'
+        : `${this.stalls.length} stalls in ${Math.round(STALL_WINDOW_MS / 1000)} s: ${leaveCache ? 'leaving the cache for the live stream' : 'asking for another source'}`,
+    );
     this.stalls = [];
     this.set({ changingSource: true, sourceNotice: null });
     try {
-      const answer = await switchSource(asked, this.deps.fetch);
+      const answer = await switchSource(asked, this.deps.fetch, { leaveCache });
       if (this.disposed || this.sessionId !== asked || this.state.stage === 'error') return;
       if (!answer.switched) {
         this.note(`source kept: ${answer.reason ?? 'no_other_source'}`);
@@ -899,7 +931,10 @@ export class StreamController {
       }
       await this.moveTo(answer);
     } catch (err) {
-      if (!this.disposed && this.sessionId === asked) this.note(`source kept: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+      if (!this.disposed && this.sessionId === asked) {
+        this.note(`source kept: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+        if (isDaemonDown(err) || (err instanceof SessionError && err.code === 'unknown_session')) void this.carryOn((err as SessionError).code);
+      }
     } finally {
       this.askingSource = false;
       if (!this.disposed) this.set({ changingSource: false });
@@ -909,6 +944,9 @@ export class StreamController {
   /** Loads the stream of the provider the daemon moved the session to, at the position the film had reached. */
   private async moveTo(answer: SourceSwitch): Promise<void> {
     this.sourceSwitches += 1;
+    // A play that left the cache never goes back to it with a pause.
+    if (this.session?.cached != null && answer.session.cached === null) this.cacheAskedFor = this.sessionId;
+    this.remember(answer.session, null);
     const continueAt = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
     this.generation += 1;
     this.engine?.destroy();
@@ -946,8 +984,15 @@ export class StreamController {
    */
   private async leaveBrokenSource(message: string): Promise<void> {
     const session = this.session;
-    if (this.disposed || this.mutedMode || this.askingSource || session === null || session.cached !== null || session.torrent !== null || this.sourceSwitches >= MAX_SOURCE_SWITCHES) {
-      this.fail(new SessionError(message, 0));
+    if (this.carrying) {
+      // The daemon is being asked for a fresh session: the engine giving up meanwhile changes nothing.
+      this.note(`${message} while reconnecting`);
+      if (this.state.stage !== 'error') this.set({ stage: 'refreshing' });
+      return;
+    }
+    if (this.disposed || this.mutedMode || this.askingSource || session === null || session.torrent !== null || this.sourceSwitches >= MAX_SOURCE_SWITCHES) {
+      // A torrent's file route is the daemon's own: a stream that broke because the daemon went away carries on.
+      await this.endedOrCarryOn(new SessionError(message, 0));
       return;
     }
     this.askingSource = true;
@@ -956,8 +1001,9 @@ export class StreamController {
     this.stalls = [];
     this.note(`${message}: asking for another source`);
     this.set({ stage: 'refreshing', changingSource: true, sourceNotice: null });
+    let gone = false;
     try {
-      const answer = await switchSource(asked, this.deps.fetch);
+      const answer = await switchSource(asked, this.deps.fetch, { leaveCache: session.cached !== null });
       if (this.disposed || this.sessionId !== asked) return;
       if (!answer.switched) {
         this.note(`source kept: ${answer.reason ?? 'no_other_source'}`);
@@ -968,11 +1014,126 @@ export class StreamController {
     } catch (err) {
       if (this.disposed || this.sessionId !== asked) return;
       this.note(`source kept: ${err instanceof SessionError ? err.code : messageOf(err)}`);
-      this.fail(new SessionError(message, 0));
+      gone = isDaemonDown(err) || (err instanceof SessionError && err.code === 'unknown_session');
+      if (!gone) this.fail(new SessionError(message, 0));
     } finally {
       this.askingSource = false;
       if (!this.disposed) this.set({ changingSource: false });
     }
+    if (gone) void this.carryOn(message);
+  }
+
+  /** The play cannot go on as it is: when the daemon lost the session or cannot be reached, it is carried on; else it stops with `err`. */
+  private async endedOrCarryOn(err: SessionError): Promise<void> {
+    if (this.disposed || this.carrying || this.judging) return;
+    if (this.mutedMode || this.memory === null) {
+      this.fail(err);
+      return;
+    }
+    const asked = this.sessionId;
+    // A move (another source, the cache) that began meanwhile has replaced what failed.
+    const generation = this.generation;
+    let gone = false;
+    this.judging = true;
+    try {
+      await fetchSession(asked, this.deps.fetch);
+    } catch (e) {
+      gone = isDaemonDown(e) || (e instanceof SessionError && e.code === 'unknown_session');
+    } finally {
+      this.judging = false;
+    }
+    if (this.disposed || this.sessionId !== asked || this.generation !== generation || this.state.stage === 'error') return;
+    if (gone) void this.carryOn(err.code);
+    else this.fail(err);
+  }
+
+  /** Keeps what the page knows of its play, in memory and in the tab's storage. */
+  private remember(session: StreamSession, positionS: number | null): void {
+    if (session.ref === null) return;
+    const keep = this.memory !== null && this.memory.sessionId === session.id ? this.memory.positionS : null;
+    this.memory = { sessionId: session.id, ref: session.ref, provider: session.provider, infoHash: session.torrent?.infoHash ?? null, positionS: positionS ?? keep };
+    writePlayMemory(this.deps.memory, this.memory);
+  }
+
+  /**
+   * The daemon lost the session (it restarted: sessions live in its memory) or cannot be reached.
+   * The page asks for a fresh session for the same play (POST /api/stream/continue) with what it
+   * knows: the title, the provider or the torrent, the position. While the daemon is down it asks
+   * again every RECONNECT_RETRY_MS with a quiet note, and only after RECONNECT_GIVE_UP_MS says the
+   * stream has ended. The film on screen plays on from its buffer meanwhile; the new session is
+   * loaded at the position the film reached, and the address bar follows it.
+   */
+  private async carryOn(reason: string): Promise<void> {
+    if (this.disposed || this.carrying) return;
+    const memory = this.memory;
+    if (this.mutedMode || memory === null) {
+      this.fail(new SessionError(reason === 'unknown_session' ? reason : 'session_over', 0));
+      return;
+    }
+    this.carrying = true;
+    this.set({ reconnecting: true });
+    this.note(`${reason}: carrying the play on in a fresh session`);
+    const asked = this.sessionId;
+    const giveUpAt = Date.now() + RECONNECT_GIVE_UP_MS;
+    try {
+      for (;;) {
+        const at = this.continueAt();
+        try {
+          const answer = await continueSession({ ...memory, positionS: at > 0 ? at : memory.positionS }, this.deps.fetch);
+          if (this.disposed || this.sessionId !== asked) return;
+          if (!answer.continued && answer.session.id === asked && this.onFilm() && this.engine !== null) {
+            this.note('the daemon still holds the session');
+            return;
+          }
+          await this.swapTo(answer.session);
+          return;
+        } catch (err) {
+          if (this.disposed || this.sessionId !== asked) return;
+          if (!isDaemonDown(err) || Date.now() >= giveUpAt) {
+            const code = err instanceof SessionError && !isDaemonDown(err) ? err.code : 'session_over';
+            this.note(`could not carry the play on: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+            this.fail(new SessionError(code, 0));
+            return;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, RECONNECT_RETRY_MS));
+        if (this.disposed || this.sessionId !== asked) return;
+      }
+    } finally {
+      this.carrying = false;
+      if (!this.disposed) this.set({ reconnecting: false });
+    }
+  }
+
+  /** Where the film is: the picture's position while it is on the page, else the last one known. */
+  private continueAt(): number {
+    if (this.onFilm() && this.video.currentTime > 0) return this.video.currentTime;
+    if (this.lastPositionS > 0) return this.lastPositionS;
+    return this.memory?.positionS ?? 0;
+  }
+
+  /** Plays the fresh session carryOn got, at the position the film reached; paused if it was. */
+  private async swapTo(session: StreamSession): Promise<void> {
+    const at = this.continueAt() > 0 ? this.continueAt() : session.resumeS;
+    this.holdPaused = this.onFilm() && this.video.paused && !this.video.ended;
+    this.generation += 1;
+    this.engine?.destroy();
+    this.engine = null;
+    this.ready = null;
+    this.clearFileTracks();
+    this.clearCacheTimers();
+    this.stopTorrent();
+    this.sessionId = session.id;
+    this.stalls = [];
+    this.sourceSwitches = 0;
+    this.lastSourceAskAt = 0;
+    this.subtitleChosen = false;
+    this.cacheAskedFor = null;
+    this.set({ stage: 'refreshing', error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], cachedRanges: [], bugReport: { status: 'idle' } });
+    this.note(`carried on in session ${session.id.slice(0, 6)} at ${round1(at)} s`);
+    this.deps.onSession?.(session.id);
+    await this.open({ ...session, resumeS: at });
+    if (this.session?.id === session.id) this.remember(session, at > 0 ? at : null);
   }
 
   /**
@@ -1281,8 +1442,14 @@ export class StreamController {
     };
     this.set({ reportedS: report.position_s });
     const asked = this.sessionId;
-    void postPosition(asked, report, this.deps.fetch).then((rev) => {
-      if (rev !== null) void this.followSubtitleRev(asked, rev);
+    if (this.memory !== null && this.memory.sessionId === asked && !ended) {
+      this.memory = { ...this.memory, positionS: report.position_s };
+      writePlayMemory(this.deps.memory, this.memory);
+    }
+    void postPosition(asked, report, this.deps.fetch).then((answer) => {
+      if (answer.rev !== null) void this.followSubtitleRev(asked, answer.rev);
+      // The daemon restarted under the film (or is restarting): a fresh session for the same play.
+      if (answer.gone && !this.disposed && this.sessionId === asked && !this.carrying) void this.carryOn('unknown_session');
     });
   }
 
