@@ -2118,8 +2118,15 @@ after the play has started:
   outcome is kept beside the subtitle (`synced-<file index>.json`, `synced.json`: the offset, the
   frame-rate fix, the confidence, never an address). After a success, or after Wyzie said no
   subtitle lines up, a replay asks nothing and plays what is kept. A failure that may pass (no
-  answer, the key's limit, a cut that failed) is tried again by the next play. A job stops when
-  the session lets go of the film and starts over with the next play.
+  answer, the key's limit, a cut that failed) is tried again by the next play, and so is any
+  failure an older version of the outcome file recorded (`v` below 2). A job stops when the
+  session lets go of the film and starts over with the next play. A subtitle `/sync-subtitle`
+  checks while Wyzie answers stays, and the synced file is not kept.
+- **In step already.** When the subtitle shown is Wyzie's own file and Wyzie moved it by less than
+  0.6 s with no frame-rate fix (the threshold `/sync-subtitle` calls in step), no synced file is
+  written: the subtitle stays as it was, and the outcome is `done` with `in_sync: true`, so it is
+  not asked again. A borrowed or add-on file is replaced whatever the offset, since Wyzie's
+  answer may be another subtitle.
 - **Cost.** 60 requests of the key per successful sync; a refused or failed one is free.
 - **Limits.** Without Whisper's Python (`scripts/install.sh` installs it; the Whisper tier itself
   may be off) nothing is synced and the daemon log says so. A cloud stream's audio is downloaded a

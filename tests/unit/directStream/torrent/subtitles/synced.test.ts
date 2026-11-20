@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,8 @@ import {
   syncRequestBody,
   wantsSync,
   wyzieSynced,
+  inStepAlready,
+  SYNC_OUTCOME_VERSION,
   type SpeechSpan,
   type SyncRequest,
   type SyncTarget,
@@ -209,7 +211,7 @@ describe('SubtitleSync', () => {
     // A replay from disk finds the synced file through the kept tier, and it is never synced again.
     expect(await t.shelf.kept(HASH)).toEqual([synced]);
     expect(await readFile(t.shelf.file(HASH, 'synced-0.vtt')!, 'utf8')).toContain('In step now.');
-    expect(await t.sync.outcome()).toEqual({ state: 'done', retry: false, reason: null, at: '2026-11-17T10:00:00.000Z', covered_s: 1800, offset_s: -0.89, fps: '23.976:24', confidence: 1, in_sync: false, release: 'Eastern.Promises.2007.BluRay' });
+    expect(await t.sync.outcome()).toEqual({ v: SYNC_OUTCOME_VERSION, state: 'done', retry: false, reason: null, at: '2026-11-17T10:00:00.000Z', covered_s: 1800, offset_s: -0.89, fps: '23.976:24', confidence: 1, in_sync: false, release: 'Eastern.Promises.2007.BluRay' });
     expect(wantsSync(s.target.subtitles)).toBe(false);
     expect(t.logs.join('\n')).toContain('offset -0.89 s, fps 23.976:24, confidence 1');
     // The WAVs are gone, and nothing on disk or in the log holds the key or the token.
@@ -244,6 +246,53 @@ describe('SubtitleSync', () => {
     expect(s.target).toEqual({ subtitles: [own], subtitleRev: 0 });
     expect(await t.sync.outcome()).toBeNull();
     expect(t.logs.at(-1)).toContain('needs no sync');
+  });
+
+  it('a re-timing of Wyzie\'s own file under the in-step threshold is not kept, and is never asked again', async () => {
+    const t = setup({ filmS: 1320, answers: [() => json({ ...OK, offset: 0.3, fps: null })] });
+    const s = await t.session();
+    await t.sync.start(s.request);
+    expect(s.target.subtitleRev).toBe(0);
+    expect(s.target.subtitles[0]!.url).toBe(subtitleUrl(HASH, 'service-wyzie-9.vtt'));
+    expect(await t.shelf.kept(HASH)).toEqual(s.target.subtitles);
+    expect(t.shelf.file(HASH, 'synced-0.vtt')).not.toBeNull();
+    expect(await readdir(t.shelf.dir(HASH))).not.toContain('synced-0.vtt');
+    expect(await t.sync.outcome()).toMatchObject({ v: SYNC_OUTCOME_VERSION, state: 'done', retry: false, in_sync: true, offset_s: 0.3, reason: 'in step: moved by 0.3 s, under 0.6 s' });
+    const again = await t.session();
+    await t.sync.start(again.request);
+    expect(t.w.posts()).toHaveLength(1);
+  });
+
+  it('a small move with a frame-rate fix, or of a borrowed file, is kept', () => {
+    const wyzieFile: CacheSubtitleView = { url: subtitleUrl(HASH, 'service-wyzie-9.vtt'), lang: 'en', label: 'English (Wyzie)' };
+    const borrowed: CacheSubtitleView = { url: subtitleUrl(HASH, 'borrow.vtt'), lang: 'en', label: 'English (VidFast)' };
+    expect(inStepAlready({ offsetS: -0.59, fps: null, inSync: false }, [wyzieFile])).toBe(true);
+    expect(inStepAlready({ offsetS: 0.6, fps: null, inSync: false }, [wyzieFile])).toBe(false);
+    expect(inStepAlready({ offsetS: 0.1, fps: '23.976:24', inSync: false }, [wyzieFile])).toBe(false);
+    expect(inStepAlready({ offsetS: 0, fps: null, inSync: true }, [borrowed])).toBe(false);
+    expect(inStepAlready({ offsetS: null, fps: null, inSync: true }, [{ url: '/api/stream/subs/movie-550/outside.vtt', lang: 'en', label: 'English (Wyzie)' }])).toBe(true);
+  });
+
+  it('an older version\'s failure is tried again; its success stands', async () => {
+    const t = setup({ filmS: 1320, answers: [() => json(OK)] });
+    const s = await t.session();
+    const file = path.join(t.shelf.dir(HASH), 'synced-0.json');
+    await writeFile(file, JSON.stringify({ state: 'failed', retry: false, reason: 'the audio at 0 s could not be cut', at: '2026-11-10T00:00:00Z', covered_s: 0 }));
+    expect(await readSyncOutcome(file)).toBeNull();
+    await t.sync.start(s.request);
+    expect(t.w.posts()).toHaveLength(1);
+    await writeFile(file, JSON.stringify({ state: 'done', retry: false, reason: null, at: '2026-11-10T00:00:00Z', covered_s: 1320 }));
+    expect(await readSyncOutcome(file)).toMatchObject({ v: 1, state: 'done' });
+  });
+
+  it('a subtitle checked while Wyzie answers is not replaced, and nothing is kept', async () => {
+    let t: ReturnType<typeof setup> | null = null;
+    t = setup({ filmS: 1320, answers: [() => (t?.sync.cancel(`${HASH}-0`), json(OK))] });
+    const s = await t.session();
+    await t.sync.start(s.request);
+    expect(s.target.subtitleRev).toBe(0);
+    expect(await readdir(t.shelf.dir(HASH))).not.toContain('synced-0.vtt');
+    expect(await t.sync.outcome()).toBeNull();
   });
 
   it('a film under 30 minutes goes straight to the whole file', async () => {
