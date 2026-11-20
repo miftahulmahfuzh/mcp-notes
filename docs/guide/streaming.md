@@ -23,8 +23,9 @@ Every command:
 | A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
 The site skills only look a title up and drive a browser on your screen: no film file is fetched
-from a site. A play that started is kept with its title, which then plays there again when no
-source is named ([What played last time plays first](#what-played-last-time-plays-first)). Direct
+from a site. A play that names no source goes to direct streaming first; the sites are its last
+resort, asked only when every cloud provider and every torrent found nothing
+([The streaming sites, last](#the-streaming-sites-last)). Direct
 streaming does download, to this machine only: the [stream cache](#caching-a-film-or-an-episode)
 and [torrents](#torrents).
 
@@ -243,8 +244,9 @@ The rules behind those answers:
   never guessed.
 - **A recommendation is not a request.** A film is never started because it was suggested.
 - **A film in the library plays in VLC** (`movies_continue`), unless you name the site.
-- **A play that started is kept with its title**, and the title then plays on that site again
-  when no source is named ([What played last time plays first](#what-played-last-time-plays-first)).
+- **A play that started is kept with its title.** A later play that names no source still goes to
+  direct streaming first, and comes back to that site, at the title's page there, only when no
+  cloud provider and no torrent has it ([The streaming sites, last](#the-streaming-sites-last)).
 
 ### `/direct-stream`: straight from a cloud source or a torrent
 
@@ -872,7 +874,7 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
 | Answer | Meaning |
 | --- | --- |
 | `direct_stream_off` | `NOTESD_DIRECT_STREAM=off`, `NOTESD_MOVIES=off`, or the daemon was started without it. Nothing is resolved and Chrome is not started |
-| `no_source` | No provider resolved the title and no torrent played; `attempts` lists each provider's outcome, then each torrent index and torrent tried. Each kind's failure is kept with its day and shown on the title's page ([What played last time plays first](#what-played-last-time-plays-first)) |
+| `no_source` | No provider resolved the title and no torrent played (and, with no source named, no streaming site started it); `attempts` lists each provider's outcome, then each torrent index and torrent tried, then each site asked. Each kind's failure is kept with its day and shown on the title's page ([What played last time plays first](#what-played-last-time-plays-first)) |
 | `no_source`, one attempt `Release date` | The film is not released yet, or the episode has not aired, by TMDB's day (`is not released yet: TMDB gives 2028-10-01`). Nothing was asked: no provider, no cache, no torrent index. Until that day a stream or a torrent of the title is a trailer or a fake: The Batman: Part II (2028) "resolved" on a cloud provider as a Hindi and English stream, and Dune: Part Three's torrents were trailers. A title with no known day, and a day that is today, play as usual; a magnet the owner pasted always plays. Nothing is marked stale |
 | `pending` | Not an error: `direct_stream_play` answered `started: false, pending: true` because the play outlasted 45 s. See [A play that is being started](#a-play-that-is-being-started) |
 | `torrent_off` | A play asked for the torrent source (`provider: "torrent"`) while torrents are off on this machine (`NOTESD_TORRENT=off`) |
@@ -901,7 +903,8 @@ A play is in flight from the moment it is asked for until its player page report
   (`{kind, tmdb_id, season, episode, title, provider, since, stage}`; `stage` says what is being
   done: `asking the cloud providers`, `asking the torrent indexes`,
   `opening 3 torrents: <releases>`, `opening the player page`, and others such as
-  `asking <provider>, which streamed it last time` and `opened: waiting for the player page`) and
+  `asking <provider>, which streamed it last time`, `asking idlix: no cloud provider or torrent could stream it`
+  and `opened: waiting for the player page`) and
   answers `busy: true`, though
   `stream` is still null. A play whose page was opened stays there until the page reports (it is
   then `stream`), says it closed, or 30 s pass. `scripts/install.sh` reads `busy` and does not
@@ -1318,7 +1321,7 @@ first for episode 4.
 | --- | --- |
 | A cloud provider (`VidRock`) | Asks that provider alone. Only when it has no stream now are the others asked, without it, and then the torrents |
 | A torrent | Opens that very torrent again when the same film or episode is asked (no index is asked); else, or when its swarm has nothing now, asks the torrents first. No cloud provider is tried unless they find nothing |
-| A streaming site (`/idlix`, `/lk21`, `/flicksy`, `/dramacool`) | Plays on that site again, from the title's page its search returned. When the site does not start it, the title is streamed the usual way |
+| A streaming site (`/idlix`, `/lk21`, `/flicksy`, `/dramacool`) | Remembers nothing for direct streaming: the play goes the way it would for a title never streamed. The site is asked again only when that finds nothing ([The streaming sites, last](#the-streaming-sites-last)) |
 | Nothing yet, and its cloud search found nothing in the last 3 days | Asks the torrents first, then the cloud providers (unless the torrents also found nothing since: then the long way) |
 | Nothing yet | The long way: every cloud provider, then the torrents |
 
@@ -1354,6 +1357,38 @@ first for episode 4.
 
 On a title's page the same memory shows in the [play menu](movies.md#the-play-menu): the caret
 beside Play names the source by hand, and each row says what last played through it.
+
+#### The streaming sites, last
+
+The streaming sites are the worst case (the owner's choice of 2026-11-20): they play with a site's
+countdown and adverts around them, in another host's frame. So a play that names no source
+(no provider, no codename, no magnet) goes to direct streaming first: this machine's cache and
+downloads, what streamed the title last time, every cloud provider and the torrents. Only when
+that play ends with nothing to play (`no_source`, or `resolve_failed` after the torrents found
+nothing too; never for a title not out yet) does the daemon ask the sites, one at a time:
+
+1. **The site the title was last played on** (its channel, else the site that played it most
+   recently), from the title's page there: no search.
+2. **The others in a fixed order**, each through the streaming command's own search for the title's
+   name and year, which plays only when exactly one title matches (the same path as the play
+   menu's site rows, `POST /api/movies/:id/site-play`). A film: idlix, lk21, flicksy. An episode:
+   idlix, dramacool. idlix plays films and episodes and is the site most played from; lk21 has the
+   widest film catalogue; flicksy is the newest, last. dramacool is asked for an episode only,
+   because every title there is a page of episodes and its search never starts a film on its own;
+   lk21 and flicksy start no episode.
+
+The first site whose player starts ends it. The answer is `{site, site_url, site_play, attempts}`
+with no session; `attempts` holds the direct attempts and then one `Site: <name>` per site asked
+(`resolved` for the one playing, `no_stream` when it does not list the title or the episode,
+`skipped` when it lists several titles of that name and none was guessed, `error`). When no site
+starts it either, the play fails as before with every site in its attempts. Each site asked is
+one line in the daemon's log (`asked idlix for <title>: no_match after 4.2 s`).
+
+The sites are asked inside the [play in flight](#a-play-that-is-being-started), so they hang off
+its failure, not off a caller's answer: a `direct_stream_play` answered `pending` after 45 s still
+ends on a site, and the next call reads that outcome. While a site is being asked the play stays in
+`starting` (the daemon is busy), and a second ask joins it. A play that names its source (a
+provider, `NTM`/`NTS`, `TM`/`TS`, a magnet) never asks a site: the owner named the source.
 
 **A play on a streaming site is kept too.** `claude/streaming/cli.mjs` reports every play that
 started to the daemon (`POST /api/movies/site-play`, on `127.0.0.1` and `NOTESD_PORT`; `kept` in

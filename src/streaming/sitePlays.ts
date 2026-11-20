@@ -1,5 +1,5 @@
 import { LookupError, lookupTitle, type LookupDeps, type TitleCandidate } from '../directStream/lookup.js';
-import type { RememberedChannel, StreamRef } from '../directStream/types.js';
+import type { StreamRef } from '../directStream/types.js';
 import type { MoviesRepo } from '../movies/repo.js';
 import type { MovieStreams } from '../movies/streams.js';
 import type { MovieSiteTitleRow, TitleKind } from '../movies/types.js';
@@ -123,7 +123,7 @@ export function siteTitleKeeper(deps: { repo: Pick<MoviesRepo, 'keepSiteTitle'>;
   };
 }
 
-function isSite(value: string): value is StreamingSite {
+export function isSite(value: string): value is StreamingSite {
   return (STREAMING_SITES as readonly string[]).includes(value);
 }
 
@@ -191,53 +191,58 @@ export async function recordSitePlay(report: SitePlayReport, deps: SitePlaysDeps
   return { recorded: true, title_id: written.titleId, season, episode };
 }
 
-/** What a play sent back to its streaming site answers: the site's own answer, and where it played. */
-export interface SiteReplay {
-  site: StreamingSite;
-  /** The title's page on the site. */
-  url: string;
-  /** `cli.mjs`'s `play` object: `playing: true` with `fullscreen`, `duration_s`. */
-  play: unknown;
-}
-
 export function playing(answer: unknown): unknown | null {
   const play = (answer as { play?: { playing?: unknown } } | null)?.play;
   return play !== undefined && play !== null && play.playing === true ? play : null;
 }
 
+/** Why a site did not start a title (`playOnSite`), as the site-play route answers it. */
+export type SiteSkip = 'no_match' | 'several_matches' | 'no_episode' | 'series' | 'not_playing';
+
+/** What one site made of a play: its player started, with the title's page there, or why not. */
+export type SiteTry =
+  | { ok: true; site: StreamingSite; site_url: string | null; site_play: unknown }
+  | { ok: false; site: StreamingSite; error: SiteSkip; message: string; play?: unknown };
+
 /**
- * Plays `ref` on the streaming site its title was last played through, when that is how it was last
- * streamed. Null when it was not, when the site does not have the episode at that address, or when
- * its player did not start: the caller then streams it the usual way. The play is kept here
- * (`--no-report` stops the command from reporting it a second time).
+ * Plays `ref` on one streaming site: from `known`, the title's page this site played it from last time (no search,
+ * and no second title of that name), else from the one page the site's search returns for the title's name and
+ * year. Only exactly one match plays (the streaming command's own rule); nothing is guessed. A play from `known` is
+ * kept here (`--no-report`); one from the search is reported to the daemon by the command itself. Never throws.
+ * Shared by `POST /api/movies/:id/site-play` and the sites' fallback after direct streaming (fallback.ts).
  */
-export async function replayOnSite(
-  ref: StreamRef,
-  known: RememberedChannel | null,
-  deps: { runner: StreamingRunner | null; streams: Pick<MovieStreams, 'recordSitePlay'>; log?: (line: string) => void },
-): Promise<SiteReplay | null> {
+export async function playOnSite(
+  input: { site: StreamingSite; ref: StreamRef; title: string | null; year: number | null; known: string | null },
+  deps: { runner: StreamingRunner; streams: Pick<MovieStreams, 'recordSitePlay'>; log?: (line: string) => void },
+): Promise<SiteTry> {
   const log = deps.log ?? ((line: string) => console.log(line));
-  if (deps.runner === null || known === null || known.channel !== 'site' || known.provider === null || known.siteUrl === null || !isSite(known.provider)) return null;
-  const site = known.provider;
-  const args =
-    ref.kind === 'movie'
-      ? ['--play-url', known.siteUrl, '--no-report']
-      : ['--play-from', known.siteUrl, '--episode', String(ref.episode), '--season', String(ref.season), '--no-report'];
-  let play: unknown | null;
+  const { site, ref, known } = input;
+  const slot = ref.kind === 'tv' ? ['--episode', String(ref.episode), '--season', String(ref.season)] : [];
+  const name = input.title ?? '';
   try {
-    play = playing(await deps.runner(site, args));
+    if (known !== null) {
+      const again = playing(await deps.runner(site, ref.kind === 'movie' ? ['--play-url', known, '--no-report'] : ['--play-from', known, ...slot, '--no-report']));
+      if (again !== null) {
+        try {
+          await deps.streams.recordSitePlay(ref, site, known);
+        } catch (err) {
+          log(`[notesd] streaming: the play on ${site} is not kept: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        return { ok: true, site, site_url: known, site_play: again };
+      }
+      if (input.title === null) return { ok: false, site, error: 'not_playing', message: `${site} did not start ${known}.` };
+    }
+    if (input.title === null) return { ok: false, site, error: 'no_match', message: `The title's name is not known, so ${site} was not searched.` };
+    const answer = (await deps.runner(site, ['--play', name, ...(input.year === null ? [] : [String(input.year)]), ...slot])) as { play?: { skipped_play?: unknown; url?: unknown } } | null;
+    const play = playing(answer);
+    if (play !== null) return { ok: true, site, site_url: typeof answer?.play?.url === 'string' ? answer.play.url : null, site_play: play };
+    const skipped = typeof answer?.play?.skipped_play === 'string' ? answer.play.skipped_play : null;
+    if (skipped === 'no_match') return { ok: false, site, error: 'no_match', message: `${site} does not list ${name}.` };
+    if (skipped === 'several_matches') return { ok: false, site, error: 'several_matches', message: `${site} lists several titles called ${name}; name one with /${site}.` };
+    if (skipped === 'no_episode') return { ok: false, site, error: 'no_episode', message: `${site} lists no such episode of ${name}.` };
+    if (skipped === 'series') return { ok: false, site, error: 'series', message: `${site} plays films only.` };
+    return { ok: false, site, error: 'not_playing', message: `${site} did not start ${name}.`, play: answer?.play ?? null };
   } catch (err) {
-    log(`[notesd] streaming: ${site} could not be asked for ${known.siteUrl}: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
+    return { ok: false, site, error: 'not_playing', message: err instanceof Error ? err.message : String(err) };
   }
-  if (play === null) {
-    log(`[notesd] streaming: ${site} played it last time and did not start ${known.siteUrl} now; streaming it the usual way`);
-    return null;
-  }
-  try {
-    await deps.streams.recordSitePlay(ref, site, known.siteUrl);
-  } catch (err) {
-    log(`[notesd] streaming: the play on ${site} is not kept: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  return { site, url: known.siteUrl, play };
 }

@@ -34,11 +34,16 @@ the last of the request, and never part of the title: take it off before reading
 - A codename at the start of a remark ("TM shadow edge is smooth af") says what was played and how.
   It asks for nothing; a request that follows in the same message keeps that codename.
 - Without a codename pass no `provider`. The daemon then plays the title the way it last played
-  on this machine: the cloud provider that streamed it, the torrents, or the streaming site it was
-  played on (`play` is then `{ site, site_url, site_play }`: say it plays on that site). Only a
-  title never streamed is searched on every source. A codename always overrides that
-  ("play Summer Vacation TS" is a torrent even when it last played on dramacool), and what plays
-  is what is remembered from then on.
+  on this machine: the cloud provider that streamed it, or the torrents. Only a title never
+  streamed is searched on every source. A codename always overrides that
+  ("play Summer Vacation TS" is a torrent whatever played it last), and what plays is what is
+  remembered from then on.
+- The streaming sites (idlix, lk21, flicksy, dramacool) are the last resort of a call without
+  `provider` or `magnet`: only when every cloud provider and every torrent found nothing does the
+  daemon try the site the title was last played on, then the others (a film: idlix, lk21, flicksy;
+  an episode: idlix, dramacool), each by its own search, playing only on exactly one match. `play`
+  is then `{ site, site_url, site_play, attempts }` with no session: say it plays on that site
+  because no cloud provider or torrent had it. A codename or a magnet never falls back to a site.
 - `provider: "cloud"` never falls back to a torrent, and `provider: "torrent"` asks no cloud
   provider. When one answers `no_source`, say so and offer the other; do not switch unasked.
 
@@ -292,7 +297,10 @@ for a torrent the user found themselves (e.g. on ext.to) when the indexes have n
   then one short line per attempt from `attempts` with its `outcome` (`no_stream`, `bot_check`,
   `error`, `dubbed`, `unplayable`, `skipped_browser_only`). The daemon tries a torrent before answering, so `attempts`
   may end with `Index: <name>` (a torrent index asked) and `Torrent: <release>` (a torrent tried;
-  `unplayable`: Chrome cannot play its file). Offer `/idlix` or `/lk21`. Do not call again unless asked.
+  `unplayable`: Chrome cannot play its file). Without a provider the streaming sites were tried after
+  them as the last resort (`Site: <name>`: `no_stream` not listed, `skipped` several titles of that
+  name, none guessed), so do not offer them again; with a provider named, offer `/idlix` or `/lk21`.
+  Do not call again unless asked.
   When the last attempt is `Torrents: not tried yet`, more torrents of the title were found than one ask
   tries (six): say how many are left and that asking again tries those, not the same ones. The daemon
   remembers which torrents failed, so "try again" is the same call again.

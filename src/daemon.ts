@@ -61,6 +61,7 @@ import { buildStreamProber } from './directStream/prober.js';
 import { buildTrending } from './directStream/trending/job.js';
 import { StreamReporter } from './directStream/report.js';
 import { defaultClaudeWindowDeps } from './sessions/resume.js';
+import { siteFallback } from './streaming/fallback.js';
 import { scriptRunner } from './streaming/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
@@ -391,6 +392,11 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     caches: () => deps.streamCache?.player() ?? null,
     torrent: torrentSourceOf,
     outside: () => outsideSubtitles,
+    // The streaming sites, asked only when a play with no source named found nothing through direct streaming.
+    siteFallback:
+      movieStreams === null || streaming === null
+        ? null
+        : siteFallback({ runner: streaming, remembered: (ref) => movieStreams.channel(ref), title: (ref) => movieStreams.titleNames(ref), streams: movieStreams }),
     hooks:
       movieStreams === null
         ? undefined

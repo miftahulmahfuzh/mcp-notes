@@ -497,6 +497,11 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - **An answer within 45 s.** `direct_stream_play` answers `started: false, pending: true` with `stage` and the
   attempts so far when the play outlasts 45 s; the same call again joins the play or reads its outcome. Every
   attempt of a play that started nothing is in the daemon's log (`started nothing after`, then `attempt` lines).
+- **The streaming sites last.** With no provider, codename or magnet named, a play that ends `no_source` /
+  `resolve_failed` asks the streaming sites inside the same play in flight (`siteFallback`): the answer is
+  `{site, site_url, site_play, attempts}` with `Site: <name>` attempts after the direct ones, or the error with them.
+  A pending play that fails later still falls back. Proven by `npx vitest run tests/unit/directStream/rememberedChannel.test.ts`
+  (see `streaming.md`).
 - **A dead index is left out.** Three `error` plays in a row (a timeout or a failure): `Index: <name>` is `skipped`
   for 30 minutes of this daemon and gets no request. Never for a `bot_check`.
 - Logic: `npx vitest run tests/unit/directStream/torrentSource.test.ts tests/unit/directStream/playInFlight.test.ts tests/unit/directStream/torrent/find/indexHealth.test.ts tests/unit/scripts/installGuard.test.ts tests/unit/mcp.directStreamTools.test.ts tests/unit/config.torrent.test.ts`.

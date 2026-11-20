@@ -11,7 +11,7 @@ import { MovieStreams } from '../movies/streams.js';
 import { TmdbError } from '../movies/tmdb.js';
 import { STREAMING_OFF } from '../mcp/streamingTools.js';
 import { runJsonScript, STREAMING_SITES, type StreamingSite } from '../streaming/service.js';
-import { playing } from '../streaming/sitePlays.js';
+import { playOnSite } from '../streaming/sitePlays.js';
 import { describeIssues, readJson } from './api.js';
 import { sameOriginOnly } from './sameOrigin.js';
 
@@ -207,31 +207,12 @@ export function moviesGuideRoutes(
       const { season, episode } = parsed.data;
       if (title.kind === 'tv' && (season === undefined || episode === undefined)) return c.json({ error: 'no_episode', message: 'A series needs a season and an episode.' }, 400);
       const ref: StreamRef = title.kind === 'tv' ? { kind: 'tv', tmdbId: title.tmdbId, season: season as number, episode: episode as number } : { kind: 'movie', tmdbId: title.tmdbId };
-      const slot = ref.kind === 'tv' ? ['--episode', String(ref.episode), '--season', String(ref.season)] : [];
-      const streams = new MovieStreams(movies);
-      try {
-        // The page this site played the title from last time: no search, and no second title of that name.
-        const known = (await movies.repo.methodsOf(id.data, movies.host)).find((m) => m.method === site)?.siteUrl ?? null;
-        if (known !== null) {
-          const again = playing(await runner(site, ref.kind === 'movie' ? ['--play-url', known, '--no-report'] : ['--play-from', known, ...slot, '--no-report']));
-          if (again !== null) {
-            await streams.recordSitePlay(ref, site, known);
-            return c.json({ ok: true, site, site_url: known, site_play: again });
-          }
-        }
-        // The command reports a play that started to this daemon itself (POST /api/movies/site-play), which keeps it.
-        const answer = (await runner(site, ['--play', title.title, ...(title.year === null ? [] : [String(title.year)]), ...slot])) as { play?: { skipped_play?: unknown; url?: unknown } } | null;
-        const play = playing(answer);
-        if (play !== null) return c.json({ ok: true, site, site_url: typeof answer?.play?.url === 'string' ? answer.play.url : null, site_play: play });
-        const skipped = typeof answer?.play?.skipped_play === 'string' ? answer.play.skipped_play : null;
-        if (skipped === 'no_match') return c.json({ error: 'no_match', message: `${site} does not list ${title.title}.` }, 404);
-        if (skipped === 'several_matches') return c.json({ error: 'several_matches', message: `${site} lists several titles called ${title.title}; name one with /${site}.` }, 409);
-        if (skipped === 'no_episode') return c.json({ error: 'no_episode', message: `${site} lists no such episode of ${title.title}.` }, 404);
-        if (skipped === 'series') return c.json({ error: 'series', message: `${site} plays films only.` }, 409);
-        return c.json({ error: 'not_playing', message: `${site} did not start ${title.title}.`, play: answer?.play ?? null }, 502);
-      } catch (err) {
-        return c.json({ error: 'not_playing', message: err instanceof Error ? err.message : String(err) }, 502);
-      }
+      // The page this site played the title from last time: no search, and no second title of that name.
+      const known = (await movies.repo.methodsOf(id.data, movies.host)).find((m) => m.method === site)?.siteUrl ?? null;
+      const tried = await playOnSite({ site, ref, title: title.title, year: title.year, known }, { runner, streams: new MovieStreams(movies) });
+      if (tried.ok) return c.json({ ok: true, site, site_url: tried.site_url, site_play: tried.site_play });
+      const status = tried.error === 'no_match' || tried.error === 'no_episode' ? 404 : tried.error === 'several_matches' || tried.error === 'series' ? 409 : 502;
+      return c.json({ error: tried.error, message: tried.message, ...(tried.play === undefined ? {} : { play: tried.play }) }, status);
     }),
   );
 

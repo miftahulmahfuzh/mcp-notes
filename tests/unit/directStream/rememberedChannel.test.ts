@@ -9,6 +9,7 @@ import type { MediaProbe } from '../../../src/directStream/torrent/probe.js';
 import { TorrentSource, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
 import type { RememberedChannel } from '../../../src/directStream/types.js';
 import { directStreamRoutes } from '../../../src/http/directStreamApi.js';
+import { siteFallback, sitesToAsk } from '../../../src/streaming/fallback.js';
 
 const HEADERS = { origin: 'http://localhost', 'content-type': 'application/json' };
 const PLAY_FILM = { kind: 'movie', tmdb_id: 467905 };
@@ -37,8 +38,10 @@ interface Setup {
   torrentHasIt?: boolean;
   /** Torrents whose swarm answers nothing. */
   deadHashes?: string[];
-  /** What the streaming command answers; unset: no streaming runner. */
+  /** What the streaming command answers, or answers per site and arguments; unset: no streaming runner, so no site is asked. */
   site?: unknown;
+  /** Held until opened: the streaming command's answer. */
+  holdSite?: Promise<void>;
 }
 
 function setup(o: Setup = {}) {
@@ -68,6 +71,28 @@ function setup(o: Setup = {}) {
     lastResort: [],
   };
   const finds = vi.fn(async () => answer);
+  const channel = async (): Promise<RememberedChannel | null> => (o.known === null || o.known === undefined ? null : { ...NOTHING, ...o.known });
+  const siteLog: string[] = [];
+  const fallback =
+    o.site === undefined
+      ? null
+      : siteFallback({
+          runner: async (site, args) => {
+            siteRuns.push([site, args]);
+            await o.holdSite;
+            return typeof o.site === 'function' ? (o.site as (site: string, args: string[]) => unknown)(site, args) : o.site;
+          },
+          remembered: channel,
+          title: async () => ({ title: 'Summer Vacation', year: 2026 }),
+          streams: {
+            recordSitePlay: async (ref, site, url) => {
+              sitePlays.push([ref, site, url]);
+              return { titleId: 'tv-335951', playId: 1 };
+            },
+          },
+          now: () => NOW.getTime(),
+          log: (line) => void siteLog.push(line),
+        });
   const torrent = new TorrentSource({ swarm, find: finds, probe: async () => MP4_EN, tiers: [], localBase: () => 'http://127.0.0.1:4321', log: () => undefined });
   const svc = new DirectStreamService({
     repo: { providers: async () => [], healthFor: async () => [], recordAttempts: async () => undefined } as unknown as DirectStreamRepo,
@@ -86,35 +111,22 @@ function setup(o: Setup = {}) {
       recordResolve: async (_ref, result) => {
         recorded.push(result.ok);
       },
-      channel: async () => (o.known === null || o.known === undefined ? null : { ...NOTHING, ...o.known }),
+      channel,
       channelFailed: async (_ref, kind) => {
         failed.push(kind);
       },
     },
     torrent: () => torrent,
+    siteFallback: fallback,
     sessions: new SessionStore(() => NOW),
     now: () => NOW,
     log: () => undefined,
   });
   const app = new Hono();
   const movies = { host: 'host-a', repo: {}, tmdb: null, events: { changed: () => undefined } } as unknown as NonNullable<AppDeps['movies']>;
-  app.route(
-    '/',
-    directStreamRoutes({
-      directStream: svc,
-      movies,
-      ...(o.site === undefined
-        ? {}
-        : {
-            streaming: async (site: string, args: string[]) => {
-              siteRuns.push([site, args]);
-              return o.site;
-            },
-          }),
-    }),
-  );
+  app.route('/', directStreamRoutes({ directStream: svc, movies }));
   const flag = (args: string[], name: string): string | null => (args.includes(name) ? args[args.indexOf(name) + 1]! : null);
-  return { app, finds, failed, recorded, siteRuns, sitePlays, opened, asked: () => resolves.map((a) => ({ only: flag(a, '--only'), skip: flag(a, '--skip') })) };
+  return { app, svc, finds, failed, recorded, siteRuns, sitePlays, siteLog, opened, asked: () => resolves.map((a) => ({ only: flag(a, '--only'), skip: flag(a, '--skip') })) };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,28 +272,148 @@ describe('a named method goes to what last played the title through that method'
   });
 });
 
-describe('a title last played on a streaming site', () => {
+const PLAYING = { ok: true, play: { playing: true, fullscreen: true } };
+const EPISODE_REF = { kind: 'tv' as const, tmdbId: 335951, season: 1, episode: 4 };
+const sitesOf = (attempts: Array<{ provider: string; outcome: string }>): string[] => attempts.filter((a) => a.provider.startsWith('Site: ')).map((a) => `${a.provider} ${a.outcome}`);
+
+describe('the streaming sites are the last resort, after direct streaming found nothing', () => {
   const SITE = { channel: 'site' as const, provider: 'dramacool', siteUrl: 'https://dramacool9.com.ro/summer-vacation-2026', season: 1, episode: 3, playedAt: daysAgo(1) };
 
-  it('plays there again: the episode asked for, from the title page the site returned', async () => {
-    const t = setup({ known: SITE, site: { ok: true, play: { playing: true, fullscreen: true } }, resolve: { all: resolved('Alpha') } });
+  it('a title last played on a site plays from a cloud provider that has it, and no site is asked', async () => {
+    const t = setup({ known: SITE, site: PLAYING, resolve: { all: resolved('Alpha') } });
     const { status, json } = await post(t.app, PLAY_EPISODE);
     expect(status).toBe(200);
-    expect(json).toEqual({ ok: true, site: 'dramacool', site_url: SITE.siteUrl, site_play: { playing: true, fullscreen: true } });
-    expect(t.siteRuns).toEqual([['dramacool', ['--play-from', SITE.siteUrl, '--episode', '4', '--season', '1', '--no-report']]]);
-    expect(t.asked()).toEqual([]);
+    expect(json.session.provider).toBe('Alpha');
+    // The site channel remembers nothing for direct streaming: every cloud provider is asked, none skipped.
+    expect(t.asked()).toEqual([{ only: null, skip: null }]);
+    expect(t.siteRuns).toEqual([]);
   });
 
-  it('is streamed the usual way when the site does not start it, when a source is named, and when the streaming tools are off', async () => {
-    const stopped = setup({ known: SITE, site: { ok: false, play: { playing: false, skipped_play: 'no_episode' } }, resolve: { all: resolved('Alpha') } });
-    expect((await post(stopped.app, PLAY_EPISODE)).json.session.provider).toBe('Alpha');
-    expect(stopped.siteRuns).toHaveLength(1);
+  it('a site channel does not keep the torrents from being asked when no cloud provider has it', async () => {
+    const t = setup({ known: SITE, site: PLAYING, resolve: { all: noSource('Alpha') } });
+    const { json } = await post(t.app, PLAY_EPISODE);
+    expect(json.session.provider).toBe('Torrent');
+    expect(t.finds).toHaveBeenCalledTimes(1);
+    expect(t.siteRuns).toEqual([]);
+  });
 
-    const named = setup({ known: SITE, site: { ok: true, play: { playing: true } }, resolve: { all: resolved('Alpha') } });
-    expect((await post(named.app, { ...PLAY_EPISODE, provider: 'torrent' })).json.session.provider).toBe('Torrent');
-    expect(named.siteRuns).toEqual([]);
+  it('when every cloud provider and every torrent found nothing, the site it was last played on plays it from its page there', async () => {
+    const t = setup({ known: SITE, site: PLAYING, torrentHasIt: false });
+    const { status, json } = await post(t.app, PLAY_EPISODE);
+    expect(status).toBe(200);
+    expect(json).toMatchObject({ ok: true, site: 'dramacool', site_url: SITE.siteUrl, site_play: { playing: true, fullscreen: true } });
+    expect(json.session).toBeUndefined();
+    expect(json.attempts.map((a: { provider: string }) => a.provider)).toEqual(['Alpha', 'Index: torrentio', 'Site: dramacool']);
+    expect(t.siteRuns).toEqual([['dramacool', ['--play-from', SITE.siteUrl, '--episode', '4', '--season', '1', '--no-report']]]);
+    // A play from a remembered page is kept here; the command was told not to report it.
+    expect(t.sitePlays).toEqual([[EPISODE_REF, 'dramacool', SITE.siteUrl]]);
+    expect(t.failed).toEqual(['cloud', 'torrent']);
+    expect(t.siteLog).toEqual(['[notesd] streaming: asked dramacool for Summer Vacation (2026) S1E4 at the page it played from last time: playing after 0 s']);
+  });
 
-    const off = setup({ known: SITE, resolve: { all: resolved('Alpha') } });
-    expect((await post(off.app, PLAY_EPISODE)).json.session.provider).toBe('Alpha');
+  it('with no site remembered, the sites are searched in order and the first single match plays; several matches are never guessed', async () => {
+    const t = setup({
+      known: null,
+      torrentHasIt: false,
+      site: (site: string) =>
+        site === 'idlix'
+          ? { ok: true, play: { playing: false, skipped_play: 'several_matches' } }
+          : { ok: true, play: { playing: true, fullscreen: true, url: `https://${site}.example/summer-vacation-2026` } },
+    });
+    const { status, json } = await post(t.app, PLAY_FILM);
+    expect(status).toBe(200);
+    expect(json).toMatchObject({ ok: true, site: 'lk21', site_url: 'https://lk21.example/summer-vacation-2026' });
+    expect(t.siteRuns).toEqual([
+      ['idlix', ['--play', 'Summer Vacation', '2026']],
+      ['lk21', ['--play', 'Summer Vacation', '2026']],
+    ]);
+    expect(sitesOf(json.attempts)).toEqual(['Site: idlix skipped', 'Site: lk21 resolved']);
+    // A search play is reported by the command itself, not here.
+    expect(t.sitePlays).toEqual([]);
+  });
+
+  it('when no site starts it either, the play fails no_source with every site in its attempts', async () => {
+    const t = setup({ known: null, torrentHasIt: false, site: { ok: true, play: { playing: false, skipped_play: 'no_match' } } });
+    const { status, json } = await post(t.app, PLAY_EPISODE);
+    expect(status).toBe(502);
+    expect(json.error).toBe('no_source');
+    // An episode: idlix, then dramacool; lk21 and flicksy start no episode.
+    expect(t.siteRuns.map(([site]) => site)).toEqual(['idlix', 'dramacool']);
+    expect(sitesOf(json.attempts)).toEqual(['Site: idlix no_stream', 'Site: dramacool no_stream']);
+  });
+
+  it('a remembered page that no longer plays is searched on that site, then the others follow', async () => {
+    const t = setup({
+      known: { channel: 'site', provider: 'flicksy', siteUrl: 'https://flicksy.pro/watch/movie/467905', playedAt: daysAgo(1) },
+      torrentHasIt: false,
+      site: (site: string, args: string[]) => (site === 'idlix' && args[0] === '--play' ? PLAYING : { ok: false, play: { playing: false, skipped_play: 'no_match' } }),
+    });
+    const { json } = await post(t.app, PLAY_FILM);
+    expect(json.site).toBe('idlix');
+    expect(t.siteRuns).toEqual([
+      ['flicksy', ['--play-url', 'https://flicksy.pro/watch/movie/467905', '--no-report']],
+      ['flicksy', ['--play', 'Summer Vacation', '2026']],
+      ['idlix', ['--play', 'Summer Vacation', '2026']],
+    ]);
+  });
+
+  it('a named provider, a codename kind or a magnet never asks a site', async () => {
+    for (const named of [{ provider: 'Alpha' }, { provider: 'cloud' }, { provider: 'torrent' }, { magnet: `magnet:?xt=urn:btih:${h(7)}` }]) {
+      const t = setup({ known: SITE, site: PLAYING, torrentHasIt: false, deadHashes: [h(7)] });
+      const { status } = await post(t.app, { ...PLAY_EPISODE, ...named });
+      expect(status).toBe(502);
+      expect(t.siteRuns).toEqual([]);
+    }
+  });
+
+  it('without the streaming tools a play that found nothing fails as before', async () => {
+    const t = setup({ known: SITE, torrentHasIt: false });
+    const { status, json } = await post(t.app, PLAY_EPISODE);
+    expect(status).toBe(502);
+    expect(json.error).toBe('no_source');
+    expect(sitesOf(json.attempts)).toEqual([]);
+  });
+
+  it('a pending play that fails later still goes to the sites; an ask meanwhile joins it, and the next ask reads its outcome', async () => {
+    let open = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const t = setup({ known: SITE, site: PLAYING, torrentHasIt: false, holdSite: held });
+    const first = await t.svc.playWithin(EPISODE_REF, {}, 0);
+    expect(first.pending).toBe(true);
+    await new Promise((r) => setTimeout(r, 10));
+    // Direct streaming has failed and the site is being asked: still starting, so the daemon is busy.
+    expect(t.svc.starting().map((s) => s.stage)).toEqual(['asking dramacool, which played it last time: no cloud provider or torrent could stream it']);
+    const joined = await t.svc.playWithin(EPISODE_REF, {}, 0);
+    expect(joined.pending).toBe(true);
+    expect(t.siteRuns).toHaveLength(1);
+    open();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(t.siteRuns).toHaveLength(1);
+    expect(t.svc.starting()).toEqual([]);
+    const outcome = await t.svc.playWithin(EPISODE_REF, {}, 0);
+    expect(outcome.pending).toBe(false);
+    expect(!outcome.pending && outcome.result).toMatchObject({ site: 'dramacool', site_url: SITE.siteUrl });
+    expect(t.finds).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('sitesToAsk', () => {
+  const at = (days: number, siteUrl: string | null) => ({ provider: null, infoHash: null, siteUrl, season: null, episode: null, playedAt: daysAgo(days) });
+
+  it("puts the site last played on first, with its page, then the fixed order with each site's own remembered page", () => {
+    expect(sitesToAsk({ kind: 'movie', tmdbId: 1 }, null)).toEqual([
+      { site: 'idlix', known: null },
+      { site: 'lk21', known: null },
+      { site: 'flicksy', known: null },
+    ]);
+    expect(sitesToAsk({ kind: 'tv', tmdbId: 1, season: 1, episode: 2 }, null).map((s) => s.site)).toEqual(['idlix', 'dramacool']);
+    const known: RememberedChannel = { ...NOTHING, channel: 'cloud', provider: 'Beta', methods: { lk21: at(5, 'https://lk21.example/a'), idlix: at(9, 'https://idlix.example/a'), cloud: at(1, null) } };
+    expect(sitesToAsk({ kind: 'movie', tmdbId: 1 }, known)).toEqual([
+      { site: 'lk21', known: 'https://lk21.example/a' },
+      { site: 'idlix', known: 'https://idlix.example/a' },
+      { site: 'flicksy', known: null },
+    ]);
   });
 });

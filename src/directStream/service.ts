@@ -177,6 +177,35 @@ export interface PlayResult {
 }
 
 /**
+ * A play that went to a streaming site because direct streaming found nothing (`siteFallback`): the site, the
+ * title's page there and the streaming command's `play` object. There is no session: the site's own player plays.
+ */
+export interface SitePlay {
+  site: string;
+  site_url: string | null;
+  site_play: unknown;
+}
+
+/** `play`'s answer when the streaming sites played it: every attempt, the direct ones first, then each site asked. */
+export interface SitePlayResult extends SitePlay {
+  attempts: ResolveAttempt[];
+}
+
+/** What a play answers: the player page opened on a direct stream, or a streaming site's player. */
+export type PlayAnswer = PlayResult | SitePlayResult;
+
+export function isSitePlay(answer: PlayAnswer): answer is SitePlayResult {
+  return 'site' in answer && typeof answer.site === 'string';
+}
+
+/**
+ * The streaming sites, asked only when a play with no source named found nothing to play through direct streaming
+ * (every cloud provider and every torrent): the site the title was last played on, then the others in a fixed
+ * order (src/streaming/fallback.ts). `attempt` is called once per site asked, as it ends. Null: no site started it.
+ */
+export type SiteFallback = (ref: StreamRef, progress: { stage: (words: string) => void; attempt: (attempt: ResolveAttempt) => void }) => Promise<SitePlay | null>;
+
+/**
  * A play that was asked for and whose player page does not report yet, as `GET /api/movies/player` lists it
  * (`starting`): being resolved (a cloud resolve, a torrent's indexes and swarms), or opened a moment ago. While
  * there is one the daemon is busy, whatever `stream` and `current` say.
@@ -216,7 +245,7 @@ interface PlayInFlight extends PlayTrack {
   provider: string | null;
   title: string;
   since: Date;
-  promise: Promise<PlayResult>;
+  promise: Promise<PlayAnswer>;
   /** A caller was answered `pending`: the outcome is kept for the next ask. */
   waited: boolean;
   /** Set once the page was opened: the session, and when. */
@@ -289,9 +318,24 @@ export interface DirectStreamServiceOptions {
   firstProvider?: string | null;
   /** How long a play waits for the stream checks before it opens; default CHECK_HEAD_MS (a test's seam). */
   checkHeadMs?: number;
+  /**
+   * The streaming sites, the last resort of a play with no provider, codename or magnet named, after every cloud
+   * provider and every torrent found nothing. Unset or null: such a play fails as it always did.
+   */
+  siteFallback?: SiteFallback | null;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * True when a play ended with nothing to play: every cloud provider and every torrent found nothing (`no_source`), or
+ * the cloud resolve could not run and the torrents found nothing either (`resolve_failed`). Not for a title that is
+ * not out yet: a site's copy of it is a trailer or a fake too.
+ */
+function nothingToPlay(err: unknown): err is DirectStreamError {
+  if (!(err instanceof DirectStreamError) || (err.code !== 'no_source' && err.code !== 'resolve_failed')) return false;
+  return !err.attempts.some((a) => a.provider === NOT_RELEASED);
+}
 
 /** `work`'s answer when it comes within `ms`, else null; `work` goes on either way. */
 async function withinMs<T>(work: Promise<T>, ms: number): Promise<T | null> {
@@ -418,7 +462,7 @@ export class DirectStreamService {
   /** The plays being started, by title and named provider: a second ask of the same play joins the first. */
   private readonly inFlight = new Map<string, PlayInFlight>();
   /** The outcomes of plays that were answered `pending`, for the next ask of the same play. */
-  private readonly outcomes = new Map<string, { at: number; result: PlayResult | null; error: unknown }>();
+  private readonly outcomes = new Map<string, { at: number; result: PlayAnswer | null; error: unknown }>();
   /** The session made for a page whose own session a restart ended, by the id that page holds; and those being made (continueSession). */
   private readonly continued = new Map<string, string>();
   private readonly continuing = new Map<string, Promise<StreamSession>>();
@@ -540,7 +584,7 @@ export class DirectStreamService {
    * cache of the title (phase 5), when it can be played (`playable`), makes the session with no
    * resolve; otherwise the title is resolved first, as before.
    */
-  async play(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null } = {}): Promise<PlayResult> {
+  async play(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null } = {}): Promise<PlayAnswer> {
     return this.begin(toStreamRef(input), options).promise;
   }
 
@@ -549,7 +593,7 @@ export class DirectStreamService {
    * 60 s) gets `pending` with the stage and the attempts so far instead of nothing. The play goes on in the daemon
    * and opens the player by itself; the same call again joins it, or reads its outcome once it has one.
    */
-  async playWithin(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, waitMs: number): Promise<{ pending: false; result: PlayResult } | PendingPlay> {
+  async playWithin(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, waitMs: number): Promise<{ pending: false; result: PlayAnswer } | PendingPlay> {
     const ref = toStreamRef(input);
     const key = playKey(ref, options.provider ?? null, options.magnet ?? null);
     this.sweepOutcomes();
@@ -632,7 +676,7 @@ export class DirectStreamService {
       since: this.now(),
       stage: 'starting',
       attempts: [],
-      promise: Promise.resolve(null as unknown as PlayResult),
+      promise: Promise.resolve(null as unknown as PlayAnswer),
       waited: false,
       opened: null,
       failed: false,
@@ -641,8 +685,15 @@ export class DirectStreamService {
     this.nameIt(entry);
     entry.promise = this.playNow(ref, options, entry).then(
       (result) => {
-        entry.opened = { sessionId: result.session.session_id, at: this.now().getTime() };
-        entry.stage = 'opened: waiting for the player page';
+        if (isSitePlay(result)) {
+          // A streaming site's own player plays it: no page of this daemon will report, so the play is no longer starting.
+          entry.opened = { sessionId: '', at: this.now().getTime() };
+          entry.stage = `playing on ${result.site}`;
+          if (this.inFlight.get(key) === entry) this.inFlight.delete(key);
+        } else {
+          entry.opened = { sessionId: result.session.session_id, at: this.now().getTime() };
+          entry.stage = 'opened: waiting for the player page';
+        }
         if (entry.waited) this.keepOutcome(key, result, null);
         return result;
       },
@@ -661,7 +712,7 @@ export class DirectStreamService {
   }
 
   /** Keeps the outcome of a play answered `pending` for its next ask: for PLAY_OUTCOME_KEEP_MS, and never more than PLAY_OUTCOMES_MAX of them. */
-  private keepOutcome(key: string, result: PlayResult | null, error: unknown): void {
+  private keepOutcome(key: string, result: PlayAnswer | null, error: unknown): void {
     this.sweepOutcomes();
     this.outcomes.delete(key);
     this.outcomes.set(key, { at: this.now().getTime(), result, error });
@@ -694,7 +745,48 @@ export class DirectStreamService {
     }
   }
 
-  private async playNow(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, track: PlayTrack): Promise<PlayResult> {
+  /**
+   * The play: direct streaming, and when that found nothing to play and no source was named, the streaming sites
+   * (`siteFallback`). It runs inside the play in flight, so a caller answered `pending` gets the site's outcome on its
+   * next ask, a second ask joins it, and `starting()` lists the play until a site's player starts or every site failed.
+   */
+  private async playNow(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, track: PlayTrack): Promise<PlayAnswer> {
+    const fallback = this.opts.siteFallback ?? null;
+    if (fallback === null || (options.provider ?? null) !== null || (options.magnet ?? null) !== null) return this.playDirect(ref, options, track);
+    try {
+      return await this.playDirect(ref, options, track);
+    } catch (err) {
+      if (!nothingToPlay(err)) throw err;
+      return this.playOnSites(ref, err, fallback, track);
+    }
+  }
+
+  /** The streaming sites, after direct streaming failed with `failure`. Throws `failure` again, with each site's attempt added, when none started it. */
+  private async playOnSites(ref: StreamRef, failure: DirectStreamError, fallback: SiteFallback, track: PlayTrack): Promise<SitePlayResult> {
+    const sites: ResolveAttempt[] = [];
+    track.attempts = [...failure.attempts];
+    track.stage = 'asking the streaming sites: no cloud provider or torrent could stream it';
+    this.log(`[notesd] direct stream: no cloud provider or torrent could stream ${refLabel(ref)}; asking the streaming sites`);
+    let played: SitePlay | null = null;
+    try {
+      played = await fallback(ref, {
+        stage: (words) => {
+          track.stage = words;
+        },
+        attempt: (attempt) => {
+          sites.push(attempt);
+          track.attempts = [...failure.attempts, ...sites];
+        },
+      });
+    } catch (err) {
+      this.log(`[notesd] direct stream: the streaming sites could not be asked for ${refLabel(ref)}: ${messageOf(err)}`);
+    }
+    const attempts = [...failure.attempts, ...sites];
+    if (played === null) throw new DirectStreamError(failure.code, failure.message, { ...(failure.reason === null ? {} : { reason: failure.reason }), attempts });
+    return { ...played, attempts };
+  }
+
+  private async playDirect(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, track: PlayTrack): Promise<PlayResult> {
     const resumeS = options.resumeS ?? null;
     // The owner named a provider ("stream it from VidLink"): only that one is asked, and a cache is passed over.
     // "torrent" asks the torrent source alone: a finished download on this machine first, else the swarm.
@@ -759,8 +851,9 @@ export class DirectStreamService {
   }
 
   /**
-   * How the title was last streamed on this machine (the `channel` hook), or null. The routes and tools read it
-   * to send a play with no provider named back to a streaming site.
+   * How the title was last streamed on this machine (the `channel` hook), or null. A remembered streaming site
+   * (`channel: "site"`) means nothing here: a play goes the direct way first, and the site is asked only when that
+   * found nothing (`siteFallback`).
    */
   async remembered(input: StreamRefInput): Promise<RememberedChannel | null> {
     const hook = this.opts.hooks?.channel;
@@ -1953,6 +2046,8 @@ export interface DirectStreamWiring {
   torrent?: () => TorrentSource | null;
   /** An English subtitle from outside the stream for a cloud session that has none, read at play time. */
   outside?: () => OutsideSubtitles | null;
+  /** The streaming sites, the last resort of a play with no source named (src/streaming/fallback.ts); null or unset: none. */
+  siteFallback?: SiteFallback | null;
 }
 
 /** Test seams. */
@@ -1991,6 +2086,7 @@ export function buildDirectStreamService(
     audioCheck: wiring.audioCheck ?? null,
     torrent: wiring.torrent,
     outside: wiring.outside,
+    siteFallback: wiring.siteFallback ?? null,
     ahead: ds.ahead === true,
     firstProvider: ds.firstProvider ?? null,
     fetch: overrides.fetch,

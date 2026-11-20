@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AudioLangCheck, AudioLook, AudioVerdict } from '../../../src/directStream/audioLang.js';
 import type { PictureCheck, PictureLook } from '../../../src/directStream/picture.js';
 import type { DirectStreamRepo } from '../../../src/directStream/repo.js';
-import { CHECKS_PENDING, DirectStreamService } from '../../../src/directStream/service.js';
+import { CHECKS_PENDING, DirectStreamService, type PlayResult } from '../../../src/directStream/service.js';
 import type { ResolveAttempt, ResolvedSource, StreamRef } from '../../../src/directStream/types.js';
 
 const FILM: StreamRef = { kind: 'movie', tmdbId: 818647 };
@@ -123,7 +123,7 @@ describe('a play does not wait for the stream checks', () => {
   it('opens the page on the stream that resolved when the checks outlast the head, and says what they found once they end', async () => {
     const slow = slowAudio('dubbed');
     const svc = setup({ audio: slow.audio, headMs: 5 });
-    const played = await svc.play(FILM);
+    const played = (await svc.play(FILM)) as PlayResult;
     // The dub plays this once: one resolve, no second round, and the page is open before anything was heard.
     expect(played.session.provider).toBe('Alpha');
     expect(svc.resolves).toEqual([[]]);
@@ -138,7 +138,7 @@ describe('a play does not wait for the stream checks', () => {
   it('still passes a dub over before the page opens when the check answers within the head', async () => {
     const audio = fakeAudio({ Alpha: 'dubbed', Beta: 'original' });
     const svc = setup({ audio, headMs: 5_000 });
-    const played = await svc.play(FILM);
+    const played = (await svc.play(FILM)) as PlayResult;
     expect(played.session.provider).toBe('Beta');
     expect(svc.resolves).toEqual([[], ['Alpha']]);
     expect(played.attempts.filter((a) => a.outcome === 'resolved').map((a) => `${a.provider}: ${a.detail}`)).toEqual(['Alpha: audio: dubbed (heard dubbed)', 'Beta: audio: original (heard original)']);
@@ -147,7 +147,7 @@ describe('a play does not wait for the stream checks', () => {
   it('a provider heard as a dub behind one play is left out of the next from the start', async () => {
     const audio = fakeAudio({ Beta: 'original' }, ['Alpha']);
     const svc = setup({ audio, headMs: 5 });
-    expect((await svc.play(FILM)).session.provider).toBe('Beta');
+    expect(((await svc.play(FILM)) as PlayResult).session.provider).toBe('Beta');
     expect(svc.resolves).toEqual([['Alpha']]);
   });
 
@@ -171,7 +171,7 @@ describe('a play does not wait for the stream checks', () => {
       badFor: async () => [],
     } as unknown as PictureCheck;
     const svc = setup({ picture, originalLanguage: 'en', headMs: 5_000 });
-    const played = await svc.play(FILM);
+    const played = (await svc.play(FILM)) as PlayResult;
     expect(played.session.provider).toBe('Alpha');
     expect(svc.resolves).toEqual([[]]);
     expect(looks).toEqual(['Alpha']);

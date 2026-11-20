@@ -9,7 +9,6 @@ import { isFile } from '../directStream/torrent/subtitles/disk.js';
 import { DirectStreamError, type StreamRef } from '../directStream/types.js';
 import type { StreamLive } from '../movies/streamLive.js';
 import { MovieStreams, type MovieStreamsSource, type StreamSessionRef } from '../movies/streams.js';
-import { replayOnSite } from '../streaming/sitePlays.js';
 import { sameOriginOnly } from './sameOrigin.js';
 
 /**
@@ -77,7 +76,7 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
 
 // `movies` is optional here so a caller without the movies store (phase 3's route tests) still fits;
 // the position route answers `direct_stream_off` without it.
-export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'streaming' | 'torrents'>>): Hono {
+export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'torrents'>>): Hono {
   const r = new Hono();
   const service = (): DirectStreamService => {
     const svc = deps.directStream ?? null;
@@ -104,12 +103,7 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     }
     try {
       const ref = refFromBody(body.data);
-      // No provider named: a title last played on a streaming site plays there again.
-      const movies = deps.movies ?? null;
-      if ((body.data.provider ?? null) === null && (body.data.magnet ?? null) === null && movies !== null) {
-        const onSite = await replayOnSite(ref, await service().remembered(ref), { runner: deps.streaming ?? null, streams: new MovieStreams(movies) });
-        if (onSite !== null) return c.json({ ok: true, site: onSite.site, site_url: onSite.url, site_play: onSite.play });
-      }
+      // No source named: direct streaming first; the streaming sites only when it found nothing (`site`, `site_url`, `site_play`).
       const played = await service().play(ref, { resumeS: body.data.resume_s ?? null, provider: body.data.provider ?? null, magnet: body.data.magnet ?? null });
       return c.json({ ok: true, ...played });
     } catch (err) {

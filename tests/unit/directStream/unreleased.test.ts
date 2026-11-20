@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectStreamRepo } from '../../../src/directStream/repo.js';
-import { DirectStreamService, NOT_RELEASED } from '../../../src/directStream/service.js';
+import { DirectStreamService, NOT_RELEASED, type PlayResult } from '../../../src/directStream/service.js';
 import { DirectStreamError } from '../../../src/directStream/types.js';
 
 const FILM = { kind: 'movie' as const, tmdbId: 806704 };
@@ -78,7 +78,7 @@ describe('a title that is not out yet', () => {
   it('plays as usual when the day is today, is past, is unknown, or cannot be read', async () => {
     for (const day of ['2026-11-19', '1999-03-31', null, 'soon', new Error('TMDB is down')]) {
       const t = setup(day);
-      const played = await t.svc.play(FILM);
+      const played = (await t.svc.play(FILM)) as PlayResult;
       expect(played.session.provider).toBe('Alpha');
       expect(t.runs).toEqual(['resolve', 'open']);
     }

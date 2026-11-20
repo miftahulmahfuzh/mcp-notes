@@ -322,7 +322,9 @@ so "what did I watch" still answers after the file is gone.
   `movies_continue`, VLC, never a stream. The other four are streams and belong to the
   `/direct-stream` skill: NTM and NTS (a cloud provider, never a torrent: `direct_stream_play` with
   `provider: "cloud"`), TM and TS (a torrent: `provider: "torrent"`). When a DM or DS title has no
-  file on this machine, say so and offer a stream; do not start one unasked.
+  file on this machine, say so and offer a stream; do not start one unasked. A stream asked for
+  without a codename goes to direct streaming first; the streaming sites (idlix, lk21, flicksy,
+  dramacool) are only its last resort, when no cloud provider and no torrent has it.
 - "Play something", "I am eating dinner, play a random movie", "I am eating lunch, play smth",
   "let's watch something" (no title named) → `movies_continue` with `random: true` and nothing
   else, at once: no listing, no questions, no choosing a title yourself. The server picks one film

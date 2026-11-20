@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { DirectStreamRepo } from '../../../src/directStream/repo.js';
-import { DirectStreamService, PLAY_OUTCOME_KEEP_MS, PLAY_OUTCOMES_MAX, PLAY_PAGE_GRACE_MS, playKey } from '../../../src/directStream/service.js';
+import { DirectStreamService, PLAY_OUTCOME_KEEP_MS, PLAY_OUTCOMES_MAX, PLAY_PAGE_GRACE_MS, playKey, type PlayResult } from '../../../src/directStream/service.js';
 import type { CacheSubtitleView } from '../../../src/directStream/cachePlay.js';
 import { parseRelease, type TorrentCandidate } from '../../../src/directStream/torrent/find/index.js';
 import type { MediaProbe } from '../../../src/directStream/torrent/probe.js';
@@ -100,7 +100,7 @@ describe('a play that is being started counts as busy', () => {
       { kind: 'movie', tmdb_id: 818647, season: null, episode: null, title: 'Through My Window (2022)', provider: 'torrent', since: '2026-11-16T20:46:14.000Z', stage: 'opening 1 torrent: Through My Window 2022 1080p WEBRip' },
     ]);
     held.open();
-    const played = await play;
+    const played = (await play) as PlayResult;
     // Opened, and the page has not reported yet: still starting, until it reports or the grace is over.
     expect(t.svc.starting().map((s) => s.stage)).toEqual(['opened: waiting for the player page']);
     expect(t.svc.starting(played.session.session_id)).toEqual([]);
@@ -122,7 +122,7 @@ describe('a play that is being started counts as busy', () => {
 
   it('a page that says it closed has reported: its play is not starting any more', async () => {
     const t = setup();
-    const played = await t.svc.play(FILM, { provider: 'torrent' });
+    const played = (await t.svc.play(FILM, { provider: 'torrent' })) as PlayResult;
     expect(t.svc.starting()).toHaveLength(1);
     t.svc.letGo(played.session.session_id);
     expect(t.svc.starting()).toEqual([]);
@@ -167,7 +167,7 @@ describe('playWithin: the caller is answered before it gives up', () => {
     // Asked again: the outcome of that play, not a second play.
     const second = await t.svc.playWithin(FILM, { provider: 'torrent' }, 20);
     expect(second.pending).toBe(false);
-    expect(!second.pending && second.result.session.provider).toBe('Torrent');
+    expect(!second.pending && (second.result as PlayResult).session.provider).toBe('Torrent');
     expect(t.runs).toEqual(['open']);
   });
 
@@ -186,7 +186,7 @@ describe('playWithin: the caller is answered before it gives up', () => {
   it('a play fast enough is answered as before', async () => {
     const t = setup();
     const out = await t.svc.playWithin(FILM, { provider: 'cloud' }, 5_000);
-    expect(!out.pending && out.result.session.provider).toBe('Alpha');
+    expect(!out.pending && (out.result as PlayResult).session.provider).toBe('Alpha');
   });
 
   it('a pending play that fails keeps its error for the next ask, and its attempts are in the log either way', async () => {
@@ -241,8 +241,8 @@ describe('one play in flight per title, named provider and pasted magnet', () =>
     held.open();
     const [one, again, two] = await Promise.all([first, same, other]);
     expect(again).toBe(one);
-    expect(one.session.torrent?.info_hash).toBe(A);
-    expect(two.session.torrent?.info_hash).toBe(B);
+    expect((one as PlayResult).session.torrent?.info_hash).toBe(A);
+    expect((two as PlayResult).session.torrent?.info_hash).toBe(B);
     expect(t.runs).toEqual(['open', 'open']);
   });
 });
@@ -293,7 +293,7 @@ describe('a torrent session answered before its subtitles', () => {
     const view: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/service-wyzie-1.vtt`, lang: 'en', label: 'English (Wyzie)' };
     const slow: SubtitleTier = { name: 'service', blocks: true, find: async () => (await new Promise((r) => setTimeout(r, 40)), [view]) };
     const t = setup({ tiers: [slow] });
-    const played = await t.svc.play(FILM, { provider: 'torrent' });
+    const played = (await t.svc.play(FILM, { provider: 'torrent' })) as PlayResult;
     expect(played.attempts.map((a) => a.provider)).toContain(SUBTITLES_PENDING);
     expect(played.session.subtitles).toEqual([]);
     expect(played.session.subtitle_rev).toBe(0);

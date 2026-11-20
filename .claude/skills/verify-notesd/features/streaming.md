@@ -17,6 +17,18 @@
   web/src/components/movies/SiteTitlesSection.test.tsx`. Live (plays on screen, ask first):
   `node claude/skills/dramacool/search.mjs --play summer vacation --episode 3` answers `kept`,
   then `GET /api/movies/tv-335951` shows `played_through.channel: "site"`.
+- The streaming sites are the last resort of a play with no source named: a title last played on a
+  site plays from a cloud provider or a torrent that has it, and a site is asked only after every
+  cloud provider and every torrent found nothing (the remembered site at its page first, then a
+  film idlix, lk21, flicksy, an episode idlix, dramacool, each by its own search, exactly one match;
+  `several_matches` is skipped). A named provider, kind or magnet never asks a site; a `pending`
+  play that fails later still falls back, and a re-ask meanwhile joins it with `starting()` busy.
+  Proven with a fake runner and fake swarm by `npx vitest run tests/unit/directStream/rememberedChannel.test.ts`
+  ("the streaming sites are the last resort" and `sitesToAsk`); the site-play route's shared
+  `playOnSite` by `scripts/test-int.sh tests/integration/movies.guides.int.test.ts`. Live (plays on
+  screen, ask first): `POST /api/stream/play` for a title no cloud provider or torrent has answers
+  `{ok: true, site, site_url, site_play, attempts}` with `Site: <name>` attempts last, and the
+  daemon's log has one `asked <site> for <title>` line per site.
 - `streaming_find`, `streaming_play` (MCP, chat bar): proven with a fake runner by
   `npx vitest run tests/unit/mcp.streamingTools.test.ts tests/unit/streaming.test.ts`; the chat
   allow list and captions by `tests/unit/chat-status.test.ts`.
