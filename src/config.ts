@@ -520,7 +520,7 @@ export const DEFAULT_VLC_HEALTH_MS = 30_000
 /** A non-zero NOTESD_VLC_HEALTH_MS below this is rejected: one PowerShell detail read takes ~0.5 s. */
 export const MIN_VLC_HEALTH_MS = 5_000
 export const DEFAULT_MOVIES_FALLBACK_MODEL = 'haiku'
-/** The model that writes an episode's story from its dialogue (src/movies/story.ts). */
+/** The model that writes a story (src/movies/story.ts, webStory.ts) and a genre's guide (guides.ts). */
 export const DEFAULT_MOVIES_STORY_MODEL = 'sonnet'
 
 /** TMDB credentials and hosts (src/movies/tmdb.ts). Secrets are never logged. */
@@ -581,9 +581,10 @@ export interface MoviesConfig {
    */
   fallbackModel: string | null
   /**
-   * `NOTESD_MOVIES_STORY_MODEL`: Agent SDK alias or model id that writes an episode's story from its
-   * dialogue when the owner presses the book icon (src/movies/story.ts). `off` gives null: no story
-   * is written (stored ones are still shown; verify.sh pins it off).
+   * `NOTESD_MOVIES_STORY_MODEL`: Agent SDK alias or model id that writes a story when the owner asks for one
+   * (src/movies/story.ts): a season's from published recaps found with WebSearch (webStory.ts), an episode's or a
+   * film's from the web first and from its dialogue when the web has none. `off` gives null: no story is written
+   * (stored ones are still shown; verify.sh pins it off).
    */
   storyModel?: string | null
 }

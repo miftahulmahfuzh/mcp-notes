@@ -33,6 +33,7 @@ import { PICTURE_VERDICTS_FILE, PictureCheck, PictureVerdicts, createPictureJudg
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createGuideWriter, GenreGuides } from './movies/guides.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
+import { createWebStoryWriter } from './movies/webStory.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
 import { buildTorrentRemux, remuxAudioInput } from './directStream/torrent/remux.js';
@@ -511,17 +512,17 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             return { url: cueFeedUrl(infoHash, track), append: (cues) => feed.append(cues), complete: () => feed.complete() };
           },
         });
-  // The story of an episode, written from its dialogue when the owner asks (one model call, then kept).
+  // The story of a film, an episode or a whole season: from published recaps found with WebSearch first; an
+  // episode or a film the web has none of, from its dialogue (one model run, then kept in movie_stories).
+  const storyModel = config.movies.storyModel ?? null;
   const movieStories =
     movies === null
       ? null
       : new MovieStories({
           repo: movies.repo,
           dialogue: (target) => loadDialogue(movies.repo, directStream, target),
-          writer:
-            config.movies.storyModel === null || config.movies.storyModel === undefined
-              ? null
-              : createStoryWriter({ claudeBin: config.chat.claudeBin, model: config.movies.storyModel, cwd: join(config.dataDir, 'movies-story') }),
+          writer: storyModel === null ? null : createStoryWriter({ claudeBin: config.chat.claudeBin, model: storyModel, cwd: join(config.dataDir, 'movies-story') }),
+          webWriter: storyModel === null ? null : createWebStoryWriter({ claudeBin: config.chat.claudeBin, model: storyModel, cwd: join(config.dataDir, 'movies-web-story') }),
         });
   // What a genre means for one title, collated with web search when the owner clicks it (one model run, then kept).
   const genreGuides =

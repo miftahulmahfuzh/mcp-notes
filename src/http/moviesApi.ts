@@ -60,7 +60,7 @@ export type MoviesStatusResponse = Awaited<ReturnType<MoviesService['status']>> 
 export interface TmdbSearchResponse {
   results: TmdbHitView[];
 }
-/** GET and POST /api/movies/:id/story. `cached` is false only when this call had the story written. */
+/** GET and POST /api/movies/:id/story: a film's, an episode's or a season's story. `cached` is false only when this call had it written. */
 export interface StoryResponse {
   story: StoryView | null;
   cached: boolean;
@@ -202,10 +202,14 @@ const userBody = z
     message: 'set at least one of watched, not_interested, interested, rating, review',
   });
 
-/** A film is season 0, episode 0 (the default); an episode names both. */
-const storySlot = z
-  .object({ season: z.coerce.number().int().min(0).max(1000).default(0), episode: z.coerce.number().int().min(0).max(100_000).default(0) })
-  .refine((s) => s.episode > 0 || s.season === 0, { message: 'a season needs an episode' });
+/** A film is season 0, episode 0 (the default); an episode names both; a season (above 0) is `season` alone. */
+const storySlot = z.object({
+  season: z.coerce.number().int().min(0).max(1000).default(0),
+  episode: z.coerce.number().int().min(0).max(100_000).default(0),
+});
+
+/** The status each StoryError answers with. */
+const STORY_ERROR_STATUS = { not_found: 404, no_story_source: 404, story_failed: 502, story_off: 503 } as const;
 
 const episodeRefSchema = z.object({ season: z.number().int().min(0).max(1000), episode: z.number().int().min(1).max(100_000) }).strict();
 /** A whole season, or a list of episodes (what an undo sends back); exactly one of the two. */
@@ -535,7 +539,7 @@ export function moviesApiRoutes(
     }),
   );
 
-  // The story of a film or an episode (src/movies/story.ts). GET only reads the store; POST writes it once.
+  // The story of a film, an episode or a season (src/movies/story.ts, webStory.ts). GET only reads the store; POST writes it once.
   api.get(
     STORY_PATH,
     withMovies(async (c) => {
@@ -566,10 +570,7 @@ export function moviesApiRoutes(
         if (!body.cached) deps.movies?.events.changed('user', { titleIds: [id.data] });
         return c.json(body);
       } catch (err) {
-        if (err instanceof StoryError) {
-          const status = err.code === 'not_found' ? 404 : err.code === 'story_failed' ? 502 : 503;
-          return c.json({ error: err.code, message: err.message }, status);
-        }
+        if (err instanceof StoryError) return c.json({ error: err.code, message: err.message }, STORY_ERROR_STATUS[err.code]);
         // The dialogue could not be read: no source has the title, or the one that has it carries no English subtitle.
         if (err instanceof DirectStreamError) return c.json({ error: err.code, reason: err.reason, message: err.message }, 502);
         throw err;
