@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import {
   ArrowArcLeft,
   ArrowArcRight,
@@ -27,8 +27,22 @@ import {
 import { INITIAL_STATE, NO_OTHER_SOURCE, SUBTITLE_DELAY_STEP_MS, StreamController, type BugReportState, type ControllerDeps, type StreamState, type TorrentView } from './controller';
 import { createEngine } from './createEngine';
 import type { Quality } from './engine';
-import type { CachedInfo, EpisodeNumber, TimeRange } from './session';
+import type { CachedInfo, EpisodeNumber, PreviewCue, TimeRange } from './session';
 import { pickDefaultSubtitle } from './subtitles';
+import {
+  cueAt,
+  frameStyle,
+  hoverTime,
+  loadSheetImage,
+  PREVIEW_EDGE_PX,
+  PREVIEW_TIME_PX,
+  PREVIEW_WIDTH_PX,
+  previewPlacement,
+  SheetCache,
+  TIME_ONLY_WIDTH_PX,
+  type LoadSheet,
+  type StageBox,
+} from './previews';
 
 /**
  * window.notesdStream: the player's state for scripts (`kind`, `levels`, `level`, `errors`,
@@ -441,9 +455,69 @@ function StageOverlay({ state, onReport }: { state: StreamState; onReport?: () =
   return null;
 }
 
+/** The pointer on the timeline: its x, the film's second there, and the boxes the preview is placed against, read at that event. */
+interface Hover {
+  clientX: number;
+  t: number;
+  stage: StageBox;
+  trackTop: number;
+}
+
+/** The sheets of the session's previews, each loaded once, when a hover first reaches it; a failed one gets one more try when the previews change. */
+function useSheetCache(load: LoadSheet, rev: number): SheetCache {
+  const [, changed] = useReducer((n: number) => n + 1, 0);
+  const [cache] = useState(() => new SheetCache(load, changed));
+  useEffect(() => {
+    cache.forgetFailures();
+  }, [cache, rev]);
+  return cache;
+}
+
+/**
+ * The box over the timeline while the pointer is on it or drags it: the frame of that second where the
+ * session's previews hold one and its picture loaded, and the time under it; the time alone in a gap,
+ * while the picture loads, and when it failed. It takes no pointer and is drawn before the captions and
+ * the controls, which paint over it.
+ */
+function SeekPreview({ hover, cues, sheets, rev }: { hover: Hover; cues: readonly PreviewCue[]; sheets: SheetCache; rev: number }) {
+  const cue = cueAt(cues, hover.t);
+  const url = cue?.url ?? null;
+  useEffect(() => {
+    if (url !== null) sheets.want(url);
+  }, [url, sheets, rev]);
+  const sheet = url === null ? null : sheets.peek(url);
+  const width = Math.min(PREVIEW_WIDTH_PX, Math.max(0, hover.stage.width - 2 * PREVIEW_EDGE_PX));
+  const frame = cue !== null && sheet?.state === 'ready' ? frameStyle(cue, sheet, width) : null;
+  const size = frame === null ? { width: TIME_ONLY_WIDTH_PX, height: PREVIEW_TIME_PX } : { width: frame.width, height: frame.height + PREVIEW_TIME_PX };
+  const at = previewPlacement(hover.clientX, hover.stage, hover.trackTop, size);
+  return (
+    <div
+      className="st-preview"
+      data-testid="seek-preview"
+      data-frame={frame === null ? 'none' : 'shown'}
+      aria-hidden="true"
+      style={{ left: at.left, bottom: at.bottom, width: size.width }}
+    >
+      {frame !== null && cue !== null && <div className="st-preview-frame" data-sheet={cue.url} data-rect={`${cue.x},${cue.y},${cue.w},${cue.h}`} style={frame} />}
+      <span className="st-preview-time">{formatClock(hover.t)}</span>
+    </div>
+  );
+}
+
 type MenuName = 'subtitles' | 'quality';
 
-export function StreamApp({ sessionId, muted = false, deps }: { sessionId: string | null; muted?: boolean; deps?: Partial<ControllerDeps> }) {
+export function StreamApp({
+  sessionId,
+  muted = false,
+  deps,
+  loadSheet = loadSheetImage,
+}: {
+  sessionId: string | null;
+  muted?: boolean;
+  deps?: Partial<ControllerDeps>;
+  /** How a preview sheet's picture is probed; the browser's Image() unless a test gives its own. */
+  loadSheet?: LoadSheet;
+}) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const controller = useController(sessionId, video, deps, muted);
   const live = useSyncExternalStore(controller?.subscribe ?? NO_SUBSCRIBE, controller?.getState ?? initialSnapshot);
@@ -453,6 +527,44 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
   const [menu, setMenu] = useState<MenuName | null>(null);
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const seekRef = useRef<HTMLInputElement | null>(null);
+  const [hover, setHover] = useState<Hover | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const sheets = useSheetCache(loadSheet, state.previews.rev);
+  const hoverAt = useCallback(
+    (clientX: number): Hover | null => {
+      const stage = stageRef.current;
+      const seek = seekRef.current;
+      if (stage === null || seek === null) return null;
+      // The input's own box: its margins are outside it, so the second is where a click would seek.
+      const track = seek.getBoundingClientRect();
+      const t = hoverTime(clientX, track, view.duration);
+      if (t === null) return null;
+      const s = stage.getBoundingClientRect();
+      return { clientX, t, stage: { left: s.left, bottom: s.bottom, width: s.width, height: s.height }, trackTop: track.top };
+    },
+    [view.duration],
+  );
+  // A drag of the thumb: the box follows the pointer even off the track, and goes when it is let go away from it.
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e: PointerEvent) => setHover(hoverAt(e.clientX));
+    const up = (e: PointerEvent) => {
+      setDragging(false);
+      const r = seekRef.current?.getBoundingClientRect();
+      const over = r !== undefined && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      if (!over) setHover(null);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+  }, [dragging, hoverAt]);
 
   const wake = useCallback(() => {
     setIdle(false);
@@ -580,8 +692,9 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
 
   return (
     <IconContext.Provider value={ICONS}>
-      <div className={hidden ? 'st-stage st-idle' : 'st-stage'} data-stage={state.stage} onMouseMove={wake}>
+      <div ref={stageRef} className={hidden ? 'st-stage st-idle' : 'st-stage'} data-stage={state.stage} onMouseMove={wake}>
         <video ref={setVideo} className="st-video" playsInline muted={muted} onClick={togglePlay} onDoubleClick={fullscreenToggle} />
+        {hover !== null && !hidden && view.duration > 0 && <SeekPreview hover={hover} cues={state.previews.cues} sheets={sheets} rev={state.previews.rev} />}
         <div className="st-top">
           <span className="st-title">{state.title}</span>
           {state.cached !== null && <CachedMark cached={state.cached} />}
@@ -649,6 +762,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
             <ArrowArcRight />
           </IconButton>
           <input
+            ref={seekRef}
             className="st-seek"
             type="range"
             aria-label="Position"
@@ -658,6 +772,15 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
             value={Math.min(view.time, view.duration)}
             onChange={(e) => {
               if (video !== null) video.currentTime = Number(e.currentTarget.value);
+            }}
+            onPointerEnter={(e) => setHover(hoverAt(e.clientX))}
+            onPointerMove={(e) => setHover(hoverAt(e.clientX))}
+            onPointerDown={(e) => {
+              setDragging(true);
+              setHover(hoverAt(e.clientX));
+            }}
+            onPointerLeave={() => {
+              if (!dragging) setHover(null);
             }}
             style={{ ['--st-fill' as string]: `${fill}%`, ['--st-loaded-bar' as string]: loadedGradient([...view.buffered, ...state.cachedRanges], view.duration) } as CSSProperties}
           />

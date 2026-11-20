@@ -2579,6 +2579,16 @@ The player page (see "Direct streaming player") shows a torrent session. Web onl
 - `StreamApp.tsx`: `TorrentMark` beside the title (Phosphor `Magnet` with peers and speed while downloading, `HardDrive` once on disk), `torrentLabel(view)`, `formatSpeed(kbps)`, `sourceLine(changing, notice, torrent)` (torrent wording: `Looking for another torrent…`, `No other torrent`, `Torrent: <name>`), `FETCHING_LABEL` `Fetching this part from peers` with a spinner, shuffle button `Another torrent (S)`. `window.notesdStream.torrent` carries the view. `stream.css` styles the mark.
 - Tests: `web/src/stream/{controller,StreamApp}.test.tsx`. Proof: verify-notesd `scripts/stream/torrent-player.steps.mjs` and `torrent-live.steps.mjs`, listed in `features/direct-streaming.md`.
 
+### Seek preview box: web/src/stream/{previews,session,controller,StreamApp}.ts(x) (seek-preview-thumbnails phase 4, P1-NOTES-SP04)
+
+The player page shows a frame and the timestamp above the pointer over the timeline. Web only.
+
+- `session.ts`: `StreamSession.previewRev` (from `preview_rev`), `fetchPreviews` and its address in the route list.
+- `previews.ts` (pure): parses the preview cues, looks up the frame for a time, and `previewPlacement` (the box clamped 8 px inside the stage).
+- `controller.ts`: `StreamState.previews`, fetched once after the session loads and again whenever a session or position answer carries a higher `preview_rev`; a failed fetch keeps the frames it had.
+- `StreamApp.tsx` / `stream.css`: the pointer over `.st-seek` maps to a time; the box is a div with the sprite sheet as background (the cue's rectangle scaled to the box width) plus the timestamp, the timestamp alone over a gap or when the sheet fails. Shown during a drag, hidden on leave and when the controls hide, `pointer-events: none`; a sheet is fetched only when hovered near.
+- Tests: `web/src/stream/{previews,controller,StreamApp}.test.tsx`, fakes in `web/src/testing/streamFakes.ts`.
+
 ### Torrent remux: src/directStream/torrent/remux.ts, src/http/streamTorrentRemuxApi.ts (torrent-stream-source phase 5, P1-NOTES-A131)
 
 A torrent file Chrome cannot play as is (MKV, AC3/E-AC3/DTS sound, HEVC) plays through an ffmpeg remux instead of being refused as `unplayable`: video copied, the original-language audio converted to AAC stereo, fMP4 segments in a growing HLS EVENT playlist. Owner-facing behaviour is in `docs/guide/streaming.md` "The remux for files Chrome cannot play".

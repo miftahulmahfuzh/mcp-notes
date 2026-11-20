@@ -28,6 +28,9 @@ import {
   fetchCacheMap,
   fetchTorrentMap,
   fetchTorrentStatus,
+  fetchPreviews,
+  NO_PREVIEWS,
+  type Previews,
   type TimeRange,
   type EpisodeNumber,
   type ManifestKind,
@@ -192,6 +195,12 @@ export interface StreamState {
   cachedRanges: TimeRange[];
   /** A torrent session (torrent-stream-source phase 4): the mark beside the title and the wait for a part not on disk. Null: not a torrent. */
   torrent: TorrentView | null;
+  /**
+   * The session's seek-preview frames (GET /api/stream/sessions/:id/previews) as last read; NO_PREVIEWS
+   * before the first read, in a new session, and for a daemon that has none. The box over the timeline
+   * draws them.
+   */
+  previews: Previews;
   /** The player's error messages, oldest first. */
   errors: string[];
   /** Recent notes for scripts and people: refreshes, subtitle failures, errors. */
@@ -227,6 +236,7 @@ export const INITIAL_STATE: StreamState = {
   subtitleSyncs: 0,
   cachedRanges: [],
   torrent: null,
+  previews: NO_PREVIEWS,
   errors: [],
   log: [],
   bugReport: { status: 'idle' },
@@ -317,6 +327,12 @@ export class StreamController {
   /** Resolved the first time the stream is ready or the play has failed (playWithSound waits on it). */
   private settle: () => void = () => {};
   private readonly settled: Promise<void>;
+  /** The session `state.previews` belongs to (or is being read for); null: none yet, the next session reads its own. */
+  private previewsOf: string | null = null;
+  /** The highest `preview_rev` asked for that session; -1 before the first read. */
+  private previewRevAsked = -1;
+  /** The session whose previews are being read now: one read at a time per session. */
+  private previewsReading: string | null = null;
 
   constructor(sessionId: string, video: HTMLVideoElement, deps: ControllerDeps) {
     this.sessionId = sessionId;
@@ -403,6 +419,8 @@ export class StreamController {
       cached: session.cached,
       torrent: torrentView(session.torrent),
     });
+    // The seek-preview frames: read once now, and again only when the daemon says they changed.
+    this.followPreviews(this.sessionId, session.previewRev);
     if (session.cached !== null) this.note(`from cache ${session.cached.id.slice(0, 8)} (${session.cached.state})`);
     if (session.torrent !== null) this.note(`from torrent ${session.torrent.infoHash.slice(0, 8)} ${session.torrent.name} (${session.torrent.state})`);
     this.restoreSubtitleDelay();
@@ -447,7 +465,8 @@ export class StreamController {
     this.lastSourceAskAt = 0;
     this.clearCacheTimers();
     this.stopTorrent();
-    this.set({ cachedRanges: [], torrent: null });
+    this.previewsOf = null;
+    this.set({ cachedRanges: [], torrent: null, previews: NO_PREVIEWS });
     this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null, bugReport: { status: 'idle' } });
     this.note(`${to} episode: session ${nextId.slice(0, 6)}`);
     this.deps.onSession?.(nextId);
@@ -967,6 +986,7 @@ export class StreamController {
     this.clearFileTracks();
     this.stopTorrent();
     this.session = answer.session;
+    this.followPreviews(this.sessionId, answer.session.previewRev);
     this.subtitleChosen = false;
     this.set({
       stage: 'refreshing',
@@ -1142,7 +1162,8 @@ export class StreamController {
     this.lastSourceAskAt = 0;
     this.subtitleChosen = false;
     this.cacheAskedFor = null;
-    this.set({ stage: 'refreshing', error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], cachedRanges: [], bugReport: { status: 'idle' } });
+    this.previewsOf = null;
+    this.set({ stage: 'refreshing', error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], cachedRanges: [], previews: NO_PREVIEWS, bugReport: { status: 'idle' } });
     this.note(`carried on in session ${session.id.slice(0, 6)} at ${round1(at)} s`);
     this.deps.onSession?.(session.id);
     await this.open({ ...session, resumeS: at });
@@ -1227,6 +1248,7 @@ export class StreamController {
     this.ready = null;
     this.clearFileTracks();
     this.session = answer.session;
+    this.followPreviews(this.sessionId, answer.session.previewRev);
     this.stalls = [];
     this.set({ stage: 'refreshing', kind: answer.session.manifestKind, qualities: [], quality: -1, subtitles: [], cached: answer.session.cached });
     this.note(`from cache ${answer.session.cached.id.slice(0, 8)} (${answer.session.cached.state}) at ${round1(continueAt)} s`);
@@ -1463,6 +1485,8 @@ export class StreamController {
       // The daemon moved the session to another source by itself: that reload brings its subtitles too.
       if (answer.sourceRev !== null && this.session !== null && answer.sourceRev !== this.session.sourceRev) void this.followSourceRev(asked, answer.sourceRev);
       else if (answer.rev !== null) void this.followSubtitleRev(asked, answer.rev);
+      // New seek-preview frames (a sheet finished, a provider's track was read): the box over the timeline uses them at once.
+      if (answer.previewRev !== null) this.followPreviews(asked, answer.previewRev);
       // The daemon restarted under the film (or is restarting): a fresh session for the same play.
       if (answer.gone && !this.disposed && this.sessionId === asked && !this.carrying) void this.carryOn('unknown_session');
     });
@@ -1503,6 +1527,7 @@ export class StreamController {
     this.readingSubtitles = true;
     try {
       const fresh = await fetchSession(asked, this.deps.fetch);
+      this.followPreviews(asked, fresh.previewRev);
       if (this.disposed || this.session !== session || this.sessionId !== asked || fresh.subtitleRev === session.subtitleRev) return;
       session.subtitles = fresh.subtitles;
       session.subtitleRev = fresh.subtitleRev;
@@ -1521,6 +1546,51 @@ export class StreamController {
       this.note(`subtitles not reloaded: ${err instanceof SessionError ? err.code : messageOf(err)}`);
     } finally {
       this.readingSubtitles = false;
+    }
+  }
+
+  /**
+   * Reads the session's seek-preview frames when `rev` (its `preview_rev`, from the session or a position
+   * answer) is higher than the one asked for, or none was read yet for this session. Never on a timer.
+   * One read at a time per session; a higher rev that arrives meanwhile is read when it ends. A new
+   * session starts from no frames.
+   */
+  private followPreviews(asked: string, rev: number): void {
+    if (this.disposed || this.sessionId !== asked) return;
+    if (this.previewsOf !== asked) {
+      this.previewsOf = asked;
+      this.previewRevAsked = -1;
+      if (this.state.previews !== NO_PREVIEWS) this.set({ previews: NO_PREVIEWS });
+    }
+    if (rev <= this.previewRevAsked) return;
+    this.previewRevAsked = rev;
+    if (this.previewsReading === asked) return;
+    void this.readPreviews(asked);
+  }
+
+  /** The read itself: a failed one keeps the frames the page had and says nothing (that rev is not asked again; a higher one is). */
+  private async readPreviews(asked: string): Promise<void> {
+    this.previewsReading = asked;
+    try {
+      for (;;) {
+        const wanted = this.previewRevAsked;
+        const got = await fetchPreviews(asked, this.deps.fetch);
+        if (this.disposed || this.sessionId !== asked || this.previewsOf !== asked) return;
+        let reached = wanted;
+        if (got !== null) {
+          reached = Math.max(wanted, got.rev);
+          this.previewRevAsked = Math.max(this.previewRevAsked, got.rev);
+          const was = this.state.previews;
+          this.set({ previews: got });
+          if (got.cues.length !== was.cues.length || got.state !== was.state) {
+            const n = got.cues.length;
+            this.note(`previews: ${got.state}, ${n} ${n === 1 ? 'frame' : 'frames'} (${got.source ?? 'none'}, rev ${got.rev})`);
+          }
+        }
+        if (this.previewRevAsked <= reached) return;
+      }
+    } finally {
+      if (this.previewsReading === asked) this.previewsReading = null;
     }
   }
 
@@ -1548,6 +1618,7 @@ export class StreamController {
       const session = await fetchSession(this.sessionId, this.deps.fetch);
       if (this.disposed) return;
       this.session = session;
+      this.followPreviews(this.sessionId, session.previewRev);
       // A refresh of a cached session either keeps the cache or moves to the pass-through (the cache was cleared).
       this.set({ cached: session.cached, torrent: torrentView(session.torrent) });
       if (session.torrent !== null) this.followTorrent(session.torrent.infoHash);

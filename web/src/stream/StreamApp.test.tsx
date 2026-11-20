@@ -2,8 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, formatSpeed, loadedGradient, reportLabel, reportText, sourceLine, switchErrorText, RECONNECTING_NOTICE, SYNCED_NOTICE, SYNCED_NOTICE_MS, torrentLabel } from './StreamApp';
-import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
+import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, formatSpeed, IDLE_MS, loadedGradient, reportLabel, reportText, sourceLine, switchErrorText, RECONNECTING_NOTICE, SYNCED_NOTICE, SYNCED_NOTICE_MS, torrentLabel } from './StreamApp';
+import { fakeEngines, fakeSheets, jsonResponse, previewCueJson, previewsJson, routeFetch, streamSessionJson, type FetchCall } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -504,5 +504,169 @@ describe('the player on a torrent (torrent-stream-source phase 4)', () => {
     expect(sourceLine(false, 'VidFast', false, 'dubbed audio')).toBe('Switched to another source: dubbed audio');
     expect(sourceLine(true, 'VidFast', true, 'the torrent kept stalling')).toBe('Looking for another torrent…');
     expect(sourceLine(false, null, false)).toBeNull();
+  });
+});
+
+describe('the seek preview over the timeline (seek-preview-thumbnails phase 4)', () => {
+  const SHEET_A = '/api/stream/sessions/S1/previews/sheet-00000.jpg';
+  const SHEET_B = '/api/stream/sessions/S1/previews/sheet-00001.jpg';
+  const SIZE = { width: 1440, height: 810 };
+  // A 1400 × 900 stage; the timeline's box starts at 300 px and is 811 px wide, so the thumb's centre
+  // travels 800 px over the film's 600 s; the track's top is at 850 px.
+  const STAGE = { left: 0, top: 0, right: 1400, bottom: 900, width: 1400, height: 900, x: 0, y: 0 };
+  const TRACK = { left: 300, top: 850, right: 1111, bottom: 870, width: 811, height: 20, x: 300, y: 850 };
+  const xAt = (t: number) => TRACK.left + 5.5 + (800 * t) / 600;
+  // Frames for 0-10 s and 300-310 s on one sheet, 400-410 s on another; a gap between them.
+  const CUES = [previewCueJson(SHEET_A, 0, 0), previewCueJson(SHEET_A, 300, 30), previewCueJson(SHEET_B, 400, 4)];
+
+  async function hoverable(previews: () => Response, routes: Record<string, (call: FetchCall) => Response> = {}) {
+    vi.spyOn(HTMLMediaElement.prototype, 'duration', 'get').mockReturnValue(600);
+    const sheets = fakeSheets();
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl, calls } = routeFetch({
+      'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()),
+      'GET /api/stream/sessions/S1/previews': previews,
+      ...routes,
+    });
+    const el = render(<StreamApp sessionId="S1" loadSheet={sheets.load} deps={{ fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+    await settle();
+    act(() => made[0].req.handlers.onReady({ qualities: [], subtitles: [] }));
+    const video = el.querySelector('video')!;
+    act(() => {
+      video.dispatchEvent(new Event('durationchange'));
+    });
+    await settle();
+    const stage = el.querySelector('.st-stage') as HTMLElement;
+    const seek = el.querySelector('.st-seek') as HTMLInputElement;
+    stage.getBoundingClientRect = () => STAGE as DOMRect;
+    seek.getBoundingClientRect = () => TRACK as DOMRect;
+    return { el, stage, seek, video, made, calls, sheets };
+  }
+
+  const pointer = (target: EventTarget, type: string, clientX: number, init: MouseEventInit = {}) =>
+    act(() => {
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX, clientY: 860, ...init }));
+    });
+  const box = (el: Element) => el.querySelector<HTMLElement>('[data-testid="seek-preview"]');
+  const frame = (el: Element) => el.querySelector<HTMLElement>('[data-testid="seek-preview"] .st-preview-frame');
+  const time = (el: Element) => el.querySelector('[data-testid="seek-preview"] .st-preview-time')?.textContent ?? null;
+
+  it('shows the frame of the second under the pointer and its time above the timeline, loading only the sheet that holds it (R1.1)', async () => {
+    const t = await hoverable(() => jsonResponse(previewsJson({ cues: CUES })));
+    expect(box(t.el)).toBeNull();
+    pointer(t.seek, 'pointermove', xAt(300));
+    // The picture is still loading: the time alone, never an empty or broken frame.
+    expect(time(t.el)).toBe('5:00');
+    expect(frame(t.el)).toBeNull();
+    expect(t.sheets.load.mock.calls).toEqual([[SHEET_A]]);
+    await act(async () => t.sheets.answer(SHEET_A, SIZE));
+    expect(frame(t.el)?.dataset).toMatchObject({ sheet: SHEET_A, rect: '0,675,240,135' });
+    expect(frame(t.el)?.style.width).toBe('240px');
+    expect(frame(t.el)?.style.height).toBe('135px');
+    expect(time(t.el)).toBe('5:00');
+    // Centred over the pointer (705.5 − 120), 10 px above the track's top (900 − 850 + 10).
+    expect(box(t.el)?.style.left).toBe('585.5px');
+    expect(box(t.el)?.style.bottom).toBe('60px');
+    expect(box(t.el)?.getAttribute('aria-hidden')).toBe('true');
+    expect(t.el.querySelector('img')).toBeNull();
+    // At the start the box is still centred over the pointer (305.5 − 120); the same sheet is not loaded again.
+    pointer(t.seek, 'pointermove', xAt(0));
+    expect(time(t.el)).toBe('0:00');
+    expect(frame(t.el)?.dataset.rect).toBe('0,0,240,135');
+    expect(box(t.el)?.style.left).toBe('185.5px');
+    expect(t.sheets.load).toHaveBeenCalledTimes(1);
+    // A drag carried to the stage's left edge: the box stays inside the stage (the track starts 300 px in, so only a drag gets there).
+    pointer(t.seek, 'pointerdown', xAt(0));
+    pointer(window, 'pointermove', 20, { clientY: 700 });
+    expect(time(t.el)).toBe('0:00');
+    expect(box(t.el)?.style.left).toBe('8px');
+    pointer(window, 'pointerup', 20, { clientY: 700 });
+    expect(box(t.el)).toBeNull();
+  });
+
+  it('shows the time alone where no frame covers the second and where the picture failed, never a broken picture (R2.1)', async () => {
+    const t = await hoverable(() => jsonResponse(previewsJson({ cues: CUES })));
+    pointer(t.seek, 'pointermove', xAt(351));
+    expect(time(t.el)).toBe('5:51');
+    expect(frame(t.el)).toBeNull();
+    expect(box(t.el)?.dataset.frame).toBe('none');
+    expect(box(t.el)?.style.width).toBe('72px');
+    expect(t.sheets.load).not.toHaveBeenCalled();
+    pointer(t.seek, 'pointermove', xAt(405));
+    await act(async () => t.sheets.answer(SHEET_B, 'fail'));
+    expect(time(t.el)).toBe('6:45');
+    expect(frame(t.el)).toBeNull();
+    expect(t.el.querySelector('img')).toBeNull();
+    expect(window.notesdStream?.stage).toBe('ready');
+    expect(window.notesdStream?.errors).toEqual([]);
+    // A failed picture is remembered: going back there loads nothing.
+    pointer(t.seek, 'pointermove', xAt(0));
+    pointer(t.seek, 'pointermove', xAt(405));
+    expect(t.sheets.load.mock.calls).toEqual([[SHEET_B], [SHEET_A]]);
+    expect(frame(t.el)).toBeNull();
+  });
+
+  it('shows the time alone when the daemon has no previews at all (R2.1)', async () => {
+    const t = await hoverable(() => jsonResponse({ error: 'not_found' }, 404));
+    pointer(t.seek, 'pointermove', xAt(300));
+    expect(time(t.el)).toBe('5:00');
+    expect(frame(t.el)).toBeNull();
+    expect(t.sheets.load).not.toHaveBeenCalled();
+  });
+
+  it('uses new frames as soon as a position answer carries a higher preview_rev, without loading the film again (R1.5)', async () => {
+    let rev = 0;
+    const t = await hoverable(() => jsonResponse(previewsJson({ rev, cues: rev === 0 ? [] : CUES })), {
+      'POST /api/stream/sessions/S1/position': () => jsonResponse({ ok: true, play_id: 'p1', ended: false, subtitle_rev: 0, source_rev: 0, preview_rev: rev }),
+    });
+    pointer(t.seek, 'pointermove', xAt(300));
+    expect(time(t.el)).toBe('5:00');
+    expect(frame(t.el)).toBeNull();
+    rev = 1;
+    Object.defineProperty(t.video, 'currentTime', { configurable: true, value: 30 });
+    act(() => {
+      t.video.dispatchEvent(new Event('pause'));
+    });
+    await settle();
+    expect(window.notesdStream?.previews.rev).toBe(1);
+    pointer(t.seek, 'pointermove', xAt(300));
+    await act(async () => t.sheets.answer(SHEET_A, SIZE));
+    expect(frame(t.el)?.dataset.rect).toBe('0,675,240,135');
+    expect(t.made).toHaveLength(1);
+    expect(t.el.querySelector('video')).toBe(t.video);
+    expect(t.calls.filter((c) => c.url === '/api/stream/sessions/S1/previews')).toHaveLength(2);
+  });
+
+  it('follows a drag off the track, and goes on leave, on a release away from the track and when the controls hide (R1.1)', async () => {
+    const t = await hoverable(() => jsonResponse(previewsJson({ cues: CUES })));
+    pointer(t.seek, 'pointermove', xAt(300));
+    expect(box(t.el)).not.toBeNull();
+    pointer(t.seek, 'pointerout', xAt(300), { relatedTarget: t.stage });
+    expect(box(t.el)).toBeNull();
+    // A drag: the box follows the pointer even above the track, and goes when it is let go there.
+    pointer(t.seek, 'pointerdown', xAt(0));
+    pointer(t.seek, 'pointerout', xAt(0), { relatedTarget: t.stage });
+    pointer(window, 'pointermove', xAt(300), { clientY: 700 });
+    expect(time(t.el)).toBe('5:00');
+    pointer(window, 'pointerup', xAt(300), { clientY: 700 });
+    expect(box(t.el)).toBeNull();
+    // The controls hide while the film plays: the box goes with them.
+    vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockReturnValue(false);
+    act(() => {
+      t.video.dispatchEvent(new Event('play'));
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      pointer(t.stage, 'mousemove', xAt(300));
+      pointer(t.seek, 'pointermove', xAt(300));
+      expect(box(t.el)).not.toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(IDLE_MS + 10);
+      });
+      expect(t.stage.classList.contains('st-idle')).toBe(true);
+      expect(box(t.el)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

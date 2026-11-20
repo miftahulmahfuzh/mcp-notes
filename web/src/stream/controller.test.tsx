@@ -2,8 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CACHE_POLL_MS, RECONNECT_GIVE_UP_MS, RECONNECT_RETRY_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_WINDOW_MS, TORRENT_STALLS_TO_SWITCH, SUBTITLE_HOLD_MS, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
-import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
-import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
+import { NO_PREVIEWS, SessionError, fetchPreviews, mutedFromLocation, parsePreviews, parseSession, sessionIdFromLocation } from './session';
+import { fakeEngines, fakeVideo, jsonResponse, previewCueJson, previewsJson, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
 import { CUE_FEED_POLL_MS } from './subtitles';
 
 const S1 = '/api/stream/sessions/S1';
@@ -62,6 +62,7 @@ describe('parseSession', () => {
       torrent: null,
       subtitleRev: 0,
       sourceRev: 0,
+      previewRev: 0,
       sourceNote: null,
       ref: { kind: 'movie', tmdbId: 550 },
       provider: 'VidFast',
@@ -1711,5 +1712,123 @@ describe('a play carries on after the daemon restarts', () => {
     t.fire('pause');
     await vi.waitFor(() => expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'no_source' }));
     expect(t.made).toHaveLength(1);
+  });
+});
+
+describe('StreamController: seek previews (seek-preview-thumbnails phase 4)', () => {
+  const PREVIEWS = `${S1}/previews`;
+  const SHEET = `${S1}/previews/sheet-00000.jpg`;
+  const reads = (t: { calls: FetchCall[] }, url = PREVIEWS) => t.calls.filter((c) => c.method === 'GET' && c.url === url).length;
+
+  it('reads the answer once and keeps only what it can draw', () => {
+    const cues = [
+      previewCueJson(SHEET, 10, 1),
+      previewCueJson(SHEET, 0, 0),
+      { ...previewCueJson(SHEET, 20, 2), url: '//elsewhere.example/x.jpg' },
+      { ...previewCueJson(SHEET, 30, 3), w: 0 },
+      previewCueJson(SHEET, 5, 0),
+      { start_s: 40, end_s: 40, url: SHEET, x: 0, y: 0, w: 240, h: 135 },
+    ];
+    expect(parsePreviews(previewsJson({ rev: 3, cues }))).toEqual({
+      state: 'partial',
+      rev: 3,
+      source: 'local',
+      cues: [
+        { startS: 0, endS: 10, url: SHEET, x: 0, y: 0, w: 240, h: 135 },
+        { startS: 10, endS: 20, url: SHEET, x: 240, y: 0, w: 240, h: 135 },
+      ],
+    });
+    // `none` is no cue and no source, whatever the answer said.
+    expect(parsePreviews({ state: 'ready', rev: 1, source: 'provider', cues: [] })).toEqual({ state: 'none', rev: 1, source: null, cues: [] });
+    expect(parsePreviews({ state: 'ready', rev: 1 })).toBeNull();
+    expect(parsePreviews(null)).toBeNull();
+    expect(parseSession(streamSessionJson()).previewRev).toBe(0);
+    expect(parseSession(streamSessionJson({ preview_rev: 4 })).previewRev).toBe(4);
+  });
+
+  it('never throws: a 404, a network failure and a body it cannot read are null', async () => {
+    expect(await fetchPreviews('S1', routeFetch({}).fetchImpl)).toBeNull();
+    const down = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    expect(await fetchPreviews('S1', down)).toBeNull();
+    expect(await fetchPreviews('S1', routeFetch({ [`GET ${PREVIEWS}`]: () => new Response('<html>', { status: 200 }) }).fetchImpl)).toBeNull();
+  });
+
+  it('reads the frames once the session loads and again only when a position answer carries a higher preview_rev; a failed read keeps them (R1.5)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const daemon = { rev: 0, cues: [previewCueJson(SHEET, 0, 0)], down: false };
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ preview_rev: daemon.rev })),
+      [`GET ${PREVIEWS}`]: () => (daemon.down ? jsonResponse({ error: 'boom' }, 500) : jsonResponse(previewsJson({ rev: daemon.rev, cues: daemon.cues }))),
+      [`POST ${S1}/position`]: () => jsonResponse({ ok: true, play_id: 'p1', ended: false, subtitle_rev: 0, source_rev: 0, preview_rev: daemon.rev }),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    await vi.waitFor(() => expect(t.controller.getState().previews.cues).toHaveLength(1));
+    expect(reads(t)).toBe(1);
+    expect(t.controller.getState().log).toContain('previews: partial, 1 frame (local, rev 0)');
+    Object.assign(t.media, { currentTime: 30, duration: 888, paused: false });
+    t.fire('timeupdate');
+    // Reports that carry the same number read nothing, and nothing reads on a timer.
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS * 6);
+    expect(t.posts().length).toBeGreaterThanOrEqual(5);
+    expect(reads(t)).toBe(1);
+    daemon.rev = 1;
+    daemon.cues = [previewCueJson(SHEET, 0, 0), previewCueJson(SHEET, 10, 1)];
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    await vi.waitFor(() => expect(t.controller.getState().previews).toMatchObject({ rev: 1, cues: [{ startS: 0 }, { startS: 10 }] }));
+    expect(reads(t)).toBe(2);
+    expect(t.controller.getState().log).toContain('previews: partial, 2 frames (local, rev 1)');
+    // A read that fails keeps the frames the page had and puts nothing on the page.
+    daemon.rev = 2;
+    daemon.down = true;
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    await vi.waitFor(() => expect(reads(t)).toBe(3));
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', error: null, previews: { rev: 1, cues: [{ startS: 0 }, { startS: 10 }] } });
+    // The same rev is not asked again; the film was never loaded again.
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS * 3);
+    expect(reads(t)).toBe(3);
+    expect(t.made).toHaveLength(1);
+  });
+
+  it('works against a daemon with no previews: no preview_rev, a 404, nothing said', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson()),
+      [`POST ${S1}/position`]: () => jsonResponse({ ok: true, play_id: 'p1', ended: false, subtitle_rev: 0 }),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 30, duration: 888, paused: false });
+    t.fire('timeupdate');
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS * 3);
+    expect(reads(t)).toBe(1);
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', previews: NO_PREVIEWS, errors: [] });
+    expect(t.controller.getState().log.some((line) => line.startsWith('previews'))).toBe(false);
+  });
+
+  it("drops the frames of the episode it leaves and reads the next one's", async () => {
+    const S2 = '/api/stream/sessions/S2';
+    const t = setup(
+      {
+        [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ kind: 'tv', season: 1, episode: 1, next_episode: { season: 1, episode: 2 } })),
+        [`GET ${PREVIEWS}`]: () => jsonResponse(previewsJson({ state: 'ready', cues: [previewCueJson(SHEET, 0, 0)] })),
+        [`POST ${S1}/episode`]: () => jsonResponse({ session_id: 'S2' }),
+        [`GET ${S2}`]: () => jsonResponse(streamSessionJson({ session_id: 'S2', manifest_url: `${S2}/p?u=m2`, kind: 'tv', season: 1, episode: 2, prev_episode: { season: 1, episode: 1 } })),
+      },
+      { onSession: () => {} },
+    );
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    await vi.waitFor(() => expect(t.controller.getState().previews.state).toBe('ready'));
+    await t.controller.goToEpisode('next');
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    // Episode 2's previews answer 404: the page shows none, never episode 1's.
+    await vi.waitFor(() => expect(reads(t, `${S2}/previews`)).toBe(1));
+    expect(t.controller.getState().previews).toEqual(NO_PREVIEWS);
   });
 });
