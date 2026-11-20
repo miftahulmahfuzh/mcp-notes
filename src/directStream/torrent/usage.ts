@@ -16,18 +16,23 @@ export interface SlotKey {
 export const slotId = (s: SlotKey): string => `${s.season}x${s.episode}`;
 
 const REMUX_DIR = 'notesd-remux';
+/**
+ * `notesd-previews/<file index>/`: the seek-preview sheets made from one video of the torrent, whichever shape it was
+ * read in (the file, its remux, the part on disk): src/directStream/previews/torrentSource.ts.
+ */
+export const PREVIEWS_DIR = 'notesd-previews';
 /** `notesd-cues/embedded-<file index>-<stream index>.jsonl`, `notesd-cues/whisper-<file index>.jsonl`. */
 const CUE_FILE = /^(?:embedded|whisper)-(\d+)(?:-\d+)?\.jsonl$/;
 
 /**
  * Which episodes of a torrent own one file of its folder: the rows that chose it (by its path on disk), the rows whose
- * video a remux folder (`notesd-remux/<file index>/`) or a cue feed was made from. Anything else (the kept subtitles, the
- * edges of files nobody chose) has no owner.
+ * video a remux folder (`notesd-remux/<file index>/`), a preview folder (`notesd-previews/<file index>/`) or a cue feed
+ * was made from. Anything else (the kept subtitles, the edges of files nobody chose) has no owner.
  */
 export function ownersOf(rel: string, rows: readonly StreamTorrentRow[], relOf: (filePath: string) => string | null): StreamTorrentRow[] {
   const parts = rel.split('/');
   let index: number | null = null;
-  if (parts[0] === REMUX_DIR && parts.length >= 3) index = Number(parts[1]);
+  if ((parts[0] === REMUX_DIR || parts[0] === PREVIEWS_DIR) && parts.length >= 3) index = Number(parts[1]);
   else if (parts[0] === CUES_DIR && parts.length === 2) {
     const m = CUE_FILE.exec(parts[1]!);
     if (m !== null) index = Number(m[1]);
