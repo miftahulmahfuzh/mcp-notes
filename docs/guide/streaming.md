@@ -1937,8 +1937,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 - **Which of them plays.** Once the first header has arrived, the torrents still opening get 2 more seconds, or up to
   20 seconds when the one that arrived is of a less preferred height than one still opening (a 720p while a 1080p
   still receives: the log says `waiting up to 20 s for <release> (preferred height)`). Of those whose headers
-  arrived, the one that plays is, in this order: one whose swarm delivers (6 peers or more connected, or a download
-  rate at or above the film's own bitrate) before one that does not; the preferred height (1080p first); one whose
+  arrived, the one that plays is, in this order: one whose swarm delivers (a download rate at or above the film's own
+  bitrate, or 6 peers or more connected for a film of at most 8 Mbps: Amélie's 18.3 Mbps BDRip had 7 peers and never
+  got past its first frame on this ~9 Mbps link) before one that does not; the preferred height (1080p first); one whose
   files hold an English subtitle file; the one with more peers connected; the one the finder ranked higher. Its attempt says what was
   measured: `16 seeds listed; 3 peers connected, 1.7 Mbps for a 2.6 Mbps film`. The others are `skipped` ("its header
   arrived too", "still opening when ... was chosen"), leave their swarms at once, and are first in line for the

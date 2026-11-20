@@ -285,9 +285,20 @@ interface Delivery {
 
 const mbps = (kbps: number): string => (kbps / 1000).toFixed(1);
 
-/** True when the swarm looks able to keep ahead of the picture: enough peers, or a rate at or above the film's bitrate. */
+/**
+ * Above this bitrate many peers are no promise: this machine's link carries about 9 Mbps, and Amélie's 18.3 Mbps
+ * BDRip (four audio tracks) was chosen for its 7 peers and never moved past its first frame.
+ */
+export const PEERS_ALONE_MAX_FILM_KBPS = 8_000;
+
+/**
+ * True when the swarm looks able to keep ahead of the picture: a rate at or above the film's bitrate, or enough peers
+ * for a film whose bitrate this link can carry (PEERS_ALONE_MAX_FILM_KBPS; unknown counts as carried).
+ */
 export function delivers(d: Delivery | null): boolean {
-  return d !== null && (d.peers >= HEALTHY_PEERS || (d.filmKbps !== null && d.downKbps >= d.filmKbps));
+  if (d === null) return false;
+  if (d.filmKbps !== null && d.downKbps >= d.filmKbps) return true;
+  return d.peers >= HEALTHY_PEERS && (d.filmKbps === null || d.filmKbps <= PEERS_ALONE_MAX_FILM_KBPS);
 }
 
 /**

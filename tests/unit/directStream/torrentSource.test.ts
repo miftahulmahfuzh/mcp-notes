@@ -567,6 +567,10 @@ describe('TorrentSource: the torrent is chosen by what its swarm delivers', () =
     expect(delivers(d(3, 2640))).toBe(true);
     expect(delivers(d(HEALTHY_PEERS, 0))).toBe(true);
     expect(delivers(null)).toBe(false);
+    // Many peers are no promise for a film this link cannot carry; its own rate still is.
+    expect(delivers({ peers: 7, downKbps: 4000, filmKbps: 18_300 })).toBe(false);
+    expect(delivers({ peers: 7, downKbps: 19_000, filmKbps: 18_300 })).toBe(true);
+    expect(delivers({ peers: 7, downKbps: 0, filmKbps: null })).toBe(true);
     const passed = [
       { position: 0, english: false, d: d(3, 1740) },
       { position: 1, english: true, d: d(2, 500) },
