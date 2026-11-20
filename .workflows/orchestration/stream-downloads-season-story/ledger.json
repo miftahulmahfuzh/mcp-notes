@@ -181,7 +181,7 @@
         "R4",
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Guides, pictures, the feature map and the end-to-end proof"
     },
@@ -210,6 +210,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-21T00:47:19+07:00",
+  "updated": "2026-11-21T00:53:40+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
