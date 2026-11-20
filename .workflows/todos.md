@@ -153,6 +153,29 @@
     - Step 3 in a swarm sharing one todos counter → minted only phase 7's task as P1-NOTES-SD07, index TaskID column left to the coordinator (rung 6: precedent of P1-NOTES-SD01/SD02/SD06)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 8's task is minted by its own session.
 
+- [x] **P1-NOTES-SD10** Phase 10: Office network: a torrent download through WARP before the cloud
+  - **Difficulty**: HARD
+  - **Type**: Update
+  - **Context**: Owns `src/directStream/downloads/warp.ts` (`DownloadWarp`, `WarpRounds`, `WarpHold`), `DirectStreamService.warpForDownloads()` over the one `WarpHolds` plays use, the removal of the office branches from `plan.ts`, `service.ts` and `season.ts`, `no_peers_here` meaning "no peer on the office network even after WARP", the texts and tests of phases 2, 3 and 4 that state the old rule, `docs:gen`. Exit: its R1.4 and R1.12 tests pass with a fake switch over the real `WarpHolds`; the play WARP tests pass unchanged; `torrentWarp.ts` and `warp.mjs` show no diff; `npm test`, `npm run typecheck` and `docs:check` pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 10 of 10)
+  - **Satisfies**: R1 — i am just thinking , why not add an icon button Download as well? add it to title page. from my experince using Stream subsystem, Torrent always gives higher image quality (if it is a 1080p magnet) compared to Non Torrent sources. i am thinking, by default, clicking download will download the 1080p magnet version, but if it is not available, then download (or cache, if you prefer to call it that way) from NT cloud sources. you know what, just add a small dropdown "Choose how to download <movie/series name>" , so user can manually select NT source if he wanted to. · criteria: R1.4, R1.12
+  - **Depends on**: P1-NOTES-SD02, P1-NOTES-SD03, P1-NOTES-SD04
+  - **Plan**: `.workflows/plan/P1-NOTES-SD10.md`
+  - **Completed**: 2026-11-21 00:43
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD10.md, src/directStream/downloads/warp.ts, src/directStream/downloads/plan.ts, src/directStream/downloads/types.ts, src/directStream/downloads/service.ts, src/directStream/downloads/season.ts, src/directStream/service.ts, src/streaming/warp.ts, src/config.ts, src/daemon.ts, docs/guide/reference/configuration.md, docs/guide/reference/http-api.md, scripts/docs/httpRoutes.ts, .claude/skills/verify-notesd/features/direct-streaming.md, tests/unit/directStream/downloads/fakes.ts, tests/unit/directStream/downloads/plan.test.ts, tests/unit/directStream/downloads/service.test.ts, tests/unit/directStream/downloads/season.test.ts, tests/integration/directStream.seasonDownloads.int.test.ts
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-0013-sd10/evidence
+  - **Drift**:
+    - No code drift: every anchor in phases 2, 3 and 4's files matched the plan.
+    - origin/feature/stream-downloads-season-story did not move since the base (2a665d9): nothing to rebase onto.
+    - docs:gen also rewrote docs/guide/reference/mcp-tools.md with no diff.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p10 on phase-10-… → proceeded there (rung 6: the swarm's per-phase worktree convention, and the coordinator's note)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 10's task as P1-NOTES-SD10, index TaskID column left to the coordinator (rung 6: precedent SD01–SD07)
+    - Proof evidence is vitest output, not a throwaway daemon → as the plan's Proof says (verify.sh pins NOTESD_STREAM_WARP=off and the SSID to verify-home, and no test may switch the real WARP)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1–7 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 9's task is minted by its own session.
+
 - [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
   - **Difficulty**: NORMAL
   - **Type**: Feature

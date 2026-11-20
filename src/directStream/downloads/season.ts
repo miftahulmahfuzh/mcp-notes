@@ -5,6 +5,8 @@ import type { TorrentStreams } from '../torrent/service.js';
 import { refLabel, type StreamRef } from '../types.js';
 import type { DownloadRecords } from './repo.js';
 import type { DownloadFacts, DownloadVia } from './types.js';
+import { noPeersAtAll } from '../torrentWarp.js';
+import type { WarpHold, WarpRounds } from './warp.js';
 
 /**
  * Season downloads (the season row's Download button, R2). A season asks for every aired episode of it that this
@@ -102,8 +104,11 @@ export interface SeasonDownloadsDeps<R> {
   /** Null: torrents off; every row of a season downloads on its own. */
   packs: SeasonPacks | null;
   swarm: PackSwarm | null;
-  /** True on the office network (SSID `Employee`): no pack is opened there; the per-episode path applies the office rule. */
-  office(): Promise<boolean>;
+  /**
+   * The office network's WARP round (downloads/warp.ts): a pack whose every swarm sent no file list is looked for once
+   * more with WARP on, and the job holds WARP until it is done. Null or unset: no round (NOTESD_STREAM_WARP=off, tests).
+   */
+  warp?: WarpRounds | null;
   /** What a torrent download does once a file is whole (the remux to its end, the subtitle: finishFromDisk); absent: nothing more. */
   finish?(ref: TvRef): Promise<void>;
   now?: () => Date;
@@ -295,17 +300,18 @@ export class SeasonDownloads<R> {
 
   /**
    * The queue reached `row` (phase 2's `run`, before its own steps). For the first row of a batch asked `auto` or
-   * `torrent` the queue reaches, off the office network, the batch's season pack is looked for: with one, the job that
-   * downloads every row it holds (the queue keeps it as its one torrent job, lets it go while a torrent plays, and
-   * cancels one of its rows through it). A batch is looked at once per daemon run, except when two or more of its rows
-   * still name one torrent as their source (a pack that carried them before a pause or a restart): that pack is opened
-   * again by its info hash, with no index asked. Null: the row downloads on its own (a film, a cloud download, a torrent
-   * picked by hand, no pack, a batch already looked at).
+   * `torrent` the queue reaches, the batch's season pack is looked for, on every network. On the office network, a
+   * pack search whose every swarm sent no file list is asked once more through Cloudflare WARP, and the job holds WARP
+   * while it downloads. With a pack, the answer is the job that downloads every row it holds. The queue keeps it as its
+   * one torrent job, lets it go while a torrent plays, and cancels one of its rows through it. A batch is looked at
+   * once per daemon run, except when two or more of its rows still name one torrent as their source (a pack that
+   * carried them before a pause or a restart). That pack is opened again by its info hash, with no index asked. Null:
+   * the row downloads on its own (a film, a cloud download, a torrent picked by hand, no pack, a batch already looked
+   * at).
    */
   async take(row: SeasonRow): Promise<SeasonPackJob | null> {
     const { packs, swarm } = this.deps;
     if (row.batch === null || row.via === 'cloud' || row.infoHash !== null || packs === null || swarm === null) return null;
-    if (await this.deps.office()) return null;
     const open: SeasonRow[] = [];
     for (const r of await this.deps.rows.open(row.batch)) {
       if (r.via !== row.via || r.infoHash !== null || r.ref.tmdbId !== row.ref.tmdbId || r.ref.season !== row.ref.season) continue;
@@ -322,9 +328,19 @@ export class SeasonDownloads<R> {
     this.looked.add(row.batch);
     const label = `season ${row.ref.season} of TMDB tv ${row.ref.tmdbId}`;
     const known = shared ?? open.find((r) => r.sourceId !== null)?.sourceId ?? null;
-    const fetched = await packs.fetch(row.ref.tmdbId, row.ref.season, open.map((r) => r.ref.episode), { heights: row.via === 'auto' ? 'preferred' : 'any', known });
+    const ask = (): Promise<PackFetch> =>
+      packs.fetch(
+        row.ref.tmdbId,
+        row.ref.season,
+        open.map((r) => r.ref.episode),
+        { heights: row.via === 'auto' ? 'preferred' : 'any', known },
+      );
+    const first = await ask();
+    const round = this.deps.warp == null ? null : await this.deps.warp.round(label, first, !first.ok && noPeersAtAll(first.attempts), ask);
+    const fetched = round?.out ?? first;
+    const hold: WarpHold | null = round?.hold ?? null;
     if (!fetched.ok) {
-      this.log(`[notesd] downloads: ${label}: no season pack; ${open.length} episode(s) download one by one`);
+      this.log(`[notesd] downloads: ${label}: no season pack${round?.note == null ? '' : ` (${round.note})`}; ${open.length} episode(s) download one by one`);
       return null;
     }
     const pack = fetched.pack;
@@ -336,17 +352,19 @@ export class SeasonDownloads<R> {
       await swarm.keep(pack.infoHash);
       for (const c of carried) await this.deps.rows.running(c.row.id, pack.infoHash);
     } catch (err) {
-      // fetchPack took one hold per episode it holds: every one is given back.
+      // fetchPack took one hold per episode it holds: every one is given back, and WARP with them.
       for (let i = 0; i < pack.episodes.length; i += 1) await swarm.release(pack.infoHash).catch(() => undefined);
+      await hold?.release();
       this.log(`[notesd] downloads: ${label}: the season pack ${pack.name} could not be recorded (${messageOf(err)}); each episode downloads on its own`);
       return null;
     }
-    this.log(`[notesd] downloads: ${label}: ${carried.length} episode(s) from the season pack ${pack.name}${pack.lacking.length === 0 ? '' : `; ${pack.lacking.map((e) => `E${pad(e)}`).join(', ')} on their own`}`);
+    this.log(`[notesd] downloads: ${label}: ${carried.length} episode(s) from the season pack ${pack.name}${hold === null ? '' : ' through Cloudflare WARP'}${pack.lacking.length === 0 ? '' : `; ${pack.lacking.map((e) => `E${pad(e)}`).join(', ')} on their own`}`);
     return new SeasonPackJob({
       pack,
       carried,
       rows: this.deps.rows,
       swarm,
+      warp: hold,
       ...(this.deps.finish === undefined ? {} : { finish: this.deps.finish }),
       now: () => this.now().getTime(),
       sleep: this.sleep,
@@ -367,6 +385,8 @@ export interface SeasonPackJobParts {
   carried: Carried[];
   rows: SeasonRows;
   swarm: PackSwarm;
+  /** The WARP this pack went ahead through (downloads/warp.ts), let go when the job ends; null: none. */
+  warp?: WarpHold | null;
   finish?: (ref: TvRef) => Promise<void>;
   now: () => number;
   sleep: (ms: number) => Promise<void>;
@@ -388,6 +408,8 @@ export class SeasonPackJob {
   private readonly finished = new Set<string>();
   private readonly dropped = new Set<string>();
   private stopped = false;
+  /** The daemon stops: the WARP this pack holds is left as it is. */
+  private closing = false;
   private lastGrowthAt: number;
   private lastReceived: number | null;
 
@@ -401,16 +423,21 @@ export class SeasonPackJob {
 
   /**
    * A torrent plays on screen (phase 2's play first): the pack lets go of its swarm and every row it still carries waits
-   * `paused`, the pack still its source. When the play ends the queue reaches them again and `take` opens the same pack
-   * by its info hash.
+   * `paused`, the pack still its source. The WARP it held is let go at once (it stays on while that play may play
+   * through it). When the play ends the queue reaches them again and `take` opens the same pack by its info hash.
    */
   async pause(): Promise<void> {
     const left = this.letGo();
+    await this.p.warp?.release();
     for (const c of left) await this.p.rows.paused(c.row.id);
   }
 
-  /** The daemon stops: every hold is let go; the rows stay running, and the next start carries them on from disk. */
+  /**
+   * The daemon stops: every hold is let go; the rows stay running, and the next start carries them on from disk.
+   * WARP is left as it is, as a torrent play's is at a stop.
+   */
   async close(): Promise<void> {
+    this.closing = true;
     this.letGo();
   }
 
@@ -454,6 +481,10 @@ export class SeasonPackJob {
       }
     } catch (err) {
       await this.failRest(`the season pack ${this.p.pack.name} stopped: ${messageOf(err)}`);
+    } finally {
+      // Done, failed, cancelled or paused: the WARP this pack held is let go (back off unless a play or another holder
+      // keeps it). A daemon stop leaves it as it is.
+      if (!this.closing) await this.p.warp?.release();
     }
   }
 

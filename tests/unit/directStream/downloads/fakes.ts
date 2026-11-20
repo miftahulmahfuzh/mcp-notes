@@ -1,11 +1,19 @@
 import type { CacheNow, DownloadCaches, DownloadTorrents, KeptTorrentHandle, TorrentAsk, TorrentFetch, TorrentNow } from '../../../../src/directStream/downloads/types.js';
 import { refLabel, type StreamRef } from '../../../../src/directStream/types.js';
+import type { WarpState, WarpStatus, WarpSwitch } from '../../../../src/streaming/warp.js';
 
-/** The torrent side, recorded: `fetch band:preferred`, `fetch hash:<h>`, `keep <h> true`, `release <h>`. */
+/**
+ * The torrent side, recorded: `fetch band:preferred`, `fetch hash:<h>` (` (WARP)` appended while WARP is on),
+ * `forget <ref>`, `keep <h> true`, `release <h>`.
+ */
 export class FakeTorrents implements DownloadTorrents {
   readonly calls: string[] = [];
   /** What fetch answers, by `band:preferred`, `band:below` or `hash:<info hash>`; unset: no_source. */
   readonly answers = new Map<string, TorrentFetch>();
+  /** What fetch answers while WARP is on, by the same keys; unset: `answers`. */
+  readonly viaWarp = new Map<string, TorrentFetch>();
+  /** Whether WARP is on now (a test points it at its FakeWarp). */
+  warpIsOn: () => boolean = () => false;
   /** Info hashes whose file is whole on disk. */
   readonly whole = new Set<string>();
   /** A held torrent's remux, by info hash; unset: none. */
@@ -22,8 +30,13 @@ export class FakeTorrents implements DownloadTorrents {
 
   async fetch(_ref: StreamRef, ask: TorrentAsk): Promise<TorrentFetch> {
     const key = 'band' in ask ? `band:${ask.band}` : `hash:${ask.infoHash}`;
-    this.calls.push(`fetch ${key}`);
-    return this.answers.get(key) ?? { ok: false, error: 'no_source', detail: 'no torrent fits' };
+    const warp = this.warpIsOn();
+    this.calls.push(`fetch ${key}${warp ? ' (WARP)' : ''}`);
+    return (warp ? this.viaWarp.get(key) : undefined) ?? this.answers.get(key) ?? { ok: false, error: 'no_source', detail: 'no torrent fits' };
+  }
+
+  forgetNoPeers(ref: StreamRef): void {
+    this.calls.push(`forget ${refLabel(ref)}`);
   }
 
   async now(handle: KeptTorrentHandle): Promise<TorrentNow> {
@@ -88,5 +101,27 @@ export class FakeCaches implements DownloadCaches {
     const cache = this.caches.get(refLabel(ref));
     if (cache === undefined) throw new Error(`no cache of ${refLabel(ref)}`);
     this.caches.set(refLabel(ref), { ...cache, ...patch });
+  }
+}
+
+/** Cloudflare WARP's switch, recorded: `status`, `on`, `off`. `connects` false: WARP never comes on. */
+export class FakeWarp implements WarpSwitch {
+  readonly calls: string[] = [];
+
+  constructor(
+    public state: { warp: WarpStatus; ssid: string | null },
+    private readonly connects = true,
+  ) {}
+
+  async status(): Promise<WarpState> {
+    this.calls.push('status');
+    return { ok: true, ...this.state };
+  }
+
+  async set(on: boolean): Promise<WarpState> {
+    this.calls.push(on ? 'on' : 'off');
+    if (on && !this.connects) return { ok: false, warp: 'disconnected', ssid: this.state.ssid, error: 'did_not_switch' };
+    this.state = { ...this.state, warp: on ? 'connected' : 'disconnected' };
+    return { ok: true, ...this.state, changed: true };
   }
 }

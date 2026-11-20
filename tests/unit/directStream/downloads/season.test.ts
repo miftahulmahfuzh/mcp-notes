@@ -3,6 +3,10 @@ import { finishFromDisk, PACK_STALL_MS, SeasonDownloads, type PackSwarm, type Se
 import type { DownloadVia } from '../../../../src/directStream/downloads/types.js';
 import type { PackFetch } from '../../../../src/directStream/torrent/source.js';
 import type { StreamRef } from '../../../../src/directStream/types.js';
+import { downloadWarpOf, WarpRounds } from '../../../../src/directStream/downloads/warp.js';
+import { NO_FILE_LIST } from '../../../../src/directStream/torrent/source.js';
+import { WarpHolds } from '../../../../src/directStream/torrentWarp.js';
+import { FakeWarp } from './fakes.js';
 
 const TMDB = 1399;
 const PACK = 'facade'.padEnd(40, '2');
@@ -82,13 +86,14 @@ const packOf = (episodes: number[], lacking: number[] = []): PackFetch => ({
   pack: { infoHash: PACK, name: 'Fixture.Show.S01.1080p', episodes: episodes.map((episode, i) => ({ episode, video: i, subtitles: [] })), lacking, attempts: [] },
 });
 
-function setup(o: { episodes?: SeasonEpisode[] | null; whole?: number[]; pack?: PackFetch; office?: boolean } = {}) {
+function setup(o: { episodes?: SeasonEpisode[] | null; whole?: number[]; pack?: PackFetch; packThroughWarp?: PackFetch; sw?: FakeWarp; warp?: WarpRounds | null } = {}) {
   const rows = new MemoryRows();
   const swarm = new FakeSwarm();
   const fetches: { episodes: number[]; heights: string; known: string | null }[] = [];
   const packs: SeasonPacks = {
     fetch: async (_tmdbId, _season, episodes, options) => {
       fetches.push({ episodes: [...episodes], heights: options.heights, known: options.known ?? null });
+      if (o.sw?.state.warp === 'connected' && o.packThroughWarp !== undefined) return o.packThroughWarp;
       return o.pack ?? NO_PACK;
     },
   };
@@ -100,7 +105,7 @@ function setup(o: { episodes?: SeasonEpisode[] | null; whole?: number[]; pack?: 
     rows,
     packs,
     swarm,
-    office: async () => o.office === true,
+    warp: o.warp ?? null,
     now: () => new Date(clock),
     sleep: async (ms) => {
       clock += ms;
@@ -111,6 +116,17 @@ function setup(o: { episodes?: SeasonEpisode[] | null; whole?: number[]; pack?: 
   });
   return { seasons, rows, swarm, fetches };
 }
+
+/** WARP on the office network, as the engine builds the round (downloads/warp.ts). */
+function officeWarp(playing: () => boolean = () => false) {
+  const sw = new FakeWarp({ warp: 'disconnected', ssid: 'Employee' });
+  const holds = new WarpHolds(sw);
+  const warp = new WarpRounds({ warp: downloadWarpOf(holds, sw), office: async () => true, playing, log: () => undefined });
+  return { sw, holds, warp, switches: (): string[] => sw.calls.filter((c) => c !== 'status') };
+}
+
+/** A pack search whose one pack's swarm sent no file list: no peer at all. */
+const PEERLESS: PackFetch = { ok: false, error: 'no_pack', attempts: [{ provider: 'Torrent: Fixture.Show.S01.1080p', outcome: 'no_stream', took_s: 20, detail: `${NO_FILE_LIST} (timed out)` }] };
 
 async function queued(s: ReturnType<typeof setup>, via: DownloadVia = 'auto'): Promise<Stored[]> {
   const answer = await s.seasons.request(TMDB, 1, { via });
@@ -205,14 +221,12 @@ describe('SeasonDownloads.take', () => {
     expect(s.rows.stored.map((r) => r.state)).toEqual(['queued', 'queued', 'queued']);
   });
 
-  it('looks for no pack for a cloud download, a torrent picked by hand, or on the office network', async () => {
+  it('looks for no pack for a cloud download or a torrent picked by hand', async () => {
     const cloud = setup({ pack: packOf([1, 2, 3]) });
     expect(await cloud.seasons.take((await queued(cloud, 'cloud'))[0]!)).toBeNull();
-    const office = setup({ pack: packOf([1, 2, 3]), office: true });
-    expect(await office.seasons.take((await queued(office))[0]!)).toBeNull();
     const picked = setup({ pack: packOf([1, 2, 3]) });
     expect(await picked.seasons.take(picked.rows.add(1, 'torrent', 'b-hand', PACK))).toBeNull();
-    expect([...cloud.fetches, ...office.fetches, ...picked.fetches]).toEqual([]);
+    expect([...cloud.fetches, ...picked.fetches]).toEqual([]);
   });
 
   it('asks for a 1080p pack with no source named, any height for a torrent, and the pack it had before a restart', async () => {
@@ -266,6 +280,59 @@ describe('SeasonPackJob', () => {
       [2, 'failed', 'download_failed'],
       [3, 'queued', null],
     ]);
+  });
+});
+
+describe('R1.4 a season pack on the office network', () => {
+  it('is looked for there too, and switches nothing when its swarm answers', async () => {
+    const w = officeWarp();
+    const s = setup({ pack: packOf([1, 2, 3]), sw: w.sw, warp: w.warp });
+    const job = await s.seasons.take((await queued(s))[0]!);
+    expect(job?.rowIds).toEqual(['d1', 'd2', 'd3']);
+    expect(s.fetches).toHaveLength(1);
+    for (const index of [0, 1, 2]) s.swarm.wholeFiles.add(index);
+    await job!.done;
+    expect(w.switches()).toEqual([]);
+  });
+
+  it('switches WARP on once when the pack sent no file list, takes the pack through it, and puts WARP back off when the pack is done', async () => {
+    const w = officeWarp();
+    const s = setup({ pack: PEERLESS, packThroughWarp: packOf([1, 2, 3]), sw: w.sw, warp: w.warp });
+    const job = await s.seasons.take((await queued(s))[0]!);
+    expect(s.fetches).toHaveLength(2);
+    expect(job?.rowIds).toEqual(['d1', 'd2', 'd3']);
+    expect(w.switches()).toEqual(['on']);
+    for (const index of [0, 1, 2]) s.swarm.wholeFiles.add(index);
+    await job!.done;
+    expect(s.rows.stored.map((r) => r.state)).toEqual(['done', 'done', 'done']);
+    expect(w.switches()).toEqual(['on', 'off']);
+    expect(w.holds.ours).toBe(false);
+  });
+});
+
+describe('R1.4 R1.12 a season pack WARP did not help', () => {
+  it('puts WARP back off, and the episodes download one by one', async () => {
+    const w = officeWarp();
+    const s = setup({ pack: PEERLESS, sw: w.sw, warp: w.warp });
+    expect(await s.seasons.take((await queued(s))[0]!)).toBeNull();
+    expect(s.fetches).toHaveLength(2);
+    expect(w.switches()).toEqual(['on', 'off']);
+    expect(s.rows.stored.map((r) => r.state)).toEqual(['queued', 'queued', 'queued']);
+  });
+});
+
+describe('R1.12 a season pack paused for a torrent playing on screen', () => {
+  it('lets go of WARP at once, and WARP stays on for the play', async () => {
+    let playing = false;
+    const w = officeWarp(() => playing);
+    const s = setup({ pack: PEERLESS, packThroughWarp: packOf([1, 2, 3]), sw: w.sw, warp: w.warp });
+    const job = (await s.seasons.take((await queued(s))[0]!))!;
+    playing = true;
+    await job.pause();
+    await job.done;
+    expect(s.rows.stored.map((r) => r.state)).toEqual(['paused', 'paused', 'paused']);
+    expect(w.switches()).toEqual(['on']);
+    expect(w.holds.ours).toBe(false);
   });
 });
 

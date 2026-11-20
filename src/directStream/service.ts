@@ -25,6 +25,7 @@ import type { TorrentCandidateList } from './torrent/candidates.js';
 import type { TorrentMark, TorrentMarks } from './torrent/marks.js';
 import { TORRENT_WARP_AUTO, torrentThroughWarp, WARP_ATTEMPT, WarpHolds, type TorrentWarp } from './torrentWarp.js';
 import type { WarpSwitch } from '../streaming/warp.js';
+import { downloadWarpOf, type DownloadWarp } from './downloads/warp.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
@@ -1228,6 +1229,18 @@ export class DirectStreamService {
     const added = next.attempts.find((a) => a.provider === WARP_ATTEMPT);
     if (added !== undefined) this.log(`[notesd] direct stream: ${refLabel(ref)}: WARP: ${added.outcome}: ${added.detail}`);
     return next;
+  }
+
+  /**
+   * Cloudflare WARP as a torrent download uses it (downloads/warp.ts): this service's one WarpHolds, so a play and a
+   * download hold WARP together and the last to let go puts back what this service switched on, plus the switch's
+   * status, read only. Never the switch itself: a download cannot `set` WARP. Null with NOTESD_STREAM_WARP=off, or
+   * without the automatic flip.
+   */
+  warpForDownloads(): DownloadWarp | null {
+    const warp = this.opts.warp ?? null;
+    if (warp === null || !warp.auto || this.warpHolds === null) return null;
+    return downloadWarpOf(this.warpHolds, warp.switch);
   }
 
   private async imdbIdOf(ref: StreamRef): Promise<string | null> {
