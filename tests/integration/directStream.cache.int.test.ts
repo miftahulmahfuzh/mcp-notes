@@ -485,9 +485,9 @@ describe('/api/stream/cache', () => {
     await svc.syncSeed();
     const session = await svc.resolve({ kind: 'tv', tmdbId: 990010, season: 1, episode: 1 }, { resumeS: 0 });
     const next: StreamRef = { kind: 'tv', tmdbId: 990010, season: 1, episode: 2 };
-    // Two minutes of playing, reported every 5 s.
-    for (let i = 0; i <= 24; i++) {
-      svc.watched(session.id, { paused: false, over: false });
+    // A 4-minute episode played past its half, reported every 5 s.
+    for (let i = 0; i <= 26; i++) {
+      svc.watched(session.id, { paused: false, over: false, positionS: i * 5, durationS: 240 });
       clock = new Date(clock.getTime() + 5_000);
     }
     await until(async () => (await cache.find(next))?.state === 'ready');
