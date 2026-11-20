@@ -1168,7 +1168,8 @@ export const movieEpisodeMarks = pgTable(
  * The dialogue of a film (season 0, episode 0) or of one episode: the text of its English
  * subtitle as a stream source carried it (src/directStream/dialogue.ts), one line per cue,
  * `mm:ss<TAB>text`. Read once and kept, so "what is this episode about" is answered
- * without resolving again. Written only by `MoviesRepo.saveDialogue` and `saveStory`.
+ * without resolving again. Written only by `MoviesRepo.saveDialogue`. Stories live in
+ * `movie_stories` since migration 0043; the story columns below are no longer written or read.
  */
 export const movieDialogues = pgTable(
   'movie_dialogues',
@@ -1186,7 +1187,7 @@ export const movieDialogues = pgTable(
     lastCueS: integer('last_cue_s').notNull(),
     body: text('body').notNull(),
     fetchedAt: timestamp('fetched_at', { withTimezone: true, mode: 'date' }).notNull(),
-    /** The story Claude wrote from the dialogue (src/movies/story.ts): written once, on the owner's click, and kept. */
+    /** Unused since migration 0043 copied every story into movie_stories; kept so nothing is lost. */
     story: text('story'),
     storyModel: text('story_model'),
     storyAt: timestamp('story_at', { withTimezone: true, mode: 'date' }),
@@ -1476,6 +1477,60 @@ export const movieGenreGuides = pgTable(
   (t) => [primaryKey({ columns: [t.titleId, t.genre] })],
 )
 
+/** One episode's part of a season's story (movie_stories.sections). */
+export interface MovieStorySection {
+  episode: number
+  /** The episode's name as TMDB has it; null when it has none. */
+  name: string | null
+  /** What happens in it, taken from the sources alone; empty when `found` is false. */
+  text: string
+  /** False: no source tells this episode's story, and none is invented. */
+  found: boolean
+}
+
+/** A web page a story was written from (movie_stories.sources). */
+export interface MovieStorySource {
+  url: string
+  title: string
+  /** The site's name ("Wikipedia", "Vulture"). */
+  site: string
+}
+
+/** Where a story was written from. The CHECK below keeps the same list. */
+export const MOVIE_STORY_ORIGINS = ['web', 'dialogue'] as const
+export type MovieStoryOrigin = (typeof MOVIE_STORY_ORIGINS)[number]
+
+/**
+ * The story of a film, an episode or a season (migration 0043). Claude writes it once when the owner asks, and it is
+ * read from here after that, without a model call. One row per (title, season, episode): (0, 0) is a film's story,
+ * (s, e) with e > 0 an episode's, and (s, 0) with s > 0 a season's, told per episode in `sections`. `origin`
+ * `dialogue`: written from the episode's subtitle (every story migration 0043 copied out of movie_dialogues);
+ * `web`: written from the published recaps in `sources`. Written by MoviesRepo.saveStory only. Neon never held it,
+ * so it is not in SHARED_IMPORT_TABLES (the merge copies a staged dialogue's story into it instead).
+ */
+export const movieStories = pgTable(
+  'movie_stories',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    episode: integer('episode').notNull(),
+    text: text('text').notNull(),
+    sections: jsonb('sections').$type<MovieStorySection[]>().notNull().default(sql`'[]'::jsonb`),
+    sources: jsonb('sources').$type<MovieStorySource[]>().notNull().default(sql`'[]'::jsonb`),
+    origin: text('origin').$type<MovieStoryOrigin>().notNull(),
+    model: text('model'),
+    writtenAt: timestamp('written_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.titleId, t.season, t.episode] }),
+    check('movie_stories_slot_check', sql`${t.season} >= 0 and ${t.episode} >= 0`),
+    check('movie_stories_origin_check', sql`${t.origin} in ('web', 'dialogue')`),
+    check('movie_stories_lists_check', sql`jsonb_typeof(${t.sections}) = 'array' and jsonb_typeof(${t.sources}) = 'array'`),
+  ],
+)
+
 /**
  * A title played on a streaming site that TMDB does not list (migration 0035), per host: it has no
  * `movie_titles` row, so it is kept here with what the site's own page says of it, and shown on the
@@ -1704,7 +1759,8 @@ export interface StreamTorrentFile {
  * pack has a row for every episode chosen from it, each with its own files, state and play, so watching
  * E02 never forgets E01's file. A film's row opened for another title forgets its chosen files. `files`
  * are the slot's chosen files only (the video and its subtitles), `file_index` the video. `error` is set exactly when it
- * failed; `completed_at` exactly when it is ready, which needs a chosen video.
+ * failed; `completed_at` exactly when it is ready, which needs a chosen video. `kept_at` (migration 0043) is set while
+ * the owner keeps the torrent as a download (TorrentsRepo.setKept): the age and budget prunes leave it alone.
  */
 export const streamTorrents = pgTable(
   'stream_torrents',
@@ -1732,6 +1788,8 @@ export const streamTorrents = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
     /** The video was last read through the file route; downloads not played for NOTESD_TORRENT_KEEP_DAYS are deleted. */
     playedAt: timestamp('played_at', { withTimezone: true, mode: 'date' }),
+    /** The owner asked for this torrent as a download (stream_downloads): kept through both prunes until deleted. Null: not the owner's. */
+    keptAt: timestamp('kept_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     primaryKey({ columns: [t.host, t.infoHash, t.season, t.episode] }),
@@ -1784,6 +1842,72 @@ export const streamTorrentMarks = pgTable(
   ],
 )
 
+/** How a download was asked to fetch (src/directStream/downloads/). The CHECK below keeps the same list. */
+export const STREAM_DOWNLOAD_VIAS = ['auto', 'torrent', 'cloud'] as const
+export type StreamDownloadVia = (typeof STREAM_DOWNLOAD_VIAS)[number]
+/** Where a download is. The CHECK below keeps the same list. */
+export const STREAM_DOWNLOAD_STATES = ['queued', 'running', 'paused', 'done', 'failed'] as const
+export type StreamDownloadState = (typeof STREAM_DOWNLOAD_STATES)[number]
+/** What a download fetches from: a torrent (`source_id` its info hash) or the cloud cache (`source_id` the stream_caches id). */
+export const STREAM_DOWNLOAD_SOURCES = ['torrent', 'cloud'] as const
+export type StreamDownloadSource = (typeof STREAM_DOWNLOAD_SOURCES)[number]
+
+/**
+ * One film or episode the owner asked to download to one host (migration 0043): the Download button, or
+ * `direct_stream_cache` with a torrent. Written only by DownloadsRepo (src/directStream/downloads/repo.ts). The files
+ * land in that host's torrent folder or stream cache, so the other machine lists the row with `available: false`. A
+ * film is season 0, episode 0, as in stream_caches. One row per slot and host is open (not `done`) at a time; a season
+ * click makes one row per episode under one `batch`. `via` is what was asked (`auto`: a 1080p torrent first, then
+ * cloud); `info_hash` a torrent picked by hand, only with `via = 'torrent'`. `source`/`source_id` are what it fetches
+ * from, set once chosen. `bytes_*` are the last progress written, which a daemon start carries on from (toResume).
+ * `error` is set exactly when it failed (`cancelled` when the owner cancelled it); `completed_at` exactly when it is
+ * done, which needs a source. Neon never held it, so it is not in SHARED_IMPORT_TABLES.
+ */
+export const streamDownloads = pgTable(
+  'stream_downloads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    host: text('host').notNull(),
+    kind: text('kind').$type<MovieTitleKind>().notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    season: integer('season').notNull().default(0),
+    episode: integer('episode').notNull().default(0),
+    via: text('via').$type<StreamDownloadVia>().notNull().default('auto'),
+    infoHash: text('info_hash'),
+    batch: uuid('batch'),
+    state: text('state').$type<StreamDownloadState>().notNull().default('queued'),
+    source: text('source').$type<StreamDownloadSource>(),
+    sourceId: text('source_id'),
+    bytesDone: bigint('bytes_done', { mode: 'number' }).notNull().default(0),
+    bytesTotal: bigint('bytes_total', { mode: 'number' }),
+    error: text('error'),
+    errorDetail: text('error_detail'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    uniqueIndex('stream_downloads_open_slot_idx').on(t.host, t.kind, t.tmdbId, t.season, t.episode).where(sql`${t.state} <> 'done'`),
+    index('stream_downloads_host_state_idx').on(t.host, t.state, t.createdAt),
+    check('stream_downloads_kind_check', sql`${t.kind} in ('movie', 'tv')`),
+    check(
+      'stream_downloads_slot_check',
+      sql`${t.tmdbId} > 0 and ((${t.kind} = 'movie' and ${t.season} = 0 and ${t.episode} = 0) or (${t.kind} = 'tv' and ${t.season} >= 0 and ${t.episode} > 0))`,
+    ),
+    check('stream_downloads_via_check', sql`${t.via} in ('auto', 'torrent', 'cloud')`),
+    check('stream_downloads_state_check', sql`${t.state} in ('queued', 'running', 'paused', 'done', 'failed')`),
+    check('stream_downloads_info_hash_check', sql`${t.infoHash} is null or (${t.via} = 'torrent' and ${t.infoHash} ~ '^[0-9a-f]{40}$')`),
+    check(
+      'stream_downloads_source_check',
+      sql`(${t.source} is null) = (${t.sourceId} is null) and (${t.source} is null or ${t.source} in ('torrent', 'cloud')) and (${t.source} is distinct from 'torrent' or ${t.sourceId} ~ '^[0-9a-f]{40}$')`,
+    ),
+    check('stream_downloads_failed_check', sql`(${t.state} = 'failed') = (${t.error} is not null)`),
+    check('stream_downloads_done_check', sql`(${t.state} = 'done') = (${t.completedAt} is not null) and (${t.state} <> 'done' or ${t.source} is not null)`),
+    check('stream_downloads_counts_check', sql`${t.bytesDone} >= 0 and (${t.bytesTotal} is null or ${t.bytesTotal} >= 0)`),
+  ],
+)
+
 export type StreamTorrentMarkRow = typeof streamTorrentMarks.$inferSelect
 
 export type NoteRow = typeof notes.$inferSelect
@@ -1833,3 +1957,5 @@ export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect
 export type StreamTrendingRow = typeof streamTrending.$inferSelect
 export type StreamCacheRow = typeof streamCaches.$inferSelect
 export type StreamTorrentRow = typeof streamTorrents.$inferSelect
+export type MovieStoryRow = typeof movieStories.$inferSelect
+export type StreamDownloadRow = typeof streamDownloads.$inferSelect

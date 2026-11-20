@@ -22,6 +22,28 @@
 
 ### [P1] High
 
+- [x] **P1-NOTES-SD01** Phase 1: Schema and single writers: the download queue, the kept mark, the story store
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns migration `drizzle/0043_stream_downloads_stories.sql` and `src/db/schema.ts` for `stream_downloads` (one writer: `DownloadsRepo`, `src/directStream/downloads/repo.ts`), `stream_torrents.kept_at` (`TorrentsRepo.setKept`) and `movie_stories` (`MoviesRepo.story`/`saveStory`/`storySlots`); `MovieStories.get`/`writeNew` and `read.ts`' `has_story` read the new store; one merge statement in `src/db/sharedImport.ts`; the fakes `MemoryDownloadRecords`, `MemoryTorrentRecords.setKept` and the shared `downloadRecordsContract`. Exit: the migration applies on a fresh and on a populated database; the three writers pass unit and integration tests; `npm run typecheck` and `npm test` pass; existing stories are still served by `GET`/`POST /api/movies/:id/story` without a model.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 1 of 9)
+  - **Satisfies**: R1, R6 — the Download button with torrent-first source order and the "Choose how to download" menu (R1); "Narrate the full story of SXX" from web sources (R6) · criteria: R1.7, R6.5
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-SD01.md`
+  - **Completed**: 2026-11-20 23:20
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD01.md, src/db/schema.ts, drizzle/0043_stream_downloads_stories.sql, drizzle/meta/0043_snapshot.json, drizzle/meta/_journal.json, src/db/sharedImport.ts, src/directStream/downloads/repo.ts, src/directStream/torrent/repo.ts, src/movies/repo.ts, src/movies/story.ts, src/movies/read.ts, tests/helpers/memoryTorrentRecords.ts, tests/helpers/memoryDownloadRecords.ts, tests/helpers/downloadRecordsContract.ts, tests/unit/directStream/downloads/repo.test.ts, tests/unit/movies/story.test.ts, tests/integration/setup.ts, tests/integration/directStream.downloads.int.test.ts, tests/integration/directStream.torrents.int.test.ts, tests/integration/movies.stories.int.test.ts, tests/integration/movies.api.int.test.ts, tests/integration/migration0043.int.test.ts, tests/integration/sharedImport.int.test.ts, .claude/skills/verify-notesd/features/movies.md
+  - **Proof**: verified-after-fix — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-231635-695286/evidence (J2), /home/miftah/.local/state/notesd-verify/1120-231624-694348/evidence (J3); J1 and J4 are integration tests
+  - **Drift**:
+    - Plan says stream_downloads has ten CHECKs; its own code block and the generated SQL have nine. Generated DDL otherwise exactly as the plan lists.
+    - Plan calls read.ts' has_story query the fourth of the Promise.all; it is the sixth. Same lines, same edit.
+    - tests/integration/migration0043.int.test.ts: the plan compared written_at to a Date, but a raw db.execute returns timestamptz as text here; the test now selects the instant as UTC ISO text and asserts the same two instants.
+  - **Decided**:
+    - Step 3 in a swarm sharing one todos counter → created only phase 1's task, with the non-counter id P1-NOTES-SD01; the index's TaskID column left to the coordinator (rung 6: convention of SP04/TS02/F902/H202/C506)
+    - migration0043 test's written_at comparison (Date vs the text a raw execute returns) → assert the same instant as UTC ISO text; code unchanged (rung 2: exit criterion 'copied stories keep their time')
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent; the coordinator's integrator reconciles them. No successor to unblock: phase 2's task is minted by its own session.
+
 - [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
   - **Difficulty**: NORMAL
   - **Type**: Feature

@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueryFn } from '../../../src/chat/agent.js';
-import type { MovieDialogueRow } from '../../../src/db/schema.js';
+import type { MovieDialogueRow, MovieStoryRow } from '../../../src/db/schema.js';
+import type { NewMovieStory } from '../../../src/movies/repo.js';
 import type { StoredDialogue } from '../../../src/directStream/dialogueStore.js';
 import { DirectStreamError } from '../../../src/directStream/types.js';
 import { DEFAULT_STORY_MODEL, MovieStories, STORY_SYSTEM_PROMPT, StoryError, buildStoryInput, createStoryWriter, type StoryInput, type StoryWriter } from '../../../src/movies/story.js';
@@ -96,17 +97,26 @@ describe('MovieStories', () => {
   } as unknown as TitleMetadata;
   const DIALOGUE: StoredDialogue = { provider: 'VidNest Anime', cues: 2, lastCueS: 723, body: '10:55\t...Jack!\n12:03\tIt was a poison-gas weapon.', fetchedAt: new Date('2026-11-16T05:00:00Z'), cached: true, story: null };
 
-  function setup(over: { writer?: StoryWriter | null; dialogue?: () => Promise<StoredDialogue | null>; meta?: TitleMetadata | null } = {}) {
-    const rows = new Map<string, MovieDialogueRow>();
+  function setup(over: { writer?: StoryWriter | null; dialogue?: () => Promise<StoredDialogue | null>; meta?: TitleMetadata | null; stored?: MovieStoryRow[] } = {}) {
+    const rows = new Map<string, MovieStoryRow>((over.stored ?? []).map((r) => [`${r.titleId} ${r.season} ${r.episode}`, r]));
     const write = vi.fn(async (_input: StoryInput) => 'Jack gasses Zou.\n\nSanji arrives.');
     const writer = over.writer === undefined ? { model: 'sonnet', write } : over.writer;
     const dialogue = vi.fn(over.dialogue ?? (async () => DIALOGUE));
-    const saveStory = vi.fn(async (titleId: string, season: number, episode: number, story: string, model: string, at: Date) => {
-      rows.set(`${titleId} ${season} ${episode}`, { titleId, season, episode, lang: 'en', provider: 'VidNest Anime', cues: 2, lastCueS: 723, body: DIALOGUE.body, fetchedAt: DIALOGUE.fetchedAt, story, storyModel: model, storyAt: at });
-      return true;
+    const saveStory = vi.fn(async (row: NewMovieStory) => {
+      const kept: MovieStoryRow = { sections: [], sources: [], ...row };
+      rows.set(`${row.titleId} ${row.season} ${row.episode}`, kept);
+      return kept;
+    });
+    const dialogueRow = (titleId: string, season: number, episode: number): MovieDialogueRow => ({
+      titleId, season, episode, lang: 'en', provider: 'VidNest Anime', cues: 2, lastCueS: 723, body: DIALOGUE.body, fetchedAt: DIALOGUE.fetchedAt, story: null, storyModel: null, storyAt: null,
     });
     const stories = new MovieStories({
-      repo: { dialogue: async (titleId, season, episode) => rows.get(`${titleId} ${season} ${episode}`) ?? null, saveStory, loadTitleMetadata: async () => (over.meta === undefined ? META : over.meta) },
+      repo: {
+        story: async (titleId, season, episode) => rows.get(`${titleId} ${season} ${episode}`) ?? null,
+        dialogue: async (titleId, season, episode) => dialogueRow(titleId, season, episode),
+        saveStory,
+        loadTitleMetadata: async () => (over.meta === undefined ? META : over.meta),
+      },
       dialogue,
       writer,
       now: () => new Date('2026-11-16T06:00:00Z'),
@@ -133,6 +143,23 @@ describe('MovieStories', () => {
     expect(again.story.text).toBe(first.story.text);
     expect(t.write).toHaveBeenCalledTimes(1);
     expect(await t.stories.get('tv-37854', 18, 760)).toMatchObject({ text: first.story.text, model: 'sonnet' });
+    expect(t.saveStory).toHaveBeenCalledWith({ titleId: 'tv-37854', season: 18, episode: 760, text: 'Jack gasses Zou.\n\nSanji arrives.', origin: 'dialogue', model: 'sonnet', writtenAt: new Date('2026-11-16T06:00:00Z') });
+  });
+
+  it('answers a story already in the store without a model call or a dialogue read (R6.5)', async () => {
+    const stored: MovieStoryRow = {
+      titleId: 'tv-37854', season: 18, episode: 760, text: 'Kept from before.', sections: [], sources: [], origin: 'dialogue', model: 'haiku', writtenAt: new Date('2026-11-01T00:00:00Z'),
+    };
+    const t = setup({ stored: [stored] });
+    expect(await t.stories.write('tv-37854', 18, 760)).toEqual({
+      cached: true,
+      story: { season: 18, episode: 760, text: 'Kept from before.', model: 'haiku', written_at: '2026-11-01T00:00:00.000Z', provider: 'VidNest Anime', cues: 2 },
+    });
+    expect(t.write).not.toHaveBeenCalled();
+    expect(t.dialogue).not.toHaveBeenCalled();
+    expect(t.saveStory).not.toHaveBeenCalled();
+    // Stories are off here, and a stored one still opens.
+    expect((await setup({ writer: null, stored: [stored] }).stories.write('tv-37854', 18, 760)).cached).toBe(true);
   });
 
   it('two requests for the same story share one write', async () => {

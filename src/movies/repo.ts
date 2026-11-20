@@ -1,10 +1,12 @@
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import type { Db } from '../db/client.js';
-import type { MovieDialogueRow } from '../db/schema.js';
+import type { MovieDialogueRow, MovieStoryRow } from '../db/schema.js';
 
-/** A dialogue as it is read from a subtitle: the story columns are written later, by saveStory. */
+/** A dialogue as it is read from a subtitle. Its old story columns are no longer written (stories live in movie_stories). */
 export type NewMovieDialogue = Omit<MovieDialogueRow, 'story' | 'storyModel' | 'storyAt'>;
+/** A story as saveStory keeps it: `sections` and `sources` default to none. */
+export type NewMovieStory = Omit<MovieStoryRow, 'sections' | 'sources'> & Partial<Pick<MovieStoryRow, 'sections' | 'sources'>>;
 import {
   movieCompanies,
   movieCredits,
@@ -16,6 +18,7 @@ import {
   movieSiteTitles,
   moviePlays,
   movieStreamSources,
+  movieStories,
   movieGenreGuides,
   movieTitleChannels,
   movieTitleMethods,
@@ -1188,22 +1191,40 @@ export class MoviesRepo {
       });
   }
 
-  /** Keeps the story written from a stored dialogue. False when there is no dialogue row to put it on. */
-  async saveStory(titleIdValue: string, season: number, episode: number, story: string, model: string, at: Date = new Date()): Promise<boolean> {
+  // ---------- stories (src/movies/story.ts) ----------
+
+  /** The stored story of a film (0, 0), an episode (s, e) or a season (s > 0, 0), or null. */
+  async story(titleIdValue: string, season: number, episode: number): Promise<MovieStoryRow | null> {
     const rows = await this.db
-      .update(movieDialogues)
-      .set({ story, storyModel: model, storyAt: at })
-      .where(and(eq(movieDialogues.titleId, titleIdValue), eq(movieDialogues.season, season), eq(movieDialogues.episode, episode)))
-      .returning({ season: movieDialogues.season });
-    return rows.length > 0;
+      .select()
+      .from(movieStories)
+      .where(and(eq(movieStories.titleId, titleIdValue), eq(movieStories.season, season), eq(movieStories.episode, episode)))
+      .limit(1);
+    return rows[0] ?? null;
   }
 
-  /** The episodes of a title (a film: season 0, episode 0) that have a story. */
+  /** Keeps a story, replacing the one stored for the same slot. The title row must exist. */
+  async saveStory(row: NewMovieStory): Promise<MovieStoryRow> {
+    const values = { ...row, sections: row.sections ?? [], sources: row.sources ?? [] };
+    const [kept] = await this.db
+      .insert(movieStories)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [movieStories.titleId, movieStories.season, movieStories.episode],
+        set: { text: values.text, sections: values.sections, sources: values.sources, origin: values.origin, model: values.model, writtenAt: values.writtenAt },
+      })
+      .returning();
+    if (kept === undefined) throw new Error(`the story of ${row.titleId} ${row.season}x${row.episode} was not kept`);
+    return kept;
+  }
+
+  /** Every slot of a title that has a story: (0, 0) a film's, (s, e) an episode's, (s, 0) a season's. */
   async storySlots(titleIdValue: string): Promise<EpisodeRef[]> {
     return this.db
-      .select({ season: movieDialogues.season, episode: movieDialogues.episode })
-      .from(movieDialogues)
-      .where(and(eq(movieDialogues.titleId, titleIdValue), isNotNull(movieDialogues.story)));
+      .select({ season: movieStories.season, episode: movieStories.episode })
+      .from(movieStories)
+      .where(eq(movieStories.titleId, titleIdValue))
+      .orderBy(asc(movieStories.season), asc(movieStories.episode));
   }
 
   // ---------- history (R3.8) ----------

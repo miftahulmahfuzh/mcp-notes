@@ -45,8 +45,8 @@
   opens its story, written once by Claude from the stored dialogue and kept
   (`POST /api/movies/:id/story`): `npx vitest run tests/unit/movies/story.test.ts web/src/components/movies/StoryModal.test.tsx`,
   `npm run test:int -- tests/integration/movies.api.int.test.ts` ("the story of an episode"). A
-  throwaway daemon never writes one (`NOTESD_MOVIES_STORY_MODEL=off` is pinned): seed a dialogue row
-  with a story through `$V exec` and open it on the page. Proof:
+  throwaway daemon never writes one (`NOTESD_MOVIES_STORY_MODEL=off` is pinned): seed a `movie_stories`
+  row (origin `dialogue`) through `$V exec` and open it on the page. Proof:
   `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`.
 - Names and the play menu (a title's page). A person, a studio or a genre clicked opens a pop-up
   (`EntityModal`): `GET /api/movies/people/:id` and `/companies/:id` read TMDB at each request;

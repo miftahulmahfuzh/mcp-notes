@@ -203,6 +203,15 @@ export class TorrentsRepo {
       );
   }
 
+  /**
+   * The owner's mark on one torrent of this host, on every episode row of it: set while the owner keeps it as a download
+   * (both prunes leave it alone), null to let the prunes have it again. `updated_at` is left alone. Answers the rows marked.
+   */
+  async setKept(host: string, infoHash: string, at: Date | null): Promise<number> {
+    const rows = await this.db.update(streamTorrents).set({ keptAt: at }).where(torrentKey(host, infoHash)).returning({ season: streamTorrents.season });
+    return rows.length;
+  }
+
   /** Deletes this host's row of one episode of a torrent (a film: its one row). The torrent's other episodes stay. */
   async deleteSlot(host: string, slot: TorrentSlot): Promise<boolean> {
     const rows = await this.db.delete(streamTorrents).where(key(host, slot)).returning({ infoHash: streamTorrents.infoHash });
@@ -219,5 +228,22 @@ export class TorrentsRepo {
 /** What TorrentStreams needs of the repository (tests pass an in-memory one). */
 export type TorrentRecords = Pick<
   TorrentsRepo,
-  'record' | 'get' | 'slots' | 'byHash' | 'forRef' | 'all' | 'chosen' | 'progress' | 'ready' | 'failed' | 'restarted' | 'remuxed' | 'played' | 'duration' | 'stale' | 'delete' | 'deleteSlot'
+  | 'record'
+  | 'get'
+  | 'slots'
+  | 'byHash'
+  | 'forRef'
+  | 'all'
+  | 'chosen'
+  | 'progress'
+  | 'ready'
+  | 'failed'
+  | 'restarted'
+  | 'remuxed'
+  | 'played'
+  | 'duration'
+  | 'stale'
+  | 'delete'
+  | 'deleteSlot'
+  | 'setKept'
 >;

@@ -29,6 +29,7 @@ export class MemoryTorrentRecords implements TorrentRecords {
         updatedAt: now,
         completedAt: null,
         playedAt: null,
+        keptAt: null,
       };
       this.rows.push(created);
       return this.copy(created);
@@ -131,6 +132,12 @@ export class MemoryTorrentRecords implements TorrentRecords {
     const before = this.rows.length;
     this.rows.splice(0, this.rows.length, ...this.rows.filter((r) => !(r.host === host && r.infoHash === slot.infoHash && r.season === slot.season && r.episode === slot.episode)));
     return this.rows.length < before;
+  }
+
+  async setKept(host: string, infoHash: string, at: Date | null): Promise<number> {
+    const rows = this.rows.filter((r) => r.host === host && r.infoHash === infoHash);
+    for (const r of rows) r.keptAt = at;
+    return rows.length;
   }
 
   private at(host: string, slot: TorrentSlot): StreamTorrentRow | undefined {

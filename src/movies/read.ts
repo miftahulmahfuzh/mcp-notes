@@ -3,7 +3,6 @@ import type { Db } from '../db/client.js';
 import {
   movieCompanies,
   movieCredits,
-  movieDialogues,
   movieEpisodeMarks,
   movieEpisodes,
   movieFiles,
@@ -11,6 +10,7 @@ import {
   moviePeople,
   moviePlays,
   movieStreamSources,
+  movieStories,
   movieTitleChannels,
   movieTitleMethods,
   movieTitleCompanies,
@@ -1078,9 +1078,9 @@ export async function getTitle(db: Db, id: string, ctx: ReadContext): Promise<Ti
     history(db, { titleId: t.id, limit: DETAIL_PLAY_LIMIT }),
     streamSourceViews(db, t.id, ctx.host),
     db
-      .select({ season: movieDialogues.season, episode: movieDialogues.episode })
-      .from(movieDialogues)
-      .where(and(eq(movieDialogues.titleId, t.id), isNotNull(movieDialogues.story))),
+      .select({ season: movieStories.season, episode: movieStories.episode })
+      .from(movieStories)
+      .where(eq(movieStories.titleId, t.id)),
   ]);
   const storied = new Set(stories.map((s) => `${s.season}x${s.episode}`));
   for (const season of built.seasons) for (const e of season.episodes) e.has_story = storied.has(`${e.season}x${e.episode}`);

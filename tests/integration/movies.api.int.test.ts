@@ -338,9 +338,10 @@ describe('the story of an episode', () => {
     const detail = await getJson<{ has_story: boolean; seasons: Array<{ episodes: Array<{ episode: number; has_story: boolean }> }> }>(app, '/api/movies/tv-247718');
     expect(detail.body.has_story).toBe(false);
     expect(detail.body.seasons[0]?.episodes.map((e) => [e.episode, e.has_story])).toEqual([[1, false], [2, true], [3, false]]);
-    // A subtitle read again keeps the story that was written.
+    // The story lives in movie_stories: a subtitle read again leaves it alone, and the dialogue row holds none.
     await seedDialogue();
-    expect((await here.repo.dialogue('tv-247718', 1, 2))?.story).toBe(first.story.text);
+    expect(await here.repo.story('tv-247718', 1, 2)).toMatchObject({ text: first.story.text, origin: 'dialogue', model: 'test-model' });
+    expect((await here.repo.dialogue('tv-247718', 1, 2))?.story).toBeNull();
     expect(await here.repo.storySlots('tv-247718')).toEqual([{ season: 1, episode: 2 }]);
   });
 

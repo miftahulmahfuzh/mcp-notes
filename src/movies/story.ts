@@ -172,7 +172,8 @@ export class StoryError extends Error {
 }
 
 export interface MovieStoriesOptions {
-  repo: Pick<MoviesRepo, 'dialogue' | 'saveStory' | 'loadTitleMetadata'>;
+  /** `story`/`saveStory`: movie_stories; `dialogue`: the subtitle a story names as its source. */
+  repo: Pick<MoviesRepo, 'dialogue' | 'story' | 'saveStory' | 'loadTitleMetadata'>;
   /**
    * The title's dialogue, read from a stream source when it is not stored yet
    * (dialogueStore.ts loadDialogue). Null from it: none is stored and none can be read here
@@ -213,9 +214,19 @@ export class MovieStories {
 
   /** The stored story of a film (season 0, episode 0) or an episode, or null. Never calls a model. */
   async get(titleId: string, season: number, episode: number): Promise<StoryView | null> {
-    const row = await this.opts.repo.dialogue(titleId, season, episode);
-    if (row === null || row.story === null) return null;
-    return { season, episode, text: row.story, model: row.storyModel, written_at: row.storyAt?.toISOString() ?? null, provider: row.provider, cues: row.cues };
+    const row = await this.opts.repo.story(titleId, season, episode);
+    if (row === null) return null;
+    // The subtitle it was written from is named by its dialogue row; a story with none names no provider.
+    const dialogue = await this.opts.repo.dialogue(titleId, season, episode);
+    return {
+      season,
+      episode,
+      text: row.text,
+      model: row.model,
+      written_at: row.writtenAt.toISOString(),
+      provider: dialogue?.provider ?? '',
+      cues: dialogue?.cues ?? 0,
+    };
   }
 
   /**
@@ -253,8 +264,8 @@ export class MovieStories {
       throw new StoryError('story_failed', `The story could not be written: ${message}`);
     }
     const at = this.now();
-    const kept = await this.opts.repo.saveStory(titleId, season, episode, text, writer.model, at);
-    this.log(`[notesd] movies: wrote the story of ${titleId} S${pad(season)}E${pad(episode)} with ${writer.model} from ${dialogue.cues} lines (${text.length} characters${kept ? '' : ', not kept: no dialogue row'})`);
+    await this.opts.repo.saveStory({ titleId, season, episode, text, origin: 'dialogue', model: writer.model, writtenAt: at });
+    this.log(`[notesd] movies: wrote the story of ${titleId} S${pad(season)}E${pad(episode)} with ${writer.model} from ${dialogue.cues} lines (${text.length} characters)`);
     return { story: { season, episode, text, model: writer.model, written_at: at.toISOString(), provider: dialogue.provider, cues: dialogue.cues }, cached: false };
   }
 }
