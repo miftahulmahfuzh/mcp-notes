@@ -18,7 +18,7 @@
         "R1",
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Preview core: builder, store, routes, the cloud-cache source"
     },
@@ -64,20 +64,20 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "80dc135",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "hover box on the player's timeline (web/src/stream only), branch phase-4-seek-preview-thumbnails pushed; plan's two test expectations for the 8 px clamp corrected to its own geometry (rung 3), clamp still asserted; only phase 4's task minted (SP04), index TaskID column left to coordinator; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/evidence-seek-preview-thumbnails-p4",
       "package": "web/src/stream",
       "plan": ".workflows/plan/seek-preview-thumbnails/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-20T20:41:41+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SP04",
       "title": "The hover box on the player page"
     },
     {
@@ -106,6 +106,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/seek-preview-thumbnails/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seek-preview-thumbnails",
-  "updated": "2026-11-20T20:29:06+07:00",
+  "updated": "2026-11-20T20:41:41+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seek-preview-thumbnails"
 }
