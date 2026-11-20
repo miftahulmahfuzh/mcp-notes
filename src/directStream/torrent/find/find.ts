@@ -236,7 +236,9 @@ export async function findCandidates(query: TorrentQuery, options: FindOptions =
     signal: options.signal ?? null,
     health: options.health ?? null,
   };
-  const forKind = (list: readonly TorrentIndex[]): TorrentIndex[] => list.filter((i) => i.kinds === undefined || i.kinds.includes(asked.kind));
+  // An index not asked for this title (Peerflix for a title not made in Spanish) gets no request and no attempt.
+  const forKind = (list: readonly TorrentIndex[]): TorrentIndex[] =>
+    list.filter((i) => (i.kinds === undefined || i.kinds.includes(asked.kind)) && i.asks?.(asked) !== false);
 
   const first = await askAll(forKind(options.indexes ?? defaultIndexes(options)), asked, run);
   let attempts = first.attempts;

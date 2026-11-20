@@ -95,7 +95,6 @@ describe('findCandidates', () => {
       ['torrentio', 'ok', 32],
       ['apibay', 'ok', 19],
       ['torrentsdb', 'empty', 0],
-      ['peerflix', 'empty', 0],
       ['knaben', 'empty', 0],
       ['bitsearch', 'empty', 0],
       ['torrentscsv', 'empty', 0],
@@ -132,7 +131,6 @@ describe('findCandidates', () => {
       ['apibay', 'empty'],
       ['eztv', 'empty'],
       ['torrentsdb', 'empty'],
-      ['peerflix', 'empty'],
       ['knaben', 'empty'],
       ['bitsearch', 'empty'],
       ['torrentscsv', 'empty'],
@@ -221,7 +219,6 @@ describe('findCandidates', () => {
       expect.objectContaining({ index: 'torrentio', outcome: 'bot_check', listed: 0 }),
       expect.objectContaining({ index: 'apibay', outcome: 'ok', listed: 19 }),
       expect.objectContaining({ index: 'torrentsdb', outcome: 'error', detail: expect.stringMatching(/^timed out after /), listed: 0 }),
-      expect.objectContaining({ index: 'peerflix', outcome: 'empty', listed: 0 }),
       expect.objectContaining({ index: 'knaben', outcome: 'empty', listed: 0 }),
       expect.objectContaining({ index: 'bitsearch', outcome: 'empty', listed: 0 }),
       expect.objectContaining({ index: 'torrentscsv', outcome: 'empty', listed: 0 }),
@@ -240,7 +237,6 @@ describe('findCandidates', () => {
       expect.objectContaining({ index: 'apibay', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
       expect.objectContaining({ index: 'eztv', outcome: 'bot_check' }),
       expect.objectContaining({ index: 'torrentsdb', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
-      expect.objectContaining({ index: 'peerflix', outcome: 'empty' }),
       expect.objectContaining({ index: 'knaben', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
       expect.objectContaining({ index: 'bitsearch', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
       expect.objectContaining({ index: 'torrentscsv', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
@@ -388,7 +384,8 @@ describe('findCandidates with the Stremio add-on providers', () => {
       });
       const found = await findCandidates(query, { fetch });
       expect(calls.some((c) => c.url.includes('peerflix'))).toBe(false);
-      expect(found.indexes.find((a) => a.index === 'peerflix')).toMatchObject({ outcome: 'empty', detail: expect.stringMatching(/^not asked: /), listed: 0 });
+      // Nor an attempt: a play's attempts and log do not name it for every title.
+      expect(found.indexes.map((a) => a.index)).not.toContain('peerflix');
     }
   });
 

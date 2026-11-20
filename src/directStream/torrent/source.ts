@@ -169,6 +169,13 @@ export type TorrentResolve =
   | { ok: true; torrent: SessionTorrent; source: ResolvedSource; attempts: ResolveAttempt[] }
   | { ok: false; error: 'no_source'; attempts: ResolveAttempt[] };
 
+/** Where the torrent that plays was found, for its log line: `from torrentio`, `from knaben, also listed by apibay`. */
+function foundIn(c: Pick<TorrentCandidate, 'index' | 'listedBy'> | null): string {
+  if (c === null) return '';
+  const others = (c.listedBy ?? []).filter((name) => name !== c.index);
+  return ` (from ${c.index}${others.length === 0 ? '' : `, also listed by ${others.join(', ')}`})`;
+}
+
 /** What one play knows besides the candidate: the same for every torrent it tries. */
 interface PlayFacts {
   audioLang: string | null;
@@ -431,7 +438,7 @@ export class TorrentSource {
     };
     const out = await this.tryCandidates(ref, query, candidates, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...indexes, ...p.attempts] }), note);
     if (out.ok) {
-      this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), playing ${out.torrent.name}`);
+      this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), playing ${out.torrent.name}${foundIn(out.torrent.candidate)}`);
       return { ...out, attempts: [...indexes, ...out.attempts] };
     }
     // Nothing proper played: the dub-named releases are tried now, in their own round.
@@ -442,7 +449,7 @@ export class TorrentSource {
     }
     options.progress?.({ stage: 'trying releases whose name reads as a dub (the file may still carry the original)', attempts: firstAttempts });
     const dubbed = await this.tryCandidates(ref, query, dubs, play, this.now() + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...firstAttempts, ...p.attempts] }), note);
-    this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s) and ${dubs.length} dub-named, ${dubbed.ok ? `playing ${dubbed.torrent.name} (its file carries the original ${options.audioLang ?? 'language'})` : 'none played'}`);
+    this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s) and ${dubs.length} dub-named, ${dubbed.ok ? `playing ${dubbed.torrent.name}${foundIn(dubbed.torrent.candidate)} (its file carries the original ${options.audioLang ?? 'language'})` : 'none played'}`);
     return dubbed.ok ? { ...dubbed, attempts: [...firstAttempts, ...dubbed.attempts] } : { ok: false, error: 'no_source', attempts: [...firstAttempts, ...dubbed.attempts, ...left()] };
   }
 

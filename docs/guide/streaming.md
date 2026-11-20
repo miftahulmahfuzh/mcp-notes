@@ -1909,7 +1909,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   A bot check is never counted and never skipped: it stays `bot_check`.
 - **The session.** `provider` is `Torrent`, `manifest_kind` `mp4`, `manifest_url` the torrent's file route
   (`/api/stream/torrent/<hash>/f/<index>`), and `session.torrent` names the info hash, the file, the release, the
-  index, the seed count and whether the file is whole on disk (`ready`) or still downloading. The pass-through refuses
+  index, the seed count and whether the file is whole on disk (`ready`) or still downloading. The daemon's log line of the
+  play names the index the torrent was found in and the others that list it (`playing <release> (from knaben, also
+  listed by apibay)`). The pass-through refuses
   every address for it. The play is recorded with the provider `Torrent`; a torrent play does not mark the title's
   Stream side verified (a cloud `no_source` before it still marks it stale).
 - **The shuffle button** moves to the next torrent the indexes listed, without asking them again, and lets go of the
@@ -1936,7 +1938,7 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   Torrentio lists its releases. TorrentsDB and Peerflix are Stremio add-ons that answer in Torrentio's shape.
   TorrentsDB lists sites Torrentio does not (knaben, rargb, sktorrent, rutor); a torrent two indexes list is one
   candidate naming both. Peerflix lists Spanish releases, nearly all dubs, so for a title made in any other language it
-  gets no request and its attempt is `no_stream`, "not asked". Every request says it is notesd; a bot check is the outcome
+  gets no request and has no attempt. Every request says it is notesd; a bot check is the outcome
   `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
   out a release that names another title, a release or file named as a program or an archive (`... 1080p WEB
   H264-FLUX.exe`, `.scr`, `.rar`: the shape of a fake, which would only use up one of the play's six tries), a trailer,
@@ -1949,7 +1951,7 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   (never a sample).
 - **A title with no IMDb id.** TMDB lists none for many small films (Chasing the Moon, 2024), and a play of one used
   to end before any index was asked. Now the indexes keyed by the id (Torrentio, apibay, EZTV, TorrentsDB,
-  Peerflix) answer `no_stream`, "not asked: no IMDb id is known for this title, and this index is asked by it", with no
+  Peerflix when it is asked) answer `no_stream`, "not asked: no IMDb id is known for this title, and this index is asked by it", with no
   request, and the indexes asked by title and the fallback sites are asked as for any title. TMDB is asked twice for
   the id when it does not answer (a timeout, a 5xx, a 429), a failure is logged
   (`could not read the IMDb id of ... from TMDB`), and an id TMDB gave is kept for the daemon's run.

@@ -138,6 +138,15 @@ describe('a hold on a torrent is given back only by the caller that took it', ()
     expect(records.rows.map((r) => r.infoHash)).toEqual([out.ok ? out.torrent.infoHash : '']);
   });
 
+  it("the line of the torrent that plays names the index it was found in and the others that list it", async () => {
+    const { streams } = build();
+    const lines: string[] = [];
+    const answer: FindAnswer = { candidates: [{ ...candidate, index: 'knaben', listedBy: ['knaben', 'apibay'] }], indexes: [], excluded: [], lastResort: [] };
+    const source = new TorrentSource({ swarm: streams, find: async () => answer, probe: async () => MP4, tiers: [], localBase: () => 'http://127.0.0.1:1', log: (l) => lines.push(l) });
+    expect((await source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0137523' })).ok).toBe(true);
+    expect(lines).toContainEqual(expect.stringMatching(/playing Fixture\.Film\.2026\.720p\.WEB-DL \(from knaben, also listed by apibay\)$/));
+  });
+
   it('a use whose row cannot be written counts no user', async () => {
     const { streams, records } = build();
     await streams.open(PICK, OPEN);

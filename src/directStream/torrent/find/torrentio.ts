@@ -64,8 +64,8 @@ export interface StremioAddon {
   name: string;
   /** The add-on's address, up to (not including) `/stream`. */
   base: string;
-  /** Why this query is not asked, or null to ask it. A reason answers `empty` with it as the detail; no request is sent. */
-  skip?: (query: TorrentQuery) => string | null;
+  /** Whether this title is one the add-on is asked for (TorrentIndex.asks); absent: every title. */
+  asks?: (query: TorrentQuery) => boolean;
 }
 
 /** A Stremio torrent add-on as a TorrentIndex, asked by IMDb id for a film or one episode. */
@@ -73,9 +73,8 @@ export function stremioAddonIndex(addon: StremioAddon): TorrentIndex {
   const root = addon.base.replace(/\/+$/, '');
   return {
     name: addon.name,
+    ...(addon.asks === undefined ? {} : { asks: addon.asks }),
     async find(query, ctx): Promise<IndexAnswer> {
-      const skip = addon.skip?.(query) ?? null;
-      if (skip !== null) return { outcome: 'empty', detail: skip, candidates: [] };
       const imdbId = query.imdbId;
       if (imdbId === null) return withoutImdbId();
       // The add-ons number an episode within its season: `alt` when TMDB's number runs on across seasons.

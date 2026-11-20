@@ -190,15 +190,9 @@ describe('peerflix', () => {
     ]);
   });
 
-  it('sends no request for a title made in another language, or in an unknown one, and asks for Spanish in any case', async () => {
-    for (const originalLanguage of ['en', 'pt', null]) {
-      const { ctx, urls } = ctxFor({});
-      const answer = await peerflixIndex('https://peerflix.example').find({ ...SHAWSHANK, originalLanguage }, ctx);
-      expect(urls).toEqual([]);
-      expect(answer).toEqual({ outcome: 'empty', detail: expect.stringMatching(/^not asked: .*Spanish/), candidates: [] });
-    }
-    const { ctx, urls } = ctxFor({ 'https://peerflix.example/stream/movie/tt0111161.json': '{"streams":[]}' });
-    await peerflixIndex('https://peerflix.example').find({ ...SHAWSHANK, originalLanguage: 'ES' }, ctx);
-    expect(urls).toEqual(['https://peerflix.example/stream/movie/tt0111161.json']);
+  it('is asked only for a title made in Spanish, in any case', () => {
+    const peerflix = peerflixIndex('https://peerflix.example');
+    for (const originalLanguage of ['en', 'pt', null]) expect(peerflix.asks?.({ ...SHAWSHANK, originalLanguage })).toBe(false);
+    expect(peerflix.asks?.({ ...SHAWSHANK, originalLanguage: 'ES' })).toBe(true);
   });
 });
