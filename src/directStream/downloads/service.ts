@@ -4,6 +4,7 @@ import type { StreamDownloadRow } from '../../db/schema.js';
 import type { WarpSwitch } from '../../streaming/warp.js';
 import type { StreamCache } from '../cache/service.js';
 import { CacheError, type StreamCacheView } from '../cache/types.js';
+import type { MovieStreams } from '../../movies/streams.js';
 import type { DirectStreamService } from '../service.js';
 import type { SessionTorrent } from '../sessions.js';
 import type { SwarmCount, TorrentCandidate } from '../torrent/find/index.js';
@@ -13,6 +14,7 @@ import { normalizeInfoHash, PROGRESS_STEP_BYTES } from '../torrent/types.js';
 import { refLabel, type ResolveAttempt, type StreamRef } from '../types.js';
 import { bandAllows, CLOUD_MAX_HEIGHT, finalFailure, isOffice, planDownload, stepLabel, stepsAfterCloud, type CloudStep, type DownloadPlan, type DownloadStep, type StepFailure } from './plan.js';
 import { DOWNLOAD_CANCELLED, downloadRef, DownloadsRepo, type DownloadOn, type DownloadRecords } from './repo.js';
+import { finishFromDisk, packSwarmOf, SeasonDownloads, SeasonPackJob, seasonRowOf, seasonRowsOf, type PackSwarm, type SeasonAnswer, type SeasonEpisode, type SeasonPacks, type TvRef } from './season.js';
 import {
   DownloadError,
   type CacheNow,
@@ -21,6 +23,7 @@ import {
   type DownloadFacts,
   type DownloadRequestAnswer,
   type DownloadState,
+  type DownloadVia,
   type DownloadTorrents,
   type DownloadView,
   type KeptTorrentHandle,
@@ -57,6 +60,14 @@ export interface StreamDownloadsOptions {
   log?: (line: string) => void;
   /** Runs `fn` every `ms`; answers how to stop it. Default setInterval, unref'd. Tests pass a no-op and call tick(). */
   every?: (fn: () => void, ms: number) => () => void;
+  /** A season's episodes with their air days (MovieStreams.seasonEpisodes); null or unset: requestSeason answers seasons_off. */
+  seasonEpisodes?: ((tmdbId: number, season: number) => Promise<SeasonEpisode[] | null>) | null;
+  /** TorrentSource.fetchPack with the title's facts filled in; null or unset: every episode of a season downloads on its own. */
+  packs?: SeasonPacks | null;
+  /** TorrentStreams as a season pack uses it (packSwarmOf); null or unset: as `packs` null. */
+  packSwarm?: PackSwarm | null;
+  /** A pack episode made ready to play offline once whole (finishFromDisk); null or unset: nothing more is done. */
+  finishEpisode?: ((ref: TvRef) => Promise<void>) | null;
 }
 
 /** The one download fetching from a torrent (or being planned) now. */
@@ -107,11 +118,31 @@ export class StreamDownloads {
   private tickAgain = false;
   private stopTimer: (() => void) | null = null;
   private closed = false;
+  /** Season downloads; null without an episode list (the movies store off). */
+  private readonly season: SeasonDownloads<DownloadRequestAnswer> | null;
+  /** The season pack the queue downloads now: its one torrent job while set (`job` is null then). */
+  private pack: SeasonPackJob | null = null;
 
   constructor(private readonly opts: StreamDownloadsOptions) {
     this.now = opts.now ?? (() => new Date());
     this.log = opts.log ?? ((line: string) => console.log(line));
     this.every = opts.every ?? defaultEvery;
+    const episodes = opts.seasonEpisodes ?? null;
+    this.season =
+      episodes === null
+        ? null
+        : new SeasonDownloads<DownloadRequestAnswer>({
+            episodes,
+            whole: (ref) => this.onDisk(ref),
+            request: (ref, o) => this.enqueue(ref, { via: o.via, batch: o.batch }),
+            rows: seasonRowsOf(opts.repo, opts.host, this.now),
+            packs: opts.packs ?? null,
+            swarm: opts.packSwarm ?? null,
+            office: async () => isOffice(await opts.ssid()),
+            ...(opts.finishEpisode == null ? {} : { finish: opts.finishEpisode }),
+            now: this.now,
+            log: this.log,
+          });
   }
 
   get host(): string {
@@ -124,6 +155,27 @@ export class StreamDownloads {
    * `invalid_request` (a malformed info hash, or one without `via: torrent`) or `downloads_off` (the daemon stops).
    */
   async request(ref: StreamRef, ask: DownloadAsk): Promise<DownloadRequestAnswer> {
+    const answer = await this.enqueue(ref, ask);
+    void this.tick();
+    return answer;
+  }
+
+  /**
+   * The season row's Download (phase 4's POST with a season and no episode): every aired episode of the season that is
+   * not whole on this machine is queued, one row each under one batch, in episode order, and the queue looks once all
+   * exist; answered at once. `seasons_off` without an episode list; `unknown_season` when the title lists no episode of
+   * the season. Throws DownloadError `downloads_off` while the daemon stops.
+   */
+  async requestSeason(tmdbId: number, season: number, options: { via: DownloadVia }): Promise<SeasonAnswer<DownloadRequestAnswer>> {
+    if (this.closed) throw new DownloadError('downloads_off', 'The daemon is stopping.');
+    if (this.season === null) return { ok: false, error: 'seasons_off', detail: 'No episode list is wired here (the movies store is off).' };
+    const answer = await this.season.request(tmdbId, season, options);
+    void this.tick();
+    return answer;
+  }
+
+  /** `request` without the look after it (a season queues all its rows first). */
+  private async enqueue(ref: StreamRef, ask: DownloadAsk): Promise<DownloadRequestAnswer> {
     if (this.closed) throw new DownloadError('downloads_off', 'The daemon is stopping.');
     const infoHash = ask.infoHash == null ? null : normalizeInfoHash(ask.infoHash);
     if (ask.infoHash != null && infoHash === null) throw new DownloadError('invalid_request', 'An info hash is 40 hexadecimal characters.');
@@ -131,7 +183,6 @@ export class StreamDownloads {
     if (await this.onDisk(ref)) return { download: null, created: false, onDisk: true };
     const { row, created } = await this.opts.repo.create(this.host, { ref, via: ask.via, infoHash, batch: ask.batch ?? null }, this.now());
     if (created) this.log(`[notesd] downloads: queued ${refLabel(ref)} (${ask.via}${infoHash === null ? '' : ` ${infoHash.slice(0, 8)}`})`);
-    void this.tick();
     return { download: await this.viewOf(row), created, onDisk: false };
   }
 
@@ -152,6 +203,7 @@ export class StreamDownloads {
       if (job.handle !== null) this.opts.torrents?.release(job.handle);
     }
     if (this.clouds.delete(id)) await this.opts.caches?.pause(ref).catch(() => false);
+    if (this.pack !== null && this.pack.rowIds.includes(id)) await this.pack.cancel(id);
     this.pending.delete(id);
     this.retries.delete(id);
     const cancelled = await this.opts.repo.cancel(this.host, id, this.now());
@@ -198,6 +250,9 @@ export class StreamDownloads {
       job.stopped = true;
       if (job.handle !== null) this.opts.torrents?.release(job.handle);
     }
+    const pack = this.pack;
+    this.pack = null;
+    await pack?.close();
     this.clouds.clear();
   }
 
@@ -244,6 +299,13 @@ export class StreamDownloads {
 
   /** A torrent playing on screen (another than the one downloaded): the torrent download lets go of its swarm and waits. */
   private async playFirst(): Promise<void> {
+    const pack = this.pack;
+    if (pack !== null && this.opts.playingTorrents().some((hash) => hash !== pack.infoHash)) {
+      this.pack = null;
+      await pack.pause();
+      this.log(`[notesd] downloads: paused the season pack ${pack.infoHash.slice(0, 8)}: a torrent plays on screen; it carries on when the play ends`);
+      return;
+    }
     const job = this.job;
     const handle = job?.handle ?? null;
     if (job === null || handle === null) return;
@@ -329,14 +391,14 @@ export class StreamDownloads {
 
   /** The oldest queued or paused download whose first step can run now, started behind this look. */
   private async startNext(): Promise<void> {
-    if (this.job !== null || this.closed) return;
+    if (this.job !== null || this.pack !== null || this.closed) return;
     const rows = (await this.opts.repo.list(this.host, { states: ['queued', 'paused'] })).filter((r) => !this.clouds.has(r.id));
     if (rows.length === 0) return;
     const at = this.now().getTime();
     const playing = this.opts.playingTorrents().length > 0;
     let office: boolean | null = null;
     for (const row of rows) {
-      if (this.job !== null || this.closed) return;
+      if (this.job !== null || this.pack !== null || this.closed) return;
       if ((this.retries.get(row.id)?.at ?? 0) > at) continue;
       office ??= isOffice(await this.opts.ssid());
       const resumeHash = row.source === 'torrent' ? row.sourceId : null;
@@ -353,7 +415,7 @@ export class StreamDownloads {
       this.job = job;
       const before = this.pending.get(row.id)?.failures ?? [];
       this.pending.delete(row.id);
-      const run = this.run(job, plan.steps, before, resumeHash !== null);
+      const run = this.run(job, row, plan.steps, before, resumeHash !== null);
       this.current = run;
       void run.finally(() => {
         if (this.current === run) this.current = null;
@@ -373,10 +435,31 @@ export class StreamDownloads {
   }
 
   /** One download's steps, in order, until a torrent is held, the cache took it, or every step failed. Never throws. */
-  private async run(job: Job, steps: readonly DownloadStep[], before: readonly StepFailure[], resume: boolean): Promise<void> {
+  private async run(job: Job, row: StreamDownloadRow, steps: readonly DownloadStep[], before: readonly StepFailure[], resume: boolean): Promise<void> {
     const failures: StepFailure[] = [...before];
     try {
       await this.opts.repo.setState(this.host, job.id, 'running', this.now());
+      // The first row of a season the queue reaches: the season's pack, when one fits, carries every row it holds.
+      const seasonRow = this.season === null ? null : seasonRowOf(row);
+      if (this.season !== null && seasonRow !== null && seasonRow.batch !== null) {
+        const pack = await this.season.take(seasonRow);
+        if (pack !== null) {
+          if (job.stopped || this.job !== job || this.closed) {
+            // Cancelled or stopped while the pack was looked for: its rows wait, paused, for the next look.
+            await pack.pause();
+            return;
+          }
+          this.job = null;
+          this.pack = pack;
+          void pack.done.finally(() => {
+            if (this.pack === pack) this.pack = null;
+            void this.tick();
+          });
+          // A row the pack lacks waits its turn and downloads on its own once the pack is done.
+          if (!pack.rowIds.includes(job.id)) await this.opts.repo.setState(this.host, job.id, 'queued', this.now());
+          return;
+        }
+      }
       for (let i = 0; i < steps.length; i += 1) {
         if (job.stopped) return;
         const step = steps[i]!;
@@ -499,6 +582,14 @@ export class StreamDownloads {
         downKbps = now.downKbps;
       } catch {
         // The row's last count stands.
+      }
+    }
+    const pack = this.pack;
+    if (pack !== null && pack.rowIds.includes(row.id)) {
+      const p = await pack.progress(row.id).catch(() => null);
+      if (p !== null) {
+        bytesDone = p.done;
+        bytesTotal = p.total;
       }
     }
     if (this.clouds.has(row.id) && this.opts.caches !== null) {
@@ -670,19 +761,47 @@ export function buildStreamDownloads(
     streamCache: StreamCache | null;
     warp: Pick<WarpSwitch, 'status'>;
     afterDone?: () => void;
+    /** The movies store's MovieStreams (seasonEpisodes); null or absent: no season download. */
+    movieStreams?: Pick<MovieStreams, 'seasonEpisodes'> | null;
     log?: (line: string) => void;
   },
 ): StreamDownloads | null {
   const ds = wiring.directStream;
   if (config.directStream?.downloads !== true || ds === null || (wiring.torrents === null && wiring.streamCache === null)) return null;
+  const torrents = wiring.torrents;
+  const facts = (ref: StreamRef): Promise<DownloadFacts> => ds.downloadFacts(ref);
+  const movieStreams = wiring.movieStreams ?? null;
+  const finish = torrents === null ? null : finishFromDisk(wiring.torrentSource, facts, wiring.log === undefined ? {} : { log: wiring.log });
   return new StreamDownloads({
     host: ds.host,
     repo: new DownloadsRepo(wiring.db),
-    torrents: wiring.torrents === null ? null : torrentDownloadsOf(wiring.torrentSource, wiring.torrents, (ref) => ds.downloadFacts(ref)),
+    torrents: torrents === null ? null : torrentDownloadsOf(wiring.torrentSource, torrents, facts),
     caches: wiring.streamCache === null ? null : cacheDownloadsOf(wiring.streamCache),
     ssid: config.directStream?.downloadSsid != null ? fixedSsid(config.directStream.downloadSsid) : ssidFrom(wiring.warp),
     playingTorrents: () => ds.torrentsOnScreen(),
     ...(wiring.afterDone === undefined ? {} : { afterDone: wiring.afterDone }),
     ...(wiring.log === undefined ? {} : { log: wiring.log }),
+    seasonEpisodes: movieStreams === null ? null : (tmdbId, season) => movieStreams.seasonEpisodes(tmdbId, season),
+    packs:
+      torrents === null
+        ? null
+        : {
+            fetch: async (tmdbId, season, episodes, o) => {
+              const source = wiring.torrentSource();
+              const [first] = episodes;
+              if (source === null || first === undefined) return { ok: false, error: 'no_pack', attempts: [] };
+              const f = await facts({ kind: 'tv', tmdbId, season, episode: first });
+              return source.fetchPack(tmdbId, season, episodes, { audioLang: f.audioLang ?? null, imdbId: f.imdbId ?? null, names: f.names ?? null, ...o });
+            },
+          },
+    packSwarm: torrents === null ? null : packSwarmOf(torrents),
+    finishEpisode:
+      finish === null
+        ? null
+        : async (ref) => {
+            await finish(ref);
+            // The seek previews' sweep queues the episode's sheets, as for a single download (phase 2's afterDone).
+            wiring.afterDone?.();
+          },
   });
 }

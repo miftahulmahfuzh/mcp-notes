@@ -65,6 +65,29 @@
     - Step 3 minted only phase 2's task (P1-NOTES-SD02), not all nine → follows phase 1's recorded ledger decision; the index's TaskID column is left to the coordinator
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phase 1 of this set, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. No successor to unblock: phase 3 mints its own task in its own worktree.
 
+- [x] **P1-NOTES-SD03** Phase 3: Season downloads: aired episodes, the season pack, a row per episode
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/directStream/downloads/season.ts` (`SeasonDownloads`, `SeasonPackJob`, `airedEpisodes`, `seasonRowsOf`, `packSwarmOf`, `finishFromDisk`), `src/directStream/torrent/seasonPack.ts`, `TorrentSource.fetchPack`, `TorrentStreams.useSlot`/`releaseSlot`, `MovieStreams.seasonEpisodes`, and its own edits to phase 2's `service.ts` (`requestSeason`, the tick-less `enqueue`, a `pack` job beside `job`, the batch hook at the top of `run`, the pack's branches in play first, cancel, close and the list's progress; `buildStreamDownloads` builds `seasonEpisodes`, `packs`, `packSwarm`, `finishEpisode`). Exit: unit tests: a pack found → one swarm open, N rows, N kept, each episode `onDisk`; no pack → N single downloads in order; an unaired episode left out; an episode already whole left out; a pack missing one episode → that one alone falls back; a pack let go for a play is reopened by its hash; `finishFromDisk` waits for the remux and subtitle. `npm test` and the season integration test pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 3 of 9)
+  - **Satisfies**: R2 — for Series, a download button in the Season row (downloads the whole season) and the episode row (that episode only) · criteria: R2.1, R2.3, R2.4
+  - **Depends on**: P1-NOTES-SD02
+  - **Plan**: `.workflows/plan/P1-NOTES-SD03.md`
+  - **Completed**: 2026-11-20 23:46
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/service.ts, src/directStream/torrent/seasonPack.ts, src/directStream/torrent/source.ts, src/movies/streams.ts, src/directStream/downloads/season.ts, src/directStream/downloads/service.ts, src/daemon.ts, tests/unit/directStream/torrent/useSlot.test.ts, tests/unit/directStream/torrent/seasonPack.test.ts, tests/unit/directStream/downloads/season.test.ts, tests/integration/directStream.seasonDownloads.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-SD03.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-234456-sd03/evidence
+  - **Drift**:
+    - Every code anchor matched; the plan's code blocks were applied verbatim. source.ts: TorrentSwarm.useSlot? went after phase 2's trackersOf? (the interface's last member), not directly after downloadsOf?.
+    - tests/integration/directStream.seasonDownloads.int.test.ts: the plan named the batch 'batch-int', but phase 1's stream_downloads.batch is a uuid column (Postgres 22P02); the test now uses a fixed uuid constant BATCH with the same assertions. Production code already mints randomUUID(). This is the one fix behind verified-after-fix (J3).
+    - origin/feature/stream-downloads-season-story did not move since the base (407ee5e): nothing to rebase onto.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p3 on phase-3-… → proceeded there (rung 6: the swarm's per-phase worktree convention, as phases 2 and 6)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 3's task as P1-NOTES-SD03, index TaskID column left to the coordinator (rung 6: precedent of SD01/SD02/SD06)
+    - Integration test batch 'batch-int' vs the uuid column → a fixed uuid in the test, code unchanged (rung 3: phase 1's schema is the reconciled row shape)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2 and 6 of this set, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. No successor to unblock: phase 4 mints its own task in its own worktree.
+
 - [x] **P1-NOTES-SD06** Phase 6: Stories from the web: the season story, the episode story web-first
   - **Difficulty**: HARD
   - **Type**: Feature
