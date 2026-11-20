@@ -14,6 +14,8 @@ import { normalizeInfoHash, PROGRESS_STEP_BYTES } from '../torrent/types.js';
 import { refLabel, type ResolveAttempt, type StreamRef } from '../types.js';
 import { bandAllows, CLOUD_MAX_HEIGHT, finalFailure, isOffice, planDownload, stepLabel, stepsAfterCloud, type CloudStep, type DownloadPlan, type DownloadStep, type StepFailure } from './plan.js';
 import { DOWNLOAD_CANCELLED, downloadRef, DownloadsRepo, type DownloadOn, type DownloadRecords } from './repo.js';
+import { noPeersAtAll } from '../torrentWarp.js';
+import { WarpRounds, type DownloadWarp, type WarpHold } from './warp.js';
 import { finishFromDisk, packSwarmOf, SeasonDownloads, SeasonPackJob, seasonRowOf, seasonRowsOf, type PackSwarm, type SeasonAnswer, type SeasonEpisode, type SeasonPacks, type TvRef } from './season.js';
 import {
   DownloadError,
@@ -28,6 +30,7 @@ import {
   type DownloadView,
   type KeptTorrentHandle,
   type TorrentFetch,
+  type TorrentAsk,
 } from './types.js';
 
 /** How often the engine looks at what it downloads (progress, a play on screen, a cache's end). */
@@ -50,8 +53,14 @@ export interface StreamDownloadsOptions {
   torrents: DownloadTorrents | null;
   /** Null without the stream cache. */
   caches: DownloadCaches | null;
-  /** The Wi-Fi network's name, or null (none, or it could not be read). Only ever read: a download never switches WARP. */
+  /** The Wi-Fi network's name, or null (none, or it could not be read): decides the office network. Only read here. */
   ssid: () => Promise<string | null>;
+  /**
+   * Cloudflare WARP as a download may use it (downloads/warp.ts): the stream service's one WarpHolds, shared with
+   * torrent plays, and WARP's status; never the switch. Null or unset (NOTESD_STREAM_WARP=off, tests): nothing is
+   * switched, and a torrent that reaches no peer on the office network goes on to the next source.
+   */
+  warp?: DownloadWarp | null;
   /** The info hashes of the torrents playing on screen now (DirectStreamService.torrentsOnScreen). */
   playingTorrents: () => readonly string[];
   /** Told when a download is whole: the seek previews' sweep queues its sheets. */
@@ -75,6 +84,8 @@ interface Job {
   readonly id: string;
   readonly ref: StreamRef;
   handle: KeptTorrentHandle | null;
+  /** The WARP this download switched on (or joined) to reach its swarm, held until it leaves the swarm; null: none. */
+  warp: WarpHold | null;
   /** Cancelled, paused or closed: whatever its run finds now is let go. */
   stopped: boolean;
   remuxRetried: boolean;
@@ -122,11 +133,21 @@ export class StreamDownloads {
   private readonly season: SeasonDownloads<DownloadRequestAnswer> | null;
   /** The season pack the queue downloads now: its one torrent job while set (`job` is null then). */
   private pack: SeasonPackJob | null = null;
+  /** The office network's WARP round for a torrent step or a season pack (downloads/warp.ts). */
+  private readonly warpRounds: WarpRounds;
+  /** WARP being let go (a done, cancelled, paused or failed download): `settled` waits for them. */
+  private readonly warpBacks = new Set<Promise<void>>();
 
   constructor(private readonly opts: StreamDownloadsOptions) {
     this.now = opts.now ?? (() => new Date());
     this.log = opts.log ?? ((line: string) => console.log(line));
     this.every = opts.every ?? defaultEvery;
+    this.warpRounds = new WarpRounds({
+      warp: opts.warp ?? null,
+      office: () => this.office(),
+      playing: () => this.opts.playingTorrents().length > 0,
+      log: this.log,
+    });
     const episodes = opts.seasonEpisodes ?? null;
     this.season =
       episodes === null
@@ -138,7 +159,7 @@ export class StreamDownloads {
             rows: seasonRowsOf(opts.repo, opts.host, this.now),
             packs: opts.packs ?? null,
             swarm: opts.packSwarm ?? null,
-            office: async () => isOffice(await opts.ssid()),
+            warp: this.warpRounds,
             ...(opts.finishEpisode == null ? {} : { finish: opts.finishEpisode }),
             now: this.now,
             log: this.log,
@@ -201,6 +222,7 @@ export class StreamDownloads {
       this.job = null;
       job.stopped = true;
       if (job.handle !== null) this.opts.torrents?.release(job.handle);
+      this.letGoWarp(job);
     }
     if (this.clouds.delete(id)) await this.opts.caches?.pause(ref).catch(() => false);
     if (this.pack !== null && this.pack.rowIds.includes(id)) await this.pack.cancel(id);
@@ -249,6 +271,8 @@ export class StreamDownloads {
     if (job !== null) {
       job.stopped = true;
       if (job.handle !== null) this.opts.torrents?.release(job.handle);
+      // WARP is left as it is, as a torrent play's is at a stop: no warp.mjs runs while the daemon stops.
+      job.warp = null;
     }
     const pack = this.pack;
     this.pack = null;
@@ -280,7 +304,7 @@ export class StreamDownloads {
   /** Resolves once no look and no download start runs (tests). */
   async settled(): Promise<void> {
     for (;;) {
-      const waiting = [this.tickRun, this.current].filter((p): p is Promise<void> => p !== null);
+      const waiting = [this.tickRun, this.current, ...this.warpBacks].filter((p): p is Promise<void> => p !== null);
       if (waiting.length === 0) return;
       await Promise.all(waiting);
     }
@@ -313,6 +337,8 @@ export class StreamDownloads {
     this.job = null;
     job.stopped = true;
     this.opts.torrents?.release(handle);
+    // A torrent plays on screen: WARP is let go and stays on while that play may play through it.
+    this.letGoWarp(job);
     await this.opts.repo.setState(this.host, job.id, 'paused', this.now());
     this.log(`[notesd] downloads: paused ${refLabel(job.ref)} (${handle.name}): a torrent plays on screen; it carries on when the play ends`);
   }
@@ -339,6 +365,7 @@ export class StreamDownloads {
     if (this.job !== job) return;
     this.job = null;
     torrents.release(handle);
+    this.letGoWarp(job);
     const on: DownloadOn = { source: 'torrent', infoHash: handle.infoHash };
     await this.opts.repo.done(this.host, job.id, on, { bytesDone: now.bytesTotal ?? now.bytesDone, bytesTotal: now.bytesTotal }, this.now());
     this.log(
@@ -396,22 +423,20 @@ export class StreamDownloads {
     if (rows.length === 0) return;
     const at = this.now().getTime();
     const playing = this.opts.playingTorrents().length > 0;
-    let office: boolean | null = null;
     for (const row of rows) {
       if (this.job !== null || this.pack !== null || this.closed) return;
       if ((this.retries.get(row.id)?.at ?? 0) > at) continue;
-      office ??= isOffice(await this.opts.ssid());
+      // A torrent download carried on (a pause, a restart) is opened again on every network: on the office network
+      // its fetch goes through the WARP round like any torrent step.
       const resumeHash = row.source === 'torrent' ? row.sourceId : null;
-      // A torrent download carried on waits off the office network: nothing there reaches its peers.
-      if (resumeHash !== null && office) continue;
-      const plan = this.planOf(row, office);
+      const plan = this.planOf(row);
       if (!plan.ok) {
         await this.fail(row.id, downloadRef(row), [{ step: null, error: plan.error, detail: plan.detail }], null);
         continue;
       }
       // Play first: a torrent download does not start while a torrent plays on screen; a cloud one does.
       if (playing && plan.steps[0]!.kind !== 'cloud') continue;
-      const job: Job = { id: row.id, ref: downloadRef(row), handle: null, stopped: false, remuxRetried: false, lastBytes: row.bytesDone, sourceHash: resumeHash };
+      const job: Job = { id: row.id, ref: downloadRef(row), handle: null, warp: null, stopped: false, remuxRetried: false, lastBytes: row.bytesDone, sourceHash: resumeHash };
       this.job = job;
       const before = this.pending.get(row.id)?.failures ?? [];
       this.pending.delete(row.id);
@@ -425,13 +450,31 @@ export class StreamDownloads {
   }
 
   /** The steps of a row: what a failed cache left, a carry-on by info hash, a cache followed again, or its whole plan. */
-  private planOf(row: StreamDownloadRow, office: boolean): DownloadPlan {
+  private planOf(row: StreamDownloadRow): DownloadPlan {
     const pending = this.pending.get(row.id);
     if (pending !== undefined) return { ok: true, steps: pending.steps };
     if (row.source === 'torrent' && row.sourceId !== null) return { ok: true, steps: [{ kind: 'hash', infoHash: row.sourceId }] };
-    const full = planDownload({ via: row.via, infoHash: row.infoHash }, { office, torrent: this.opts.torrents !== null, cloud: this.opts.caches !== null });
+    const full = planDownload({ via: row.via, infoHash: row.infoHash }, { torrent: this.opts.torrents !== null, cloud: this.opts.caches !== null });
     if (row.source === 'cloud' && full.ok) return { ok: true, steps: [{ kind: 'cloud', maxHeight: CLOUD_MAX_HEIGHT }, ...stepsAfterCloud(full.steps)] };
     return full;
+  }
+
+  /** True on the office network (the pinned or read SSID); a network that cannot be read is not the office. */
+  private async office(): Promise<boolean> {
+    try {
+      return isOffice(await this.opts.ssid());
+    } catch {
+      return false;
+    }
+  }
+
+  /** Lets go of the WARP a job held, once, behind the caller (warp.mjs may take a minute); `settled` waits for it. */
+  private letGoWarp(job: Job): void {
+    const hold = job.warp;
+    job.warp = null;
+    if (hold === null) return;
+    const back: Promise<void> = hold.release().finally(() => this.warpBacks.delete(back));
+    this.warpBacks.add(back);
   }
 
   /** One download's steps, in order, until a torrent is held, the cache took it, or every step failed. Never throws. */
@@ -445,8 +488,10 @@ export class StreamDownloads {
         const pack = await this.season.take(seasonRow);
         if (pack !== null) {
           if (job.stopped || this.job !== job || this.closed) {
-            // Cancelled or stopped while the pack was looked for: its rows wait, paused, for the next look.
-            await pack.pause();
+            // Cancelled while the pack was looked for: its rows wait, paused, for the next look. The daemon stopping:
+            // closed, so the WARP it may hold is left as it is.
+            if (this.closed) await pack.close();
+            else await pack.pause();
             return;
           }
           this.job = null;
@@ -472,20 +517,31 @@ export class StreamDownloads {
           failures.push({ step, error: 'torrent_off', detail: 'torrents are off on this machine' });
           continue;
         }
-        const fetched: TorrentFetch = await torrents.fetch(job.ref, step.kind === 'hash' ? { infoHash: step.infoHash } : { band: step.band });
+        const ask: TorrentAsk = step.kind === 'hash' ? { infoHash: step.infoHash } : { band: step.band };
+        const first = await torrents.fetch(job.ref, ask);
+        // On the office network a step that reached no peer at all is asked once more through WARP (downloads/warp.ts).
+        const round = await this.warpRounds.round(refLabel(job.ref), first, !first.ok && first.noPeers === true, () => {
+          torrents.forgetNoPeers(job.ref);
+          return torrents.fetch(job.ref, ask);
+        });
+        const fetched = round.out;
         if (job.stopped || this.job !== job) {
           if (fetched.ok) torrents.release(fetched.handle);
+          job.warp = round.hold;
+          if (!this.closed) this.letGoWarp(job);
           return;
         }
         if (!fetched.ok) {
-          failures.push({ step, error: fetched.error, detail: fetched.detail });
+          const noPeersHere = round.office && fetched.noPeers === true;
+          failures.push({ step, error: noPeersHere ? 'no_peers_here' : fetched.error, detail: round.note === null ? fetched.detail : `${fetched.detail}; ${round.note}` });
           continue;
         }
         job.handle = fetched.handle;
+        job.warp = round.hold;
         this.retries.delete(job.id);
         await torrents.keep(fetched.handle.infoHash, true);
         await this.opts.repo.on(this.host, job.id, { source: 'torrent', infoHash: fetched.handle.infoHash }, this.now());
-        this.log(`[notesd] downloads: ${refLabel(job.ref)} downloads from the torrent ${fetched.detail}, kept until it is deleted on the Cache page`);
+        this.log(`[notesd] downloads: ${refLabel(job.ref)} downloads from the torrent ${fetched.detail}${job.warp === null ? '' : ' through Cloudflare WARP'}, kept until it is deleted on the Cache page`);
         return;
       }
       if (job.stopped || this.closed) return;
@@ -493,6 +549,7 @@ export class StreamDownloads {
       await this.fail(job.id, job.ref, failures, job.sourceHash);
     } catch (err) {
       if (this.closed || job.stopped) return;
+      this.letGoWarp(job);
       this.log(`[notesd] downloads: ${refLabel(job.ref)}: ${messageOf(err)}`);
       await this.fail(job.id, job.ref, [...failures, { step: null, error: 'download_failed', detail: messageOf(err) }], job.sourceHash).catch(() => undefined);
     } finally {
@@ -631,8 +688,9 @@ export class StreamDownloads {
 }
 
 /**
- * The SSID as a download reads it: warp.mjs's `status`, once a minute at most. Typed to `status` alone, so nothing a
- * download holds can switch WARP. A status that cannot be read is no network (not the office).
+ * The SSID as a download reads it: warp.mjs's `status`, once a minute at most. A status that cannot be read is no
+ * network (not the office). Typed to `status` alone: a download switches WARP only by holding the stream service's
+ * WarpHolds (downloads/warp.ts), never through this reader.
  */
 export function ssidFrom(warp: Pick<WarpSwitch, 'status'>, options: { ttlMs?: number; now?: () => number } = {}): () => Promise<string | null> {
   const ttlMs = options.ttlMs ?? SSID_TTL_MS;
@@ -686,11 +744,12 @@ export function torrentDownloadsOf(source: () => TorrentSource | null, streams: 
         ...(band === null ? {} : { only: (c: TorrentCandidate, count: SwarmCount | null): boolean => bandAllows(band, c, count) }),
         ...('infoHash' in ask ? { infoHash: ask.infoHash } : {}),
       });
-      if (!out.ok) return { ok: false, error: out.error, detail: attemptsText(out.attempts) };
+      if (!out.ok) return { ok: false, error: out.error, detail: attemptsText(out.attempts), noPeers: noPeersAtAll(out.attempts) };
       const handle: KeptTorrentHandle = { infoHash: out.torrent.infoHash, fileIndex: out.torrent.fileIndex, name: out.torrent.name };
       held.set(handle, out.torrent);
       return { ok: true, handle, detail: `${out.torrent.name}${out.torrent.height === null ? '' : `, ${out.torrent.height}p`}` };
     },
+    forgetNoPeers: (ref) => source()?.forgetNoPeers(ref),
     now: async (handle) => {
       const torrent = held.get(handle);
       const s = source();
@@ -779,6 +838,8 @@ export function buildStreamDownloads(
     caches: wiring.streamCache === null ? null : cacheDownloadsOf(wiring.streamCache),
     ssid: config.directStream?.downloadSsid != null ? fixedSsid(config.directStream.downloadSsid) : ssidFrom(wiring.warp),
     playingTorrents: () => ds.torrentsOnScreen(),
+    // The stream service's one WarpHolds, so a play and a download share WARP's holders; null with NOTESD_STREAM_WARP=off.
+    warp: ds.warpForDownloads(),
     ...(wiring.afterDone === undefined ? {} : { afterDone: wiring.afterDone }),
     ...(wiring.log === undefined ? {} : { log: wiring.log }),
     seasonEpisodes: movieStreams === null ? null : (tmdbId, season) => movieStreams.seasonEpisodes(tmdbId, season),

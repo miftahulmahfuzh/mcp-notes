@@ -86,7 +86,6 @@ describe('a season download from its pack', () => {
       packs: { fetch: (tmdbId, season, episodes, o) => source.fetchPack(tmdbId, season, episodes, { audioLang: 'en', imdbId: null, names: null, ...o }) },
       // TorrentStreams.keep (phase 2) writes the owner's mark through TorrentsRepo.setKept.
       swarm: packSwarmOf(streams),
-      office: async () => false,
       now: () => T0,
       sleep: () => new Promise((resolve) => setTimeout(resolve, 5)),
       newBatch: () => BATCH,

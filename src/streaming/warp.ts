@@ -26,8 +26,8 @@ export interface WarpState {
 
 /**
  * Cloudflare WARP on the Windows side. The daemon builds `scriptWarp()`; tests pass a fake. WARP carries the whole
- * machine's traffic: only the owner's switch (the `warp` tool, /warp) and the torrent play on the office network
- * (torrentWarp.ts) call `set`.
+ * machine's traffic: only the owner's switch (the `warp` tool, /warp) and the stream service's WarpHolds call `set`
+ * (torrentWarp.ts: a torrent play, or a torrent download through downloads/warp.ts, on the office network).
  */
 export interface WarpSwitch {
   status(): Promise<WarpState>;

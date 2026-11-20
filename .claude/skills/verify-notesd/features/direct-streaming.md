@@ -628,7 +628,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Cloudflare WARP for torrents (the `warp` tool, `/warp`, `src/directStream/torrentWarp.ts`): `warp` answers WARP's state
   and the SSID and switches on or off; a torrent play where every torrent ended at "no file list from the swarm" on SSID
   `Employee` with WARP off gains an attempt `WARP` (a hint, or with `TORRENT_WARP_AUTO` one more ask through WARP, kept on
-  only when it played). Proven by `npx vitest run tests/unit/scripts/warp.test.ts tests/unit/streaming.warp.test.ts tests/unit/mcp.warpTool.test.ts tests/unit/directStream/torrentPlay.test.ts`
+  only when it played). A torrent download the owner asked for gets the same one more ask through WARP before the cloud, holds WARP while its torrent is in the swarm, and lets go when it is done, paused, failed or cancelled (off again unless a torrent play or another download holds it; `src/directStream/downloads/warp.ts`, the stream service's one `WarpHolds`). Proven by `npx vitest run tests/unit/scripts/warp.test.ts tests/unit/streaming.warp.test.ts tests/unit/mcp.warpTool.test.ts tests/unit/directStream/torrentPlay.test.ts tests/unit/directStream/downloads -t "WARP|R1.4|R1.12"`
   (fake warp-cli, netsh and switch). Every throwaway daemon pins `NOTESD_STREAM_WARP=off`, so no play reads or switches the
   machine's WARP. Live: `node claude/streaming/warp.mjs status` answers `{"ok":true,"warp":...,"ssid":...}`.
 

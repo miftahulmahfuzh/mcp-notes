@@ -94,8 +94,14 @@ export interface KeptTorrentHandle {
   readonly name: string;
 }
 
-/** A torrent step's answer: the torrent now downloading (`detail`: its name and height), or why none could be. */
-export type TorrentFetch = { ok: true; handle: KeptTorrentHandle; detail: string } | { ok: false; error: 'no_source' | 'dubbed'; detail: string };
+/**
+ * A torrent step's answer: the torrent now downloading (`detail`: its name and height), or why none could be.
+ * `noPeers`: every torrent tried sent no file list (torrentWarp.ts noPeersAtAll), so WARP may reach them on the
+ * office network; unset: false.
+ */
+export type TorrentFetch =
+  | { ok: true; handle: KeptTorrentHandle; detail: string }
+  | { ok: false; error: 'no_source' | 'dubbed'; detail: string; noPeers?: boolean };
 
 /** A held torrent now: KeptState plus its bytes and swarm. */
 export type TorrentNow = KeptState & { bytesDone: number; bytesTotal: number | null; peers: number | null; downKbps: number | null };
@@ -105,6 +111,8 @@ export interface DownloadTorrents {
   /** True when this host holds a finished torrent download of `ref`. */
   onDisk(ref: StreamRef): Promise<boolean>;
   fetch(ref: StreamRef, ask: TorrentAsk): Promise<TorrentFetch>;
+  /** Forgets the title's torrents whose swarm did not deliver, so the next fetch tries them again (the ask through WARP). */
+  forgetNoPeers(ref: StreamRef): void;
   now(handle: KeptTorrentHandle): Promise<TorrentNow>;
   /** Starts a failed remux again (once the file is whole). */
   retryRemux(handle: KeptTorrentHandle): Promise<void>;

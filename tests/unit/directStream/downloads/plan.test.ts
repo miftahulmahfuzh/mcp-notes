@@ -2,31 +2,30 @@ import { describe, expect, it } from 'vitest';
 import { bandAllows, CLOUD_MAX_HEIGHT, finalFailure, isOffice, planDownload, stepsAfterCloud } from '../../../../src/directStream/downloads/plan.js';
 import { parseRelease } from '../../../../src/directStream/torrent/find/index.js';
 
-const HOME = { office: false, torrent: true, cloud: true };
-const OFFICE = { office: true, torrent: true, cloud: true };
+const HERE = { torrent: true, cloud: true };
 const H = 'ab'.repeat(20);
 const c = (name: string, seeds: number) => ({ seeds, release: parseRelease(name) });
 
 describe('R1.2 planDownload: the order with no source named', () => {
   it('is a 1080p torrent, then the cloud at 1080p or lower, then a torrent below 1080p', () => {
-    expect(planDownload({ via: 'auto', infoHash: null }, HOME)).toEqual({
+    expect(planDownload({ via: 'auto', infoHash: null }, HERE)).toEqual({
       ok: true,
       steps: [{ kind: 'torrent', band: 'preferred' }, { kind: 'cloud', maxHeight: 1080 }, { kind: 'torrent', band: 'below' }],
     });
     expect(CLOUD_MAX_HEIGHT).toBe(1080);
   });
   it('leaves out a side that is off', () => {
-    expect(planDownload({ via: 'auto', infoHash: null }, { ...HOME, torrent: false })).toEqual({ ok: true, steps: [{ kind: 'cloud', maxHeight: 1080 }] });
-    expect(planDownload({ via: 'auto', infoHash: null }, { ...HOME, cloud: false })).toEqual({ ok: true, steps: [{ kind: 'torrent', band: 'preferred' }, { kind: 'torrent', band: 'below' }] });
-    expect(planDownload({ via: 'auto', infoHash: null }, { office: false, torrent: false, cloud: false })).toMatchObject({ ok: false, error: 'no_source' });
+    expect(planDownload({ via: 'auto', infoHash: null }, { ...HERE, torrent: false })).toEqual({ ok: true, steps: [{ kind: 'cloud', maxHeight: 1080 }] });
+    expect(planDownload({ via: 'auto', infoHash: null }, { ...HERE, cloud: false })).toEqual({ ok: true, steps: [{ kind: 'torrent', band: 'preferred' }, { kind: 'torrent', band: 'below' }] });
+    expect(planDownload({ via: 'auto', infoHash: null }, { torrent: false, cloud: false })).toMatchObject({ ok: false, error: 'no_source' });
   });
   it('downloads only from the source named', () => {
-    expect(planDownload({ via: 'cloud', infoHash: null }, HOME)).toEqual({ ok: true, steps: [{ kind: 'cloud', maxHeight: 1080 }] });
-    expect(planDownload({ via: 'torrent', infoHash: null }, HOME)).toEqual({ ok: true, steps: [{ kind: 'torrent', band: 'preferred' }, { kind: 'torrent', band: 'below' }] });
-    expect(planDownload({ via: 'torrent', infoHash: H }, HOME)).toEqual({ ok: true, steps: [{ kind: 'hash', infoHash: H }] });
+    expect(planDownload({ via: 'cloud', infoHash: null }, HERE)).toEqual({ ok: true, steps: [{ kind: 'cloud', maxHeight: 1080 }] });
+    expect(planDownload({ via: 'torrent', infoHash: null }, HERE)).toEqual({ ok: true, steps: [{ kind: 'torrent', band: 'preferred' }, { kind: 'torrent', band: 'below' }] });
+    expect(planDownload({ via: 'torrent', infoHash: H }, HERE)).toEqual({ ok: true, steps: [{ kind: 'hash', infoHash: H }] });
   });
   it('goes on after a failed cache to what follows the cloud', () => {
-    const plan = planDownload({ via: 'auto', infoHash: null }, HOME);
+    const plan = planDownload({ via: 'auto', infoHash: null }, HERE);
     if (!plan.ok) throw new Error('planned');
     expect(stepsAfterCloud(plan.steps)).toEqual([{ kind: 'torrent', band: 'below' }]);
   });
@@ -53,22 +52,24 @@ describe('R1.2 bandAllows: 1080p with live seeds, then below 1080p', () => {
   });
 });
 
-describe('R1.4 planDownload: the office network', () => {
+describe('R1.4 planDownload: the same order on every network', () => {
   it('reads SSID Employee as the office', () => {
     expect(isOffice('Employee')).toBe(true);
     expect(isOffice('kosan_baruu')).toBe(false);
     expect(isOffice(null)).toBe(false);
   });
-  it('sends a download with no source named straight to the cloud', () => {
-    expect(planDownload({ via: 'auto', infoHash: null }, OFFICE)).toEqual({ ok: true, steps: [{ kind: 'cloud', maxHeight: 1080 }] });
+  it('takes no network into the plan: a torrent asked for is planned there too, the 1080p torrent first', () => {
+    expect(planDownload({ via: 'torrent', infoHash: H }, HERE)).toEqual({ ok: true, steps: [{ kind: 'hash', infoHash: H }] });
+    expect(planDownload({ via: 'auto', infoHash: null }, HERE)).toMatchObject({ ok: true, steps: [{ kind: 'torrent', band: 'preferred' }, { kind: 'cloud' }, { kind: 'torrent' }] });
   });
-  it('refuses a torrent asked for there with no_peers_here, and names WARP as never switched', () => {
-    for (const ask of [{ via: 'torrent' as const, infoHash: null }, { via: 'torrent' as const, infoHash: H }]) {
-      const plan = planDownload(ask, OFFICE);
-      expect(plan).toMatchObject({ ok: false, error: 'no_peers_here' });
-      if (!plan.ok) expect(plan.detail).toContain('WARP is never switched');
-    }
-    expect(planDownload({ via: 'auto', infoHash: null }, { ...OFFICE, cloud: false })).toMatchObject({ ok: false, error: 'no_peers_here' });
+  it('fails no_peers_here when every torrent step reached no peer, and no_source when the cloud also failed', () => {
+    const here = finalFailure([
+      { step: { kind: 'torrent', band: 'preferred' }, error: 'no_peers_here', detail: 'through Cloudflare WARP no torrent could be downloaded either' },
+      { step: { kind: 'torrent', band: 'below' }, error: 'no_peers_here', detail: '' },
+    ]);
+    expect(here.error).toBe('no_peers_here');
+    expect(here.detail).toBe('torrent 1080p: no_peers_here (through Cloudflare WARP no torrent could be downloaded either); torrent below 1080p: no_peers_here');
+    expect(finalFailure([{ step: { kind: 'torrent', band: 'preferred' }, error: 'no_peers_here', detail: '' }, { step: { kind: 'cloud', maxHeight: 1080 }, error: 'no_source', detail: '' }]).error).toBe('no_source');
   });
 });
 

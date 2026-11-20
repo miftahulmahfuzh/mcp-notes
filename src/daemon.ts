@@ -580,7 +580,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // session on screen first. Null with NOTESD_STREAM_PREVIEWS=off or without direct streaming.
   deps.streamPreviews = buildStreamPreviews(config, { directStream, streamCache, torrents });
   // Downloads the owner asks for (src/directStream/downloads/): one at a time, a 1080p torrent first, then the cloud
-  // cache, kept until deleted on the Cache page. It reads the SSID through warp's status and never switches WARP.
+  // cache, kept until deleted on the Cache page. It reads the SSID through warp's status; on the office network it
+  // holds WARP through the stream service's WarpHolds (directStream.warpForDownloads) to reach a torrent's peers.
   // A finished download's seek previews are queued at once. Null with NOTESD_STREAM_DOWNLOADS=off or neither source.
   deps.streamDownloads = buildStreamDownloads(config, {
     db,
