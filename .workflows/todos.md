@@ -221,6 +221,33 @@
     - The drive's neighbor check opens The Dog Stars (movie-990002) instead of Oldboy (movie-990004) → same assertions on a page that is the Library side: `detailSide` shows a title no machine holds a file of as the Stream page whatever the address says, and the fixture library has a file record of The Dog Stars (rung 6: the app's existing rule; changing it is outside this phase's Owns)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1–7 of this set; the coordinator's integrator reconciles them. readme-updater not run, matching phase 7 (web-only). No successor to unblock: phase 9's task is minted by its own session.
 
+- [x] **P1-NOTES-SD09** Phase 9: Guides, pictures, the feature map and the end-to-end proof
+  - **Difficulty**: NORMAL
+  - **Type**: Update
+  - **Context**: Owns `docs/guide/streaming.md` ("Downloading a title"; "What a title says: its story"; the rules in the code), `docs/guide/movies.md` (Download buttons, season story, Cache page), `docs/guide/architecture.md` (writer table: `stream_downloads`/`DownloadsRepo`; data model: `stream_downloads`, `movie_stories`, `kept_at`), `docs/guide/reference/configuration.md` (the `NOTESD_MOVIES_STORY_MODEL` row only if still stale), `CLAUDE.md`, `README.md` only if a line changes. Pictures: fixture pictures for the streaming guide (`docs:shots -- streaming`); for the movies guide only read-only `--live` retakes, never a fixture picture. `verify.sh`'s `TORRENT_SEED_KBPS` knob (the SSID pin is phase 2's). `.claude/skills/verify-notesd/features/{movies,direct-streaming,README}.md` entries and the `direct-stream/downloads.sh` driver with its steps files (stages story, title, season, cache), run with evidence kept. Exit: `npm run docs:check` and `npm test` pass; no `[[CHECK` is left; `downloads.sh RUN` passes on a throwaway daemon with evidence saved.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 9 of 10)
+  - **Satisfies**: R3, R4, R6 — a live progress bar of the download the title page can see, the Cache page's "Downloading" filter (by default the files being downloaded together with the downloaded files; clicked, only the files currently being downloaded), and "Narrate the full story of SXX" on the Season row in title page, from websites that tell full stories / full spoilers instead of inferring it from the subtitle · criteria: R3.1, R4.2, R6.1
+  - **Depends on**: P1-NOTES-SD05, P1-NOTES-SD08, P1-NOTES-SD10
+  - **Plan**: `.workflows/plan/P1-NOTES-SD09.md`
+  - **Completed**: 2026-11-21 01:17
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/README.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/features/movies.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/direct-stream/downloads.sh, .claude/skills/verify-notesd/scripts/stream/downloads-bars.mjs, .claude/skills/verify-notesd/scripts/stream/downloads-title.steps.mjs, .claude/skills/verify-notesd/scripts/stream/downloads-season.steps.mjs, .claude/skills/verify-notesd/scripts/stream/downloads-cache.steps.mjs, .claude/skills/verify-notesd/scripts/stream/season-story.steps.mjs, scripts/docs/shots/streaming.mjs, docs/guide/streaming.md, docs/guide/movies.md, docs/guide/architecture.md, docs/guide/reference/configuration.md, CLAUDE.md, docs/guide/img/streaming/download-bars.png, docs/guide/img/streaming/download-menu.png, docs/guide/img/streaming/season-story.png, docs/guide/img/streaming/cache-downloading.png, docs/guide/img/streaming/player-fetching.png, docs/guide/img/streaming/player-preview.png, docs/guide/img/streaming/player.gif, .workflows/todos.md, .workflows/plan/P1-NOTES-SD09.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-011132-1184415/evidence
+  - **Drift**:
+    - A `--movies`/`--torrent` throwaway daemon does not hold tv-247718 or movie-467905: downloads.sh's wait_title and the shots module's seed store them with POST /api/movies/ensure.
+    - Phase 5 landed the Cache page's roll-up as `downloading: {count, progress, why[], state}`; the shots module's fakes use the landed shapes, not the plan's `downloading_count`/`downloading_progress`.
+    - Office rule written as phase 10 built it everywhere the plan still held the old rule (CLAUDE.md, streaming.md, features/direct-streaming.md, downloads.sh's INCONCLUSIVE reason, movies.md Download bullet).
+    - Play first is written as landed (a paused download lets go of its swarm and is reopened by its info hash), not the plan's 'files deselected'.
+    - configuration.md: NOTESD_MOVIES_STORY_MODEL row was still stale and was replaced; NOTESD_STREAM_DOWNLOADS's link now points at #downloading-a-title.
+    - No product defect was found by the proof, so the index's Reconciliation Log got no 'phase 9 proof' line.
+    - Owed after the set lands and the live daemon runs the new build (coordinator's job): `npm run docs:shots -- --live movies` to retake episodes.png, stream-title.png, film.png and cache.png. No fixture picture was put in docs/guide/movies.md.
+  - **Decided**:
+    - J1 first failed with 'the page went 4373 ms without asking' while the page polled steadily at 2.5 s: this WSL machine's wall clock is stepped forward ~1.9 s every ~34 s → downloads-bars.mjs times the asks with performance.now(); the 3 s bound is unchanged (tie-break: a failing verification is never settled by relaxing the check; the instrument was wrong, the product was not)
+    - The streaming guide's [[CHECK]] log line → the landed line of service.ts: `downloads: TMDB movie 467905 downloads from the torrent <name>, 1080p, kept until it is deleted on the Cache page` (rung 3: Step 1, landed names replace the marks)
+    - architecture.md Movies row gains only `movie_stories` (rung 2: do exactly what the plan's Step 12 names)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching phases 1–8 of this set; the coordinator's integrator reconciles them. Phase 9 ticked in the coordinator's plan index. No successor to unblock: the swarm coordinator lands the set.
+
 - [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
   - **Difficulty**: NORMAL
   - **Type**: Feature

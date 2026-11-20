@@ -12,11 +12,19 @@
 // once from download.blender.org into ~/.local/state/notesd-verify/.docs-film (DOCS_SHOTS_FILM_DIR)
 // and cut into a two-rendition HLS stream with ffmpeg. Offline, a generated test picture stands in.
 //
-//   player.png           a cloud stream: the title, the English subtitle the page draws, the controls
-//   player.gif           the quality menu, the subtitle delay key, a seek
-//   player-preview.png   the pointer on the timeline: the frame of that time from the stream's own preview track
-//   player-torrent.png   a torrent session: the magnet, peers and speed beside the title, the bar of what is on disk
-//   player-fetching.png  a seek past what is on disk: "Fetching this part from peers"
+//   player.png             a cloud stream: the title, the English subtitle the page draws, the controls
+//   player.gif             the quality menu, the subtitle delay key, a seek
+//   player-preview.png     the pointer on the timeline: the frame of that time from the stream's own preview track
+//   player-torrent.png     a torrent session: the magnet, peers and speed beside the title, the bar of what is on disk
+//   player-fetching.png    a seek past what is on disk: "Fetching this part from peers"
+//
+// Downloads and the season story (stream-downloads-season-story), on the fake library and TMDB of --direct-stream:
+// GET /api/stream/downloads and GET /api/stream/disk are answered here in the daemon's shapes, so a season is seen
+// downloading with no swarm; the story is a row seed() puts in movie_stories, read like any stored story (no model).
+//   download-bars.png      MobLand on the Stream side: season 1 downloading, E01 and E02 running, E03 queued
+//   download-menu.png      the season row's caret: "Choose how to download MobLand"
+//   season-story.png       the season's story pop-up: a section per episode, one with no recap found, the source
+//   cache-downloading.png  the Cache page's Downloading view: the bars and why each row downloads
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -25,7 +33,133 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 
-export const up = [];
+export const up = ['--direct-stream'];
+
+const SERIES_KEY = 'tv-247718'; // MobLand in the fixture library
+const FILM_KEY = 'movie-467905'; // How to Make a Killing in the fixture library
+const STORY_DELETE_SQL = `delete from movie_stories where title_id = '${SERIES_KEY}' and season = 1 and episode = 0`;
+const STORY_SQL = `insert into movie_stories (title_id, season, episode, text, sections, sources, origin, model, written_at) values (
+  '${SERIES_KEY}', 1, 0, 'Season 1 of MobLand.',
+  '[{"episode":1,"name":"Stick or Twist","text":"Harry Da Souza, the Harrigans'' fixer, is called in when a London crime family loses a son, and the night ends with a body nobody can explain.","found":true},
+    {"episode":2,"name":"Eye for an Eye","text":"Conrad answers the killing with one of his own, and Harry is sent to keep the Stevensons from striking back before the deal is done.","found":true},
+    {"episode":3,"name":"Lie Down with Dogs","text":"","found":false}]'::jsonb,
+  '[{"url":"https://en.wikipedia.org/wiki/MobLand","title":"MobLand","site":"Wikipedia"},{"url":"https://mobland.fandom.com/wiki/Season_1","title":"Season 1","site":"MobLand Wiki"}]'::jsonb,
+  'web', 'sonnet', now())`;
+
+/** Stores the two fixture titles (as a click on a listed title does), then keeps a season story for MobLand (as the web writer would). */
+export async function seed({ v, fetchJson }) {
+  await fetchJson('POST', '/api/movies/ensure', { kind: 'tv', tmdb_id: 247718 });
+  await fetchJson('POST', '/api/movies/ensure', { kind: 'movie', tmdb_id: 467905 });
+  await v('exec', STORY_DELETE_SQL);
+  await v('exec', STORY_SQL);
+}
+
+/** One row of GET /api/stream/downloads for an episode of MobLand's season 1, as phase 4 answers it. */
+function downloadRow(episode, state, progress, total) {
+  const running = state === 'running';
+  return {
+    id: '00000000-0000-4000-8000-00000000000' + episode,
+    host: 'verify',
+    available: true,
+    title_id: SERIES_KEY,
+    kind: 'tv',
+    tmdb_id: 247718,
+    season: 1,
+    episode,
+    state,
+    via: 'auto',
+    info_hash: null,
+    batch: '00000000-0000-4000-8000-0000000000b1',
+    source: running ? 'torrent' : null,
+    source_id: running ? '5f1c7a4be0d94c1f8a3a52c1d0b7e6a9f4c2d811' : null,
+    progress,
+    bytes_done: Math.round(total * progress),
+    bytes_total: total,
+    peers: running ? 27 : null,
+    down_kbps: running ? 4800 : null,
+    error: null,
+    detail: null,
+    created_at: '2026-11-20T12:00:00.000Z',
+    updated_at: '2026-11-20T12:04:00.000Z',
+    finished_at: null,
+  };
+}
+
+const DOWNLOADS = [downloadRow(1, 'running', 0.71, 1_480_000_000), downloadRow(2, 'running', 0.34, 1_390_000_000), downloadRow(3, 'queued', 0, 1_420_000_000)];
+
+/** GET /api/stream/disk as phase 5 answers it: MobLand's season 1 asked for, and a film a pause is caching. */
+function diskView(series, film) {
+  const episode = (n, name, bytes, progress, state) => ({
+    season: 1,
+    episode: n,
+    movie_id: null,
+    name,
+    bytes,
+    kinds: state === 'queued' ? [] : ['torrent'],
+    watched: false,
+    playing: false,
+    in_use: state !== 'queued',
+    downloading: { progress, why: 'asked', state },
+  });
+  const episodes = [episode(1, 'Stick or Twist', 1_050_000_000, 0.71, 'running'), episode(2, 'Eye for an Eye', 473_000_000, 0.34, 'running'), episode(3, 'Lie Down with Dogs', 0, 0, 'queued')];
+  const seasonBytes = episodes.reduce((n, e) => n + e.bytes, 0);
+  const rollup = { count: 3, progress: (0.71 + 0.34 + 0) / 3, why: ['asked'], state: 'running' };
+  const mobland = {
+    title_id: SERIES_KEY,
+    movie_id: series.movie_id ?? null,
+    kind: 'tv',
+    tmdb_id: 247718,
+    title: 'MobLand',
+    year: 2025,
+    poster_url: series.poster_url ?? null,
+    stored: true,
+    bytes: seasonBytes,
+    torrent_bytes: seasonBytes,
+    cloud_bytes: 0,
+    kinds: ['torrent'],
+    watched: false,
+    not_interested: false,
+    playing: false,
+    in_use: true,
+    shared_bytes: 0,
+    downloading: rollup,
+    seasons: [{ season: 1, bytes: seasonBytes, shared_bytes: 0, kinds: ['torrent'], watched: false, playing: false, in_use: true, downloading: rollup, episodes }],
+  };
+  const paused = {
+    title_id: FILM_KEY,
+    movie_id: film.movie_id ?? null,
+    kind: 'movie',
+    tmdb_id: 467905,
+    title: 'How to Make a Killing',
+    year: 2026,
+    poster_url: film.poster_url ?? null,
+    stored: true,
+    bytes: 612_000_000,
+    torrent_bytes: 0,
+    cloud_bytes: 612_000_000,
+    kinds: ['cloud'],
+    watched: false,
+    not_interested: false,
+    playing: false,
+    in_use: true,
+    shared_bytes: 0,
+    downloading: { count: 1, progress: 0.48, why: ['pause'], state: 'running' },
+    seasons: [],
+  };
+  return {
+    host: 'verify',
+    total_bytes: mobland.bytes + paused.bytes,
+    torrent_bytes: mobland.bytes,
+    cloud_bytes: paused.bytes,
+    unnamed_bytes: 0,
+    budget_bytes: 40 * 1024 ** 3,
+    titles: [mobland, paused],
+    bulk: { watched: { bytes: 0, titles: 0 }, not_interested: { bytes: 0, titles: 0 } },
+    pending: [],
+    undo_ms: 10_000,
+    downloading: 4,
+  };
+}
 
 const DIR = process.env.DOCS_SHOTS_FILM_DIR ?? path.join(os.homedir(), '.local/state/notesd-verify/.docs-film');
 const TRAILER = 'https://download.blender.org/durian/trailer/sintel_trailer-720p.mp4';
@@ -215,7 +349,7 @@ async function wake(page) {
 
 const captionShown = () => (document.querySelector('.st-caption')?.textContent ?? '').trim() !== '';
 
-export default async ({ page, base, shot, clip }) => {
+export default async ({ page, base, shot, clip, fetchJson }) => {
   await makeFilm();
   await makeSheet();
 
@@ -281,5 +415,44 @@ export default async ({ page, base, shot, clip }) => {
   await wake(page);
   await page.waitForTimeout(400);
   await shot('player-fetching');
+  await page.goto('about:blank');
+
+  // Downloads and the season story, with the downloads and the disk answered here.
+  const series = await fetchJson('GET', '/api/movies/' + SERIES_KEY);
+  const film = await fetchJson('GET', '/api/movies/' + FILM_KEY).catch(() => ({}));
+  await page.route('**/api/stream/downloads**', (route) =>
+    route.request().method() === 'GET' ? route.fulfill({ json: { host: 'verify', active: true, downloads: DOWNLOADS } }) : route.fulfill({ status: 404, json: { error: 'not_found' } }),
+  );
+  await page.route('**/api/stream/disk', (route) =>
+    route.request().method() === 'GET' ? route.fulfill({ json: diskView(series, film) }) : route.fulfill({ status: 404, json: { error: 'not_found' } }),
+  );
+
+  await page.goto(base + '/movies/' + SERIES_KEY + '?side=stream');
+  const season = page.locator('.mv-season[data-season="1"]');
+  const head = season.locator('.mv-season-head');
+  await head.locator('[role="progressbar"]').waitFor({ timeout: 20_000 });
+  await season.locator('li[data-episode="S01E02"] [role="progressbar"]').waitFor({ timeout: 10_000 });
+  await season.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await shot('download-bars');
+
+  await head.getByRole('button', { name: /^Choose how to download / }).click();
+  await page.getByRole('menu', { name: /^Choose how to download / }).waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(200);
+  await shot('download-menu');
+  await page.keyboard.press('Escape');
+
+  await head.getByRole('button', { name: /story of S01$/ }).click();
+  const story = page.getByRole('dialog', { name: /^Story of / });
+  await story.getByRole('heading', { name: /^S01E03 · / }).waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(200);
+  await shot('season-story', { locator: story });
+  await page.keyboard.press('Escape');
+
+  await page.goto(base + '/movies/cache');
+  await page.getByRole('button', { name: /^Downloading/ }).click();
+  await page.locator('li.cp-episode [role="progressbar"]').first().waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(300);
+  await shot('cache-downloading');
   await page.goto('about:blank');
 };

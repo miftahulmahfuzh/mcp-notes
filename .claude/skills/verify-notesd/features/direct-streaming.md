@@ -342,6 +342,42 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `up --torrent` by playing S01E01 of series 247718 with `provider: "torrent"` and reporting positions.
   The queue's give-way and `pause` are in `tests/integration/directStream.cache.int.test.ts`.
 
+## Downloads asked for (the title page's Download buttons, `direct_stream_cache` with a torrent)
+- `POST /api/stream/downloads` (same-origin; the Download button on a Stream-side title page, its season rows and
+  its episode rows; `direct_stream_cache` `action: "start"` with `provider: "torrent"`) queues a film, a season (every
+  aired episode not whole here, one row each under one batch) or an episode, and answers at once (202 with the rows,
+  200 when already queued or whole). With no source named: a 1080p torrent with live seeders, else a cloud cache at
+  1080p or lower, else a torrent below 1080p, on every network; a named kind is that kind only. On SSID `Employee` a
+  torrent step that finds no peer at all with WARP off switches WARP on once and asks again, holds it while the torrent
+  is in the swarm and puts it back after (see "Cloudflare WARP for torrents"); `no_peers_here` means no peer even
+  through WARP. One torrent
+  download at a time, paused while a torrent plays on screen, carried on after a restart. A finished torrent download
+  is kept (`stream_torrents.kept_at`) through the age and budget prunes, holds its remux, subtitle and seek previews,
+  and plays from disk with no index and no swarm. `GET /api/stream/downloads[?title=<title key>]` answers
+  `{host, active, downloads}` (queued, running, paused and failed rows of this host with progress 0..1, bytes and
+  error); `DELETE /api/stream/downloads/:id` cancels one. `NOTESD_STREAM_DOWNLOADS=off` starts nothing.
+- On the title page: a bar (`role="progressbar"`) under the head's Download button of a film, on each season row and on
+  each episode row, read again every 2.5 s while `active` and the page is visible, and not at all otherwise. On the
+  Cache page: a bar and a reason (`asked`, `ahead`, `pause`) on every downloading row, and the Downloading filter
+  (see `features/movies.md`, Cache page).
+- Logic: `npx vitest run tests/unit/directStream/downloads tests/unit/directStream/torrent/keptFetch.test.ts tests/unit/directStream/torrent/keptPrune.test.ts tests/unit/directStream/torrent/seasonPack.test.ts tests/unit/directStream/downloadsRoutes.test.ts tests/unit/mcp.streamCacheTools.test.ts web/src/components/movies/DownloadButton.test.tsx web/src/lib/downloads.test.tsx`;
+  `npm run test:int -- tests/integration/streamDownloads.routes.int.test.ts tests/integration/streamDownloads.engine.int.test.ts tests/integration/directStream.seasonDownloads.int.test.ts`.
+- Throwaway daemon, no model and no real swarm: `TORRENT_SEED_KBPS=20 $V up --web --torrent` (the loopback seeder at
+  20 kB/s keeps a download running long enough to watch), then
+  `.claude/skills/verify-notesd/scripts/direct-stream/downloads.sh RUN` (stages `story title season cache`, in order,
+  once per fresh run, about five minutes; it stores the two fixture titles with `POST /api/movies/ensure`) ends with `downloads: PASS (story title season cache)`:
+
+  | Stage | What it proves |
+  | --- | --- |
+  | story | a season story seeded into `movie_stories` answers `GET /api/movies/tv-247718/story?season=1` from the store with the model off; `season-story.steps.mjs`: the season row's book icon opens one section per episode (`S01E01 · Stick or Twist` …), S01E03 says no recap was found, the source is a link |
+  | title | `POST /api/stream/downloads` the fixture film with `via: "torrent"`; `downloads-title.steps.mjs`: the head bar on `/movies/movie-467905?side=stream` rises over 15 s and the page asks `GET /api/stream/downloads` at most 3 s apart; `DELETE` cancels it |
+  | season | `POST` MobLand season 1; rows for S01E01 and S01E02 run from the pack; `downloads-season.steps.mjs`: bars on the season row and both episode rows, the season's rising, asked at most 3 s apart |
+  | cache | a ready cloud cache of the film beside the running season; `downloads-cache.steps.mjs`: both titles in the default view, only MobLand (every episode row with a bar) under the Downloading filter, both again on the second click |
+
+  A stage that finds a download answering `no_peers_here` ends `downloads: INCONCLUSIVE` (exit 3): the run read the
+  office network's SSID, which `verify.sh` pins (`NOTESD_STREAM_DOWNLOAD_SSID=verify-home`), so it means the pin was lost.
+  Pictures of the same screens with fixed numbers: `npm run docs:shots -- streaming`.
+
 ## /report-stream-bug (a stream's evidence, the cause, a note)
 - `claude/skills/report-stream-bug/collect.sh [SNAPSHOT_DIR]` gathers the snapshot (the folder it
   is handed, else a new one from `POST /api/stream/evidence/snapshot`), the session's records
