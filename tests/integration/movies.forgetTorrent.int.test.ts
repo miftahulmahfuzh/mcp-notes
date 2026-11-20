@@ -39,7 +39,8 @@ describe('MoviesRepo.forgetTorrent (a torrent blacklisted)', () => {
 
     expect(await movies.forgetTorrent(COLD.toUpperCase(), HERE, at(4))).toEqual(['tv-1', 'tv-2']);
 
-    expect(await movies.channelOf('tv-1', HERE)).toMatchObject({ channel: null, infoHash: null, playedAt: null, season: null, cloudFailedAt: at(3) });
+    // Nothing else played it: it stays a torrent title (listed on the Stream side) with no torrent remembered.
+    expect(await movies.channelOf('tv-1', HERE)).toMatchObject({ channel: 'torrent', infoHash: null, playedAt: at(1), season: 1, episode: 7, cloudFailedAt: at(3) });
     expect((await movies.methodsOf('tv-1', HERE)).map((m) => m.method)).toEqual([]);
     expect(await movies.channelOf('tv-2', HERE)).toMatchObject({ channel: 'cloud', provider: 'VidRock', infoHash: null, season: 1, episode: 1 });
     expect((await movies.methodsOf('tv-2', HERE)).map((m) => m.method)).toEqual(['cloud']);

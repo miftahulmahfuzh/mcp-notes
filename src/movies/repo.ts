@@ -1012,8 +1012,8 @@ export class MoviesRepo {
 
   /**
    * The owner blacklisted a torrent: no title on `host` remembers it any more. Its `torrent` method rows are deleted,
-   * and a channel row naming it falls back to the most recent other method the title played through (or to nothing,
-   * its failures kept), so the next Torrent Stream play asks the indexes. The ids of the titles that remembered it.
+   * and a channel row naming it falls back to the most recent other method the title played through, or stays
+   * `torrent` with no torrent named (so the title stays on the Stream side), and the next Torrent Stream play asks the indexes. The ids of the titles that remembered it.
    */
   async forgetTorrent(infoHash: string, host: string, at: Date): Promise<string[]> {
     const hash = infoHash.trim().toLowerCase();
@@ -1033,9 +1033,11 @@ export class MoviesRepo {
           .where(and(eq(movieTitleMethods.titleId, id), eq(movieTitleMethods.host, host), ne(movieTitleMethods.method, 'torrent')))
           .orderBy(desc(movieTitleMethods.playedAt));
         const back = others.find((m) => (m.method === 'cloud' ? m.provider !== null : m.siteUrl !== null)) ?? null;
+        // No other method: it still played through a torrent, so the channel stays `torrent` (the Stream side lists the
+        // title by it) and only the remembered torrent goes: the next Torrent Stream play asks the indexes.
         const set =
           back === null
-            ? { channel: null, provider: null, infoHash: null, siteUrl: null, season: null, episode: null, playedAt: null, updatedAt: at }
+            ? { channel: 'torrent' as const, infoHash: null, updatedAt: at }
             : back.method === 'cloud'
               ? { channel: 'cloud' as const, provider: back.provider, infoHash: null, siteUrl: null, season: back.season, episode: back.episode, playedAt: back.playedAt, updatedAt: at }
               : { channel: 'site' as const, provider: back.method, infoHash: null, siteUrl: back.siteUrl, season: back.season, episode: back.episode, playedAt: back.playedAt, updatedAt: at };
