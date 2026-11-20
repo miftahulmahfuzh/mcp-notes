@@ -33,7 +33,8 @@
   position: absolute;
   left: 8%;
   right: 8%;
-  bottom: 11vh;
+  /* Lifted above the seek preview box while it is shown (StreamApp sets --st-caption-lift). */
+  bottom: max(11vh, var(--st-caption-lift, 0px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -191,9 +192,9 @@
   color: #c9c8c0;
 }
 /*
- * Seek previews: the box over the timeline while the pointer is on it. It comes right after the
- * video in the page and nothing has a z-index, so the captions and the controls paint over it; it
- * never takes the pointer, so it never keeps the controls from hiding.
+ * Seek previews: the box over the timeline while the pointer is on it. The caption moves up clear of
+ * it (.st-caption's --st-caption-lift), so neither covers the other; it never takes the pointer, so it
+ * never keeps the controls from hiding.
  */
 .st-preview {
   position: absolute;

@@ -1176,7 +1176,9 @@ With the pointer on the player's timeline, a box above it shows the time at that
 the session has one, the frame of the film there: a picture 240 px wide, taken within 10 seconds of
 that time. Where the session has no frame for that point, or its picture does not load, the box
 shows the time alone, never a broken picture. The box follows a drag of the position too, goes when
-the pointer leaves the timeline or the controls hide, and never takes a click.
+the pointer leaves the timeline or the controls hide, and never takes a click. While the box is up,
+the subtitle moves up to sit just above it, so neither covers the other, and goes back when the box
+goes.
 
 The frames come from the first of three sources that has any for the session:
 

@@ -743,6 +743,10 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   and, where a cue covers it, the frame (`.st-preview-frame`, a part of a sheet scaled to the box); the time
   alone over a gap or when the picture fails, never a broken picture; shown during a drag, gone on leave and
   when the controls hide, no pointer events. `window.notesdStream.previews` holds the list it read.
+- The subtitle and the box never cover each other: while the box is up `.st-caption` is lifted to 10 px above it
+  (`--st-caption-lift`, `bottom: max(11vh, …)`), and goes back when the box goes. Faked routes, real page
+  (`make-hls-fixture.sh`, `$V up --web`): `STREAM_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/preview-caption.steps.mjs`
+  logs `CAPTION PASS`.
 - `GET /api/stream/sessions/:id/previews` answers `{state: none|partial|ready, rev, source: provider|local|null, cues}`
   (403 `unknown_session` as the session route). The first source that has frames: a stream's own seek-preview
   WebVTT track (pictures through the pass-through with `img=1`, kind `image` in the evidence, never in a

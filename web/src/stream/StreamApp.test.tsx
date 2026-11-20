@@ -606,6 +606,28 @@ describe('the seek preview over the timeline (seek-preview-thumbnails phase 4)',
     expect(frame(t.el)).toBeNull();
   });
 
+  it('lifts the subtitle clear of the box while it is shown, and puts it back when the box goes', async () => {
+    const t = await hoverable(() => jsonResponse(previewsJson({ cues: CUES })));
+    const track = { kind: 'subtitles', mode: 'hidden', activeCues: [{ text: 'Copy that.' }], cues: [] };
+    Object.defineProperty(t.video, 'textTracks', { configurable: true, value: [track] });
+    act(() => {
+      t.video.dispatchEvent(new Event('timeupdate'));
+    });
+    const caption = () => t.el.querySelector<HTMLElement>('[data-testid="caption"]')!;
+    const lift = () => caption().style.getPropertyValue('--st-caption-lift');
+    expect(caption().textContent).toBe('Copy that.');
+    expect(lift()).toBe('');
+    // The time alone: the box's bottom (60) + its height (22) + the gap (10).
+    pointer(t.seek, 'pointermove', xAt(300));
+    expect(lift()).toBe('92px');
+    // With the frame: 60 + (135 + 22) + 10.
+    await act(async () => t.sheets.answer(SHEET_A, SIZE));
+    expect(lift()).toBe('227px');
+    pointer(t.seek, 'pointerout', xAt(300), { relatedTarget: t.stage });
+    expect(box(t.el)).toBeNull();
+    expect(lift()).toBe('');
+  });
+
   it('shows the time alone when the daemon has no previews at all (R2.1)', async () => {
     const t = await hoverable(() => jsonResponse({ error: 'not_found' }, 404));
     pointer(t.seek, 'pointermove', xAt(300));

@@ -35,6 +35,7 @@ import {
   hoverTime,
   loadSheetImage,
   PREVIEW_EDGE_PX,
+  PREVIEW_GAP_PX,
   PREVIEW_TIME_PX,
   PREVIEW_WIDTH_PX,
   previewPlacement,
@@ -473,23 +474,35 @@ function useSheetCache(load: LoadSheet, rev: number): SheetCache {
   return cache;
 }
 
+/** Where the hover box goes and what it holds: the frame's cue and style (null: the time alone), its size and its place in the stage. */
+interface PreviewBox {
+  cue: PreviewCue | null;
+  frame: ReturnType<typeof frameStyle> | null;
+  size: { width: number; height: number };
+  at: { left: number; bottom: number };
+}
+
+function previewBox(hover: Hover, cues: readonly PreviewCue[], sheets: SheetCache): PreviewBox {
+  const cue = cueAt(cues, hover.t);
+  const sheet = cue === null ? null : sheets.peek(cue.url);
+  const width = Math.min(PREVIEW_WIDTH_PX, Math.max(0, hover.stage.width - 2 * PREVIEW_EDGE_PX));
+  const frame = cue !== null && sheet?.state === 'ready' ? frameStyle(cue, sheet, width) : null;
+  const size = frame === null ? { width: TIME_ONLY_WIDTH_PX, height: PREVIEW_TIME_PX } : { width: frame.width, height: frame.height + PREVIEW_TIME_PX };
+  return { cue, frame, size, at: previewPlacement(hover.clientX, hover.stage, hover.trackTop, size) };
+}
+
 /**
  * The box over the timeline while the pointer is on it or drags it: the frame of that second where the
  * session's previews hold one and its picture loaded, and the time under it; the time alone in a gap,
- * while the picture loads, and when it failed. It takes no pointer and is drawn before the captions and
- * the controls, which paint over it.
+ * while the picture loads, and when it failed. It takes no pointer; the caption is lifted clear of it
+ * (`--st-caption-lift`), so neither covers the other.
  */
-function SeekPreview({ hover, cues, sheets, rev }: { hover: Hover; cues: readonly PreviewCue[]; sheets: SheetCache; rev: number }) {
-  const cue = cueAt(cues, hover.t);
+function SeekPreview({ hover, box, sheets, rev }: { hover: Hover; box: PreviewBox; sheets: SheetCache; rev: number }) {
+  const { cue, frame, size, at } = box;
   const url = cue?.url ?? null;
   useEffect(() => {
     if (url !== null) sheets.want(url);
   }, [url, sheets, rev]);
-  const sheet = url === null ? null : sheets.peek(url);
-  const width = Math.min(PREVIEW_WIDTH_PX, Math.max(0, hover.stage.width - 2 * PREVIEW_EDGE_PX));
-  const frame = cue !== null && sheet?.state === 'ready' ? frameStyle(cue, sheet, width) : null;
-  const size = frame === null ? { width: TIME_ONLY_WIDTH_PX, height: PREVIEW_TIME_PX } : { width: frame.width, height: frame.height + PREVIEW_TIME_PX };
-  const at = previewPlacement(hover.clientX, hover.stage, hover.trackTop, size);
   return (
     <div
       className="st-preview"
@@ -690,11 +703,14 @@ export function StreamApp({
   const fill = view.duration > 0 ? (Math.min(view.time, view.duration) / view.duration) * 100 : 0;
   const sourceText = sourceLine(state.changingSource, state.sourceNotice, state.torrent !== null, state.switchedWhy);
 
+  // While the hover box is up the caption sits just above it: a subtitle is never under the box, nor over it.
+  const box = hover !== null && !hidden && view.duration > 0 ? previewBox(hover, state.previews.cues, sheets) : null;
+  const captionLift = box === null ? undefined : ({ '--st-caption-lift': `${box.at.bottom + box.size.height + PREVIEW_GAP_PX}px` } as CSSProperties);
   return (
     <IconContext.Provider value={ICONS}>
       <div ref={stageRef} className={hidden ? 'st-stage st-idle' : 'st-stage'} data-stage={state.stage} onMouseMove={wake}>
         <video ref={setVideo} className="st-video" playsInline muted={muted} onClick={togglePlay} onDoubleClick={fullscreenToggle} />
-        {hover !== null && !hidden && view.duration > 0 && <SeekPreview hover={hover} cues={state.previews.cues} sheets={sheets} rev={state.previews.rev} />}
+        {box !== null && hover !== null && <SeekPreview hover={hover} box={box} sheets={sheets} rev={state.previews.rev} />}
         <div className="st-top">
           <span className="st-title">{state.title}</span>
           {state.cached !== null && <CachedMark cached={state.cached} />}
@@ -726,7 +742,7 @@ export function StreamApp({
           )}
         </div>
         {state.caption !== '' && (
-          <div className="st-caption" aria-live="off" data-testid="caption">
+          <div className="st-caption" aria-live="off" data-testid="caption" style={captionLift}>
             {state.caption.split('\n').map((line, i) => (
               <span key={i}>{line}</span>
             ))}
