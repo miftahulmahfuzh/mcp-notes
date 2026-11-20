@@ -155,9 +155,9 @@ export function rateMbps(record) {
   return bytes !== null && ms !== null && ms > 0 ? round((bytes * 8) / (ms / 1000) / 1e6) : null;
 }
 
-/** A pass-through answer (not a page line, not a session record). */
+/** A pass-through answer of the play: a seek-preview picture (kind `image`, never part of the play) is not one. */
 function isPass(r) {
-  return r[R.type] === FIELDS.types.request;
+  return r[R.type] === FIELDS.types.request && r[R.kind] !== 'image';
 }
 
 /** An answer that failed: notesd refused it or broke off, or the stream host answered 4xx/5xx (416 aside). */

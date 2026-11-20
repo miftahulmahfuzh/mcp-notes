@@ -140,10 +140,11 @@ function hostOf(url: string): string | null {
   return abs === null ? null : new URL(abs).host.toLowerCase();
 }
 
-/** The hosts a resolve returned: the manifest's and every subtitle track's. */
+/** The hosts a resolve returned: the manifest's, every subtitle track's and the seek-preview track's. */
 export function sourceHosts(source: ResolvedSource): Set<string> {
   const hosts = new Set<string>();
-  for (const url of [source.manifest_url, ...source.subtitles.map((t) => t.url)]) {
+  const named = [source.manifest_url, ...source.subtitles.map((t) => t.url), ...(source.thumbnails ? [source.thumbnails.url] : [])];
+  for (const url of named) {
     const host = hostOf(url);
     if (host !== null) hosts.add(host);
   }

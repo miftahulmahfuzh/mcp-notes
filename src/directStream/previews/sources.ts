@@ -5,6 +5,7 @@ import type { DirectStreamService } from '../service.js';
 import type { StreamSession } from '../sessions.js';
 import type { TorrentStreams } from '../torrent/service.js';
 import { cacheSource } from './cacheSource.js';
+import { providerSource } from './providerSource.js';
 import { torrentSource } from './torrentSource.js';
 import type { PreviewSource } from './types.js';
 
@@ -37,6 +38,7 @@ export type PreviewSourceFactory = (deps: PreviewSourceDeps) => PreviewSource | 
  * `torrentSource` before the cache), then this machine's stream cache. Each source is one line here.
  */
 export const PREVIEW_SOURCES: readonly PreviewSourceFactory[] = [
+  providerSource,
   torrentSource,
   cacheSource,
 ];

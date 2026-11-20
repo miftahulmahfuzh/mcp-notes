@@ -89,6 +89,16 @@ export interface CapturedHeaders {
   user_agent: string | null;
 }
 
+/**
+ * A player's seek-preview WebVTT track the provider's page loaded (resolve.mjs thumbnailTrack), with the headers
+ * that very request carried: the daemon fetches the track, and the pictures it names, with exactly these
+ * (previews/providerSource.ts, passThrough.ts). Never a subtitle.
+ */
+export interface ThumbnailTrack extends CapturedHeaders {
+  /** Absolute http(s) address. */
+  url: string;
+}
+
 export interface SubtitleTrack {
   /** Absolute http(s) address on the stream host. */
   url: string;
@@ -124,6 +134,8 @@ export interface ResolvedSource {
   en_subtitle: boolean;
   /** Absent or null when the resolve was not told the title's original language. */
   audio?: SourceAudio | null;
+  /** The player's seek-preview track; absent or null when the page loaded none (or an older resolver answered). */
+  thumbnails?: ThumbnailTrack | null;
   took_s: number | null;
 }
 
