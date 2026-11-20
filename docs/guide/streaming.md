@@ -472,6 +472,13 @@ stream. When the provider with the English track has the shorter picture (a 960p
 recording found after a 1080p stream), the taller stream plays and takes that provider's English
 subtitle file (`borrowed_from`); only a separate file can be lent, not a track inside a manifest.
 
+**1080p by default.** A stream shorter than 1000 lines (a 720p) that would play is held while the
+providers after it that gave this machine a 1080p stream before, quickly (a median of 20 s at most,
+no failure since), are asked, for 25 seconds at most in all. The first of them with a 1080p stream
+plays (`taller than the held <provider>`); otherwise the held stream plays as soon as the wait ends.
+The held attempt reads `held: 720p, asking <providers> for 1080p (25 s at most)`. Nothing is waited
+for when no provider after it ever gave a 1080p stream here, and `--only` takes the first stream.
+
 **The order** (`order.mjs`): first the provider `DEFAULT_STREAM_FIRST_PROVIDER` names
 (`cinemaos.live`: it reaches a stream in 7 to 11 s, where a list of embeds can take a minute),
 while it earns the place: after three failures in a row, or a play whose delivery was bad, it is

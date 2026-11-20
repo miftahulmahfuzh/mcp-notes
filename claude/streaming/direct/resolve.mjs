@@ -14,6 +14,14 @@ const ABORTS = new Set(['no_chrome', 'chrome_not_reachable']);
 export const SUBTITLE_EXTRA_TRIES = 4;
 /** After this many providers gave no stream, the next ones are asked side by side instead of one after another. */
 export const LOOKAHEAD_AFTER = 2;
+/**
+ * 1080p by default: a stream shorter than this (a 720p) with a subtitle is held while the providers after it that
+ * gave this machine a 1080p stream before, quickly (median at most TALLER_MEDIAN_S), are asked, for at most
+ * TALLER_WAIT_S in all. The first of them with a stream at least this tall plays; else the held stream does.
+ */
+export const TALLER_HEIGHT = 1000;
+export const TALLER_MEDIAN_S = 20;
+export const TALLER_WAIT_S = 25;
 /** How many providers are asked at once then (the one whose turn it is, and the next ones in the order). */
 export const LOOKAHEAD_WIDTH = 4;
 
@@ -446,6 +454,28 @@ async function resolveInOrder(
   /** The best stream found so far that has no English subtitle, while a few more providers are asked. */
   let held = null;
   let extraTries = 0;
+  /** A stream shorter than TALLER_HEIGHT that would have played, held while the taller providers after it are asked. */
+  let short = null;
+  let shortUntil = 0;
+  /** A provider that gave this machine a tall stream before, quickly, and gave one lately (worth a short wait for 1080p). */
+  const tallBefore = (provider) => {
+    const h = Object.hasOwn(health, provider.name) ? health[provider.name] : null;
+    return h !== null && (h.best_height ?? 0) >= TALLER_HEIGHT && Boolean(h.last_success_at) && (h.median_s ?? Number.POSITIVE_INFINITY) <= TALLER_MEDIAN_S && (h.consecutive_failures ?? 0) === 0;
+  };
+  /** The providers after `index` worth asking for a taller stream. */
+  const tallerAfter = (index) => candidates.slice(index + 1).filter((p) => !p.browser_only && embedUrl(p, ref) !== null && resting(p) === null && tallBefore(p));
+  /** The stream found plays now, unless it is short and a taller provider is worth a wait: then it is held (true). */
+  const holdShort = (index, source, detail) => {
+    if (only !== null || short !== null) return false;
+    const height = source.best_height ?? 0;
+    if (height <= 0 || height >= TALLER_HEIGHT) return false;
+    const taller = tallerAfter(index);
+    if (taller.length === 0) return false;
+    short = { source, attempts: null };
+    shortUntil = clock() + TALLER_WAIT_S * 1000;
+    attempts.push(attempt(candidates[index], 'resolved', source.took_s ?? 0, `${detail}, held: ${height}p, asking ${taller.map((p) => p.name).join(', ')} for 1080p (${TALLER_WAIT_S} s at most)`));
+    return true;
+  };
   const wantsSubtitle = only === null && audioLang !== null && normalizeLang(audioLang) !== 'en';
   const begun = clock();
   const resting = (provider) => {
@@ -487,11 +517,16 @@ async function resolveInOrder(
       attempts.push(attempt(provider, 'skipped', 0, `resting: it failed ${h.consecutive_failures} times in a row (${restReason(h)}); asked again after ${new Date(restUntil).toISOString().slice(0, 16).replace('T', ' ')} UTC`));
       continue;
     }
+    if (short !== null) {
+      // Only the providers that gave a tall stream before are asked, within the wait.
+      if (clock() >= shortUntil) break;
+      if (!tallBefore(provider)) continue;
+    }
     if (held !== null && extraTries >= SUBTITLE_EXTRA_TRIES) break;
     // With a stream in hand, a provider that was tried on this machine and never gave one is not worth the wait.
     if (held !== null && Object.hasOwn(health, provider.name) && !health[provider.name]?.last_success_at) continue;
     if (deadlineS !== null && clock() - begun >= deadlineS * 1000) {
-      if (held !== null) break;
+      if (held !== null || short !== null) break;
       const left = candidates.length - index;
       return { ok: false, ...base, source: null, error: 'deadline', detail: `stopped after ${seconds(clock() - begun)} s; ${left} provider(s) not tried`, attempts };
     }
@@ -511,12 +546,26 @@ async function resolveInOrder(
         ahead += 1;
       }
     }
-    const { sniffed, err, tookS } = await asked;
+    let answered;
+    if (short !== null) {
+      // The held short stream plays when the taller provider does not answer within the wait.
+      let timer;
+      const late = new Promise((resolve) => {
+        timer = setTimeout(() => resolve(null), Math.max(0, shortUntil - clock()));
+      });
+      answered = await Promise.race([asked, late]);
+      clearTimeout(timer);
+      if (answered === null) {
+        attempts.push(attempt(provider, 'skipped', seconds(TALLER_WAIT_S * 1000), `no answer within the ${TALLER_WAIT_S} s wait for a taller stream`));
+        break;
+      }
+    } else answered = await asked;
+    const { sniffed, err, tookS } = answered;
     if (err !== null) {
       misses += 1;
       attempts.push(attempt(provider, 'error', tookS, String(err?.message ?? err)));
       if (err instanceof ChromeError && ABORTS.has(err.code)) {
-        if (held !== null) break;
+        if (held !== null || short !== null) break;
         return { ok: false, ...base, source: null, error: err.code, attempts };
       }
       continue;
@@ -563,6 +612,16 @@ async function resolveInOrder(
       const rank = subtitleRank(source.subtitles);
       // A subtitle to show (English, or the single unnamed file the player shows by default) ends the search.
       if (!wantsSubtitle || (rank <= 1 && held === null)) {
+        if (short !== null) {
+          // Asked for a taller stream: it plays only when it is one; else the held stream plays.
+          if ((source.best_height ?? 0) < TALLER_HEIGHT) {
+            attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}${lent}, not taller than the held stream`));
+            continue;
+          }
+          attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}${lent}, taller than the held ${short.source.provider}`));
+          return { ok: true, ...base, source, attempts };
+        }
+        if (holdShort(index, source, `${describe(found)}${heardAs}${lent}`)) continue;
         attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}${lent}`));
         return { ok: true, ...base, source, attempts };
       }
@@ -596,6 +655,7 @@ async function resolveInOrder(
     attempts.push(attempt(provider, 'no_stream', tookS, detail));
     misses += 1;
   }
+  if (short !== null) return { ok: true, ...base, source: short.source, attempts };
   if (held !== null) return { ok: true, ...base, source: held.source, attempts };
   return { ok: false, ...base, source: null, error: 'no_source', attempts };
 }

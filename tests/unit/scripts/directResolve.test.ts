@@ -264,6 +264,35 @@ describe('picking the stream out of a capture', () => {
   });
 });
 
+describe('1080p by default on the cloud side', () => {
+  const master = (height: number): string =>
+    ['#EXTM3U', '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",DEFAULT=YES,URI="subs/en.m3u8"', `#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x${height},SUBTITLES="subs"`, `${height}/index.m3u8`].join('\n');
+  const tall = (height: number): Json => capture({ hits: [hit({ url: `https://cdn.example/hls/${height}/master.m3u8?token=abc`, mime: 'application/vnd.apple.mpegurl', body: master(height) })] });
+  const TALL_BEFORE = { best_height: 1080, last_success_at: '2026-11-19T10:00:00Z', median_s: 6, consecutive_failures: 0, successes: 5, failures: 0 };
+
+  it('holds a 720p stream and plays the 1080p of a provider that gave one before', async () => {
+    const { sniff } = fakeSniffer({ 'alpha.example': tall(720), 'beta.example': tall(1080) });
+    const result = await resolveTitle(MOVIE, { providers: [provider('Alpha'), provider('Beta')], sniff, first: 'Alpha', health: { Beta: TALL_BEFORE } });
+    expect(result.source.provider).toBe('Beta');
+    expect(result.source.best_height).toBe(1080);
+    expect(result.attempts[0].detail).toMatch(/held: 720p, asking Beta for 1080p/);
+  });
+
+  it('plays the held 720p when the taller provider has only a short stream too', async () => {
+    const { sniff } = fakeSniffer({ 'alpha.example': tall(720), 'beta.example': tall(720) });
+    const result = await resolveTitle(MOVIE, { providers: [provider('Alpha'), provider('Beta')], sniff, first: 'Alpha', health: { Beta: TALL_BEFORE } });
+    expect(result.source.provider).toBe('Alpha');
+    expect(result.attempts.map((a: Json) => a.provider)).toEqual(['Alpha', 'Beta']);
+  });
+
+  it('plays a 720p at once when no provider after it gave this machine a 1080p stream', async () => {
+    const { sniff, calls } = fakeSniffer({ 'alpha.example': tall(720), 'beta.example': tall(1080) });
+    const result = await resolveTitle(MOVIE, { providers: [provider('Alpha'), provider('Beta')], sniff });
+    expect(result.source.provider).toBe('Alpha');
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe('resolving a title (R1.1, R1.3)', () => {
   it('skips a provider that answers with a bot check, records it, and tries the next with the same client', async () => {
     const { sniff, calls } = fakeSniffer({ 'alpha.example': botCapture(), 'beta.example': streamCapture() });
