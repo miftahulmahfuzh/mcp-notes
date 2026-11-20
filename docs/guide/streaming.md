@@ -1828,7 +1828,9 @@ and serves it from its own disk to the player page.
 
 The Stream side of the Movies page lists, once a day, the most seeded films and series on these indexes and
 probes their swarms: see [Trending on torrents](movies.md#trending-on-torrents). That job never plays or
-downloads anything; it reads the indexes' top lists and uses `TorrentStreams.peek`.
+downloads anything; it reads the indexes' top lists and uses `TorrentStreams.peek`. A probe of a torrent
+being played or opened answers from it and leaves it alone, and a probe deletes only the files its own join
+made: a torrent with a row or a folder on this machine keeps them.
 
 ![Trending on torrents, on the Stream side: the index's seed count and what the swarm said when it was opened](img/movies/trending.png)
 
@@ -1857,18 +1859,23 @@ DHT node and no peer.
    being fetched ahead, or `POST /api/stream/torrent` with `files` until its release route is
    called). Once nothing does, a finished download leaves at once and an unfinished one three
    minutes after its last file request.
-7. A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
-   A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
-8. Peers are reached over TCP only. uTP beside it (webtorrent's default, and notesd's until 2026-11-20) made things
-   worse from this machine, WSL 2 behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP
-   alone fetched 183, 226, 184 and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB. Films with a hundred seeders
-   at the trackers had been failing with one or two peers connected. `NOTESD_TORRENT_UTP=on` turns uTP back on.
-9. A peer's socket error never ends the daemon. A uTP connection that a peer resets reports its error when it
-   closes, often after the engine has let go of the peer; with nobody listening, that error ended notesd and
-   every stream with it. The engine now hears such an error itself (`utpGuard.ts`) and logs it, at most once a
-   minute: `torrent engine: 3 uTP connection error(s) nobody was listening for (last: UTP_ECONNRESET); ignored`.
-   The same file guards the engine's handshake with a peer whose torrent was already left (a swarm probe, a
-   torrent that lost the race): its late answer used to throw `Cannot read properties of null (reading 'dht')`.
+7. A torrent gets its `stream_torrents` row once a peer has sent its file list; one whose file list never
+   comes leaves no row. A torrent that does not play (it lost the race to another, its file was refused)
+   leaves its swarm with its row and its folder when its open made the row and nothing of it was played;
+   a row an earlier play made stays.
+   A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
+   A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder. Played means
+   the player page reported a position of it (at most one write a minute); the daemon's own reads of the
+   file (the header probe, the remux, a subtitle tier) are no play. A download never played counts from
+   when it finished, else from when it was made. At start and every six hours the same clearing also
+   deletes each folder under `NOTESD_TORRENT_DIR` named as an info hash that no row of this machine names
+   and nothing uses; the tracker book and the tracker lists beside them stay.
+8. Peers are reached over TCP only, with no switch. uTP beside it made things worse from this machine, WSL 2
+   behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP alone fetched 183, 226, 184
+   and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB.
+9. A late peer never ends the daemon. A torrent that was left (a swarm probe, a torrent that lost the race) may
+   still get a peer's handshake bytes just after; the engine ignores a handshake for a torrent it no longer
+   holds (`handshakeGuard.ts`).
 
 A download belongs to the machine that made it. A row of another host (copied in from the old shared
 database, or made by a second daemon on the same Postgres) is listed with `available: false`, and its
@@ -1905,7 +1912,8 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   daemon's file route (30 s at most). A file whose audio names only languages other than the title's original is
   `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
-  one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six and 90 seconds.
+  one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six torrents and what
+  is left of the same 90 seconds, so one ask never takes longer.
 - **Asking again tries the next torrents, not the same ones.** The finder keeps up to twenty candidates, and one
   ask tries six. The torrent source remembers, per film or episode and in memory (until the daemon restarts), each
   torrent that was tried and did not play. The next ask of the same title (the Torrent Stream row again, the same
@@ -1956,14 +1964,18 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   A bot check is never counted and never skipped: it stays `bot_check`.
 - **The session.** `provider` is `Torrent`, `manifest_kind` `mp4`, `manifest_url` the torrent's file route
   (`/api/stream/torrent/<hash>/f/<index>`), and `session.torrent` names the info hash, the file, the release, the
-  index, the seed count and whether the file is whole on disk (`ready`) or still downloading. The pass-through refuses
+  index, the seed count and whether the file is whole on disk (`ready`) or still downloading. The daemon's log line of the
+  play names the index the torrent was found in and the others that list it (`playing <release> (from knaben, also
+  listed by apibay)`). The pass-through refuses
   every address for it. The play is recorded with the provider `Torrent`; a torrent play does not mark the title's
   Stream side verified (a cloud `no_source` before it still marks it stale).
 - **The shuffle button** moves to the next torrent the indexes listed, without asking them again, and lets go of the
   old one. A torrent session is never moved into the stream cache: its download is already on this machine.
 - **Leaving the swarm.** A session lets go of its torrent when the page closes or the film ends, when it moves to
   another torrent, after two minutes without a word from the page, and when the session ends; with no other session
-  on it the daemon leaves the swarm. Reopening the page takes the torrent again.
+  on it the daemon leaves the swarm. Reopening the page takes the torrent again. Each user of a torrent gives
+  back only its own hold: an ask that opens a torrent another session is playing and cannot use it (no file of
+  the episode, a dub, another torrent chosen first) never takes it out of the swarm.
 - **Playing again from disk.** A title whose torrent download is whole on this machine plays from disk at once, with
   no index asked and no swarm joined (no `Index:` or `Torrent:` attempt, `torrent.state` `ready`). The file is read again first: one
   that turns out to be a dub, or that Chrome cannot play, is passed over and the play goes on as if it were not there.
@@ -1976,12 +1988,12 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   out is an `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the
   background, so they are never counted.
 - **Finding a torrent** (`src/directStream/torrent/find/`). The finder asks the JSON indexes all at once, each by the
-  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series, TorrentsDB, Peerflix for a title made
-  in Spanish, and YTS for a film (each can be turned off or moved with `NOTESD_TORRENT_<NAME>_URL`; YTS, which timed out
-  from this network once, is given 6 s). TorrentsDB and Peerflix are Stremio add-ons that answer in Torrentio's shape.
+  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series, TorrentsDB, and Peerflix for a title
+  made in Spanish (each can be turned off or moved with `NOTESD_TORRENT_<NAME>_URL`). YTS has no index of its own:
+  Torrentio lists its releases. TorrentsDB and Peerflix are Stremio add-ons that answer in Torrentio's shape.
   TorrentsDB lists sites Torrentio does not (knaben, rargb, sktorrent, rutor); a torrent two indexes list is one
   candidate naming both. Peerflix lists Spanish releases, nearly all dubs, so for a title made in any other language it
-  gets no request and its attempt is `no_stream`, "not asked". Every request says it is notesd; a bot check is the outcome
+  gets no request and has no attempt. Every request says it is notesd; a bot check is the outcome
   `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
   out a release that names another title, a release or file named as a program or an archive (`... 1080p WEB
   H264-FLUX.exe`, `.scr`, `.rar`: the shape of a fake, which would only use up one of the play's six tries), a trailer,
@@ -1993,8 +2005,8 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
   (never a sample).
 - **A title with no IMDb id.** TMDB lists none for many small films (Chasing the Moon, 2024), and a play of one used
-  to end before any index was asked. Now the indexes keyed by the id (Torrentio, apibay, EZTV, TorrentsDB, Peerflix,
-  YTS) answer `no_stream`, "not asked: no IMDb id is known for this title, and this index is asked by it", with no
+  to end before any index was asked. Now the indexes keyed by the id (Torrentio, apibay, EZTV, TorrentsDB,
+  Peerflix when it is asked) answer `no_stream`, "not asked: no IMDb id is known for this title, and this index is asked by it", with no
   request, and the indexes asked by title and the fallback sites are asked as for any title. TMDB is asked twice for
   the id when it does not answer (a timeout, a 5xx, a 429), a failure is logged
   (`could not read the IMDb id of ... from TMDB`), and an id TMDB gave is kept for the daemon's run.
@@ -2065,8 +2077,8 @@ plain file. When the probe says the file is not one Chrome plays as is, the sess
 - **When it is not played.** The play starts once the first segment is written. ffmpeg that writes none in time, or
   stops with an error first, makes the torrent `unplayable` with the reason, and the next one is tried. Video other
   than H.264, HEVC, AV1 or VP9 (MPEG-2, VC-1, MPEG-4 Part 2) is `unplayable` without running ffmpeg.
-- **Stopping and replaying.** A session that lets go of its torrent stops its ffmpeg; the half-made remux starts over
-  the next time. A finished remux stays with the download and plays again from disk with no ffmpeg; it goes when the
+- **Stopping and replaying.** A session that lets go of its torrent stops its ffmpeg, and the half-made remux is
+  deleted once ffmpeg has exited; it starts over the next time. A finished remux stays with the download and plays again from disk with no ffmpeg; it goes when the
   download is cleared.
 - **HEVC** plays where the streaming Chrome decodes it. Where it cannot, the page stops with `mediaError ...` in its
   log, and the shuffle button (S) moves to the next torrent.

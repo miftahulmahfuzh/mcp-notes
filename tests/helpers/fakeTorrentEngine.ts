@@ -21,6 +21,8 @@ export interface FakeTorrentSpec {
 export class FakeTorrentEngine implements TorrentEngine {
   readonly added: string[] = [];
   readonly removed: string[] = [];
+  /** The torrents removed with `deleteFiles: true` (the real engine then deletes the whole folder). */
+  readonly deletedFiles: string[] = [];
   readonly selected: { infoHash: string; indexes: number[] }[] = [];
   readonly reads: { infoHash: string; index: number; start: number; end: number }[] = [];
   private readonly specs = new Map<string, FakeTorrentSpec>();
@@ -47,8 +49,9 @@ export class FakeTorrentEngine implements TorrentEngine {
     return this.handles.get(infoHash) ?? null;
   }
 
-  async remove(infoHash: string): Promise<void> {
+  async remove(infoHash: string, options?: { deleteFiles: boolean }): Promise<void> {
     this.removed.push(infoHash);
+    if (options?.deleteFiles === true) this.deletedFiles.push(infoHash);
     this.handles.delete(infoHash);
   }
 

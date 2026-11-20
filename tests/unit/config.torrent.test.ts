@@ -26,13 +26,6 @@ describe('torrent settings', () => {
     ).toEqual({ enabled: false, dir: '/mnt/data/torrents', uploadKbps: 64, keepDays: 3, discovery: false, peers: ['127.0.0.1:6881', '[::1]:7000', 'seed.local:51413'], trackerLists: false, finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', wyzieSync: null, sites: DEFAULT_TORRENT_SITES_CONFIG, whisper: { enabled: true, dir: path.join(DATA, 'whisper'), python: path.join(DATA, 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } });
   });
 
-  it('reach peers over TCP only unless NOTESD_TORRENT_UTP says on', () => {
-    expect(parseTorrent({}, DATA)).not.toHaveProperty('utp');
-    expect(parseTorrent({ NOTESD_TORRENT_UTP: 'off' }, DATA)).not.toHaveProperty('utp');
-    expect(parseTorrent({ NOTESD_TORRENT_UTP: 'on' }, DATA).utp).toBe(true);
-    expect(() => parseTorrent({ NOTESD_TORRENT_UTP: 'maybe' }, DATA)).toThrow(/NOTESD_TORRENT_UTP must be "on" or "off"/);
-  });
-
   it('refuse a relative folder, a zero cap or keep, and a peer without a port', () => {
     expect(() => parseTorrent({ NOTESD_TORRENT_DIR: 'torrents' }, DATA)).toThrow(/NOTESD_TORRENT_DIR must be an absolute path/);
     expect(() => parseTorrent({ NOTESD_TORRENT_UPLOAD_KBPS: '0' }, DATA)).toThrow(/NOTESD_TORRENT_UPLOAD_KBPS must be a positive integer/);

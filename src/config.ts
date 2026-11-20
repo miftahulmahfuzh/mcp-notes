@@ -333,7 +333,7 @@ export const DEFAULT_TORRENT_UPLOAD_KBPS = 100
 export const DEFAULT_TORRENT_KEEP_DAYS = 7
 
 /** The JSON torrent indexes the finder asks (src/directStream/torrent/find/). */
-export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'yts', 'torrentsdb', 'peerflix', 'knaben', 'bitsearch', 'torrentscsv'] as const
+export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'torrentsdb', 'peerflix', 'knaben', 'bitsearch', 'torrentscsv'] as const
 export type TorrentIndexName = (typeof TORRENT_INDEX_NAMES)[number]
 
 /**
@@ -362,7 +362,6 @@ export const TORRENT_INDEX_URL_KEYS: Record<TorrentIndexName, string> = {
   torrentio: 'NOTESD_TORRENT_TORRENTIO_URL',
   apibay: 'NOTESD_TORRENT_APIBAY_URL',
   eztv: 'NOTESD_TORRENT_EZTV_URL',
-  yts: 'NOTESD_TORRENT_YTS_URL',
   torrentsdb: 'NOTESD_TORRENT_TORRENTSDB_URL',
   peerflix: 'NOTESD_TORRENT_PEERFLIX_URL',
   knaben: 'NOTESD_TORRENT_KNABEN_URL',
@@ -444,11 +443,6 @@ export interface TorrentConfig {
   subtitleWaitMs?: number
   /** `NOTESD_TORRENT_DISCOVERY`, default on. `off`: no DHT and no trackers; peers come only from `peers`. */
   discovery: boolean
-  /**
-   * `NOTESD_TORRENT_UTP`, default off (unset): peers are reached over TCP only. `on`: uTP beside TCP, as before
-   * 2026-11-20. From this machine (WSL 2 behind NAT) uTP fetched 2.5 to 10 times less than TCP alone.
-   */
-  utp?: boolean
   /** `NOTESD_TORRENT_PEERS`: `host:port` addresses (comma-separated) added as a peer to every torrent. Empty by default. */
   peers: string[]
   /**
@@ -1118,7 +1112,6 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
       ? {}
       : { subtitleWaitMs: parsePositiveInt('NOTESD_TORRENT_SUBTITLE_WAIT_MS', env.NOTESD_TORRENT_SUBTITLE_WAIT_MS, 1500) }),
     discovery: parseSwitch('NOTESD_TORRENT_DISCOVERY', env.NOTESD_TORRENT_DISCOVERY),
-    ...(parseSwitchDefaultOff('NOTESD_TORRENT_UTP', env.NOTESD_TORRENT_UTP) ? { utp: true } : {}),
     peers: parsePeers(env.NOTESD_TORRENT_PEERS),
     trackerLists: parseSwitch('NOTESD_TORRENT_TRACKER_LISTS', env.NOTESD_TORRENT_TRACKER_LISTS),
     finder: parseTorrentFinder(env),
@@ -1218,7 +1211,7 @@ function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback:
  * NOTESD_TORRENT_TRACKER_LISTS (on or off; anything else throws ConfigError),
  * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
  * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_INDEX_TIMEOUT_MS, NOTESD_TORRENT_TORRENTIO_URL,
- * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_YTS_URL, NOTESD_TORRENT_TORRENTSDB_URL, NOTESD_TORRENT_PEERFLIX_URL,
+ * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_TORRENTSDB_URL, NOTESD_TORRENT_PEERFLIX_URL,
  * NOTESD_TORRENT_KNABEN_URL, NOTESD_TORRENT_BITSEARCH_URL, NOTESD_TORRENT_TORRENTSCSV_URL (a number below 1 or a non-http address throw ConfigError),
  * NOTESD_FFMPEG_BIN.
  * Torrent Whisper keys: NOTESD_TORRENT_WHISPER, NOTESD_TORRENT_WHISPER_DIR, NOTESD_TORRENT_WHISPER_PYTHON,

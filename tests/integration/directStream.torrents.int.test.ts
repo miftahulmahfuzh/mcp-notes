@@ -125,6 +125,9 @@ describe('stream_torrents', () => {
     expect(res.status).toBe(206);
     expect(Buffer.from(await res.arrayBuffer()).equals(VIDEO.subarray(2990))).toBe(true);
     expect(engine.added).toEqual([]);
+    // A read of the file is no play; the player page's report marks it.
+    expect((await repo.get('host-a', HASH))?.playedAt).toBeNull();
+    await restarted.played(HASH);
     expect((await repo.get('host-a', HASH))?.playedAt).toEqual(T0);
   });
 });

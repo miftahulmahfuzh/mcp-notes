@@ -16,7 +16,6 @@ const TORRENTIO_EPISODE = 'https://torrentio.strem.fun/stream/series/tt0903747:1
 const APIBAY_FILM = 'https://apibay.org/q.php?q=tt1727587';
 const APIBAY_SERIES = 'https://apibay.org/q.php?q=tt0903747';
 const EZTV_SERIES = 'https://eztvx.to/api/get-torrents?imdb_id=0903747&limit=100&page=1';
-const YTS_FILM = 'https://yts.mx/api/v2/list_movies.json?query_term=tt1727587';
 const TORRENTSDB_FILM = 'https://torrentsdb.com/stream/movie/tt1727587.json';
 const TORRENTSDB_EPISODE = 'https://torrentsdb.com/stream/series/tt0903747:1:1.json';
 const NO_STREAMS = '{"streams":[]}';
@@ -44,7 +43,6 @@ function addonAnswer(addon: string, rows: Array<{ title: string; seeds: number; 
     streams: rows.map((r) => ({ name: `${addon}\n1080p`, title: `${r.title}\n👤 ${r.seeds} 💾 1.2 GB ⚙️ ${r.site}`, infoHash: r.hash, behaviorHints: {} })),
   });
 }
-const NO_YTS = '{"status":"ok","data":{"movie_count":0}}';
 // The title-search indexes (WIDER_TORRENT_SOURCES phase 2) answering nothing, for the tests about the IMDb-keyed ones.
 const KNABEN = 'https://api.knaben.org/v1';
 const BITSEARCH_FILM = 'https://bitsearch.to/api/v1/search?q=Sintel%202010&sort=seeders';
@@ -64,7 +62,7 @@ describe('findCandidates', () => {
     const found = await findCandidates({ ...SINTEL, imdbId: null }, { fetch });
     expect(calls.map((c) => c.url).sort()).toEqual([KNABEN, BITSEARCH_FILM, TCSV_FILM].sort());
     const byName = Object.fromEntries(found.indexes.map((a) => [a.index, a]));
-    for (const name of ['torrentio', 'apibay', 'torrentsdb', 'yts']) {
+    for (const name of ['torrentio', 'apibay', 'torrentsdb']) {
       expect(byName[name]).toMatchObject({ outcome: 'empty', detail: NO_IMDB_ID, listed: 0 });
     }
     expect(byName.bitsearch).toMatchObject({ outcome: 'ok', listed: 1 });
@@ -83,30 +81,26 @@ describe('findCandidates', () => {
     await expect(findCandidates({ ...SINTEL, imdbId: 'nonsense' }, { fetch: fakeFetch({}).fetch })).rejects.toThrow(RangeError);
   });
 
-  it('asks Torrentio, apibay, TorrentsDB and YTS for a film by its IMDb id and answers ranked candidates', async () => {
+  it('asks Torrentio, apibay and TorrentsDB for a film by its IMDb id and answers ranked candidates', async () => {
     const { fetch, calls } = fakeFetch({
       [TORRENTIO_FILM]: body(fixture('torrentio-movie-sintel.json')),
       [APIBAY_FILM]: body(fixture('apibay-sintel.json')),
-      [YTS_FILM]: body(fixture('yts-sintel.json')),
       [TORRENTSDB_FILM]: body(NO_STREAMS),
       ...NOTHING_BY_TITLE_FILM,
     });
     const found = await findCandidates(SINTEL, { fetch });
-    expect(calls.map((c) => c.url).sort()).toEqual([APIBAY_FILM, TORRENTIO_FILM, TORRENTSDB_FILM, YTS_FILM, KNABEN, BITSEARCH_FILM, TCSV_FILM].sort());
+    expect(calls.map((c) => c.url).sort()).toEqual([APIBAY_FILM, TORRENTIO_FILM, TORRENTSDB_FILM, KNABEN, BITSEARCH_FILM, TCSV_FILM].sort());
     expect(calls.every((c) => c.userAgent === TORRENT_INDEX_USER_AGENT)).toBe(true);
     expect(found.indexes.map((a) => [a.index, a.outcome, a.listed])).toEqual([
       ['torrentio', 'ok', 32],
       ['apibay', 'ok', 19],
       ['torrentsdb', 'empty', 0],
-      ['peerflix', 'empty', 0],
-      ['yts', 'ok', 3],
       ['knaben', 'empty', 0],
       ['bitsearch', 'empty', 0],
       ['torrentscsv', 'empty', 0],
     ]);
     expect(found.candidates.map((c) => c.infoHash)).toEqual([
       'a779fa758f2229586eebc2e5960eb32fe5659596',
-      'b9c4e2d4c0f43a5d1e8f7a6b5c4d3e2f1a0b9c8d',
       '43f4001de4ab25d521c63684e2b69804193ed9d9',
       '150922bce30a1091e347741ebbf96072593a69b4',
     ]);
@@ -116,11 +110,10 @@ describe('findCandidates', () => {
       expect(c.seeds).toBeGreaterThanOrEqual(5);
       expect(c.sizeBytes).toBeGreaterThan(0);
     }
-    expect(found.candidates[0]).toMatchObject({ listedBy: ['torrentio', 'yts'], fileName: 'Sintel.2010.720p.BluRay.x264.AAC-[YTS.MX].mp4' });
+    expect(found.candidates[0]).toMatchObject({ listedBy: ['torrentio'], fileName: 'Sintel.2010.720p.BluRay.x264.AAC-[YTS.MX].mp4' });
     expect(found.candidates[0]?.release.direct).toBe(true);
     const mitzep = found.excluded.filter((e) => e.infoHash === 'afb2c3f4ee0901947219e69997e95cd7280ca2d7');
     expect(mitzep).toEqual([expect.objectContaining({ seeds: 1, reason: 'few_seeds' })]);
-    expect(found.excluded.find((e) => e.infoHash === '3d0000000000000000000000000000000000ab3d')?.reason).toBe('three_d');
   });
 
   it('asks Torrentio, apibay and EZTV for an episode and keeps only that episode or a pack that holds it', async () => {
@@ -132,14 +125,12 @@ describe('findCandidates', () => {
       ...NOTHING_BY_TITLE_EPISODE,
     });
     const found = await findCandidates(BREAKING_BAD, { fetch });
-    expect(calls.some((c) => c.url.includes('yts'))).toBe(false);
     expect(calls.some((c) => c.url.includes('peerflix'))).toBe(false);
     expect(found.indexes.map((a) => [a.index, a.outcome])).toEqual([
       ['torrentio', 'ok'],
       ['apibay', 'empty'],
       ['eztv', 'empty'],
       ['torrentsdb', 'empty'],
-      ['peerflix', 'empty'],
       ['knaben', 'empty'],
       ['bitsearch', 'empty'],
       ['torrentscsv', 'empty'],
@@ -204,7 +195,6 @@ describe('findCandidates', () => {
     const { fetch } = fakeFetch({
       [TORRENTIO_FILM]: body(torrentioAnswer(rows)),
       [APIBAY_FILM]: body(fixture('apibay-empty.json')),
-      [YTS_FILM]: body(NO_YTS),
     });
     const found = await findCandidates(SINTEL, { fetch });
     expect(found.candidates.map((c) => c.infoHash)).toEqual([hash(1), hash(7)]);
@@ -221,17 +211,14 @@ describe('findCandidates', () => {
     const { fetch } = fakeFetch({
       [TORRENTIO_FILM]: body(fixture('cloudflare-challenge.html'), 403, { 'content-type': 'text/html', 'cf-mitigated': 'challenge' }),
       [APIBAY_FILM]: body(fixture('apibay-sintel.json')),
-      [YTS_FILM]: () => new Promise<Response>(() => {}),
-      [TORRENTSDB_FILM]: body(NO_STREAMS),
+      [TORRENTSDB_FILM]: () => new Promise<Response>(() => {}),
       ...NOTHING_BY_TITLE_FILM,
     });
     const found = await findCandidates(SINTEL, { fetch, timeoutMs: 50 });
     expect(found.indexes).toEqual([
       expect.objectContaining({ index: 'torrentio', outcome: 'bot_check', listed: 0 }),
       expect.objectContaining({ index: 'apibay', outcome: 'ok', listed: 19 }),
-      expect.objectContaining({ index: 'torrentsdb', outcome: 'empty', listed: 0 }),
-      expect.objectContaining({ index: 'peerflix', outcome: 'empty', listed: 0 }),
-      expect.objectContaining({ index: 'yts', outcome: 'error', detail: expect.stringMatching(/^timed out after /), listed: 0 }),
+      expect.objectContaining({ index: 'torrentsdb', outcome: 'error', detail: expect.stringMatching(/^timed out after /), listed: 0 }),
       expect.objectContaining({ index: 'knaben', outcome: 'empty', listed: 0 }),
       expect.objectContaining({ index: 'bitsearch', outcome: 'empty', listed: 0 }),
       expect.objectContaining({ index: 'torrentscsv', outcome: 'empty', listed: 0 }),
@@ -250,7 +237,6 @@ describe('findCandidates', () => {
       expect.objectContaining({ index: 'apibay', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
       expect.objectContaining({ index: 'eztv', outcome: 'bot_check' }),
       expect.objectContaining({ index: 'torrentsdb', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
-      expect.objectContaining({ index: 'peerflix', outcome: 'empty' }),
       expect.objectContaining({ index: 'knaben', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
       expect.objectContaining({ index: 'bitsearch', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
       expect.objectContaining({ index: 'torrentscsv', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
@@ -335,7 +321,6 @@ const PAN_URL = {
   apibay: 'https://apibay.org/q.php?q=tt0457430',
   torrentsdb: 'https://torrentsdb.com/stream/movie/tt0457430.json',
   peerflix: 'https://addon.peerflix.mov/stream/movie/tt0457430.json',
-  yts: 'https://yts.mx/api/v2/list_movies.json?query_term=tt0457430',
 };
 const PEERFLIX_PAN = JSON.stringify({
   streams: [
@@ -352,7 +337,6 @@ describe('findCandidates with the Stremio add-on providers', () => {
     const { fetch, calls } = fakeFetch({
       [TORRENTIO_FILM]: body(fixture('torrentio-movie-sintel.json')),
       [APIBAY_FILM]: body(fixture('apibay-empty.json')),
-      [YTS_FILM]: body(fixture('yts-sintel.json')),
       [TORRENTSDB_FILM]: body(
         addonAnswer('TorrentsDB', [
           { title: 'Sintel 2010 720p BluRay', seeds: 45, hash: 'A779FA758F2229586EEBC2E5960EB32FE5659596', site: 'knaben' },
@@ -365,7 +349,7 @@ describe('findCandidates with the Stremio add-on providers', () => {
     expect(found.indexes.find((a) => a.index === 'torrentsdb')).toMatchObject({ outcome: 'ok', listed: 2 });
     const shared = found.candidates.filter((c) => c.infoHash === 'a779fa758f2229586eebc2e5960eb32fe5659596');
     expect(shared).toHaveLength(1);
-    expect(shared[0]?.listedBy).toEqual(['torrentio', 'torrentsdb', 'yts']);
+    expect(shared[0]?.listedBy).toEqual(['torrentio', 'torrentsdb']);
     expect(shared[0]?.seeds).toBeGreaterThanOrEqual(45);
     expect(found.candidates.find((c) => c.infoHash === hash(5))).toMatchObject({ index: 'torrentsdb', listedBy: ['torrentsdb'], site: 'rargb' });
   });
@@ -376,7 +360,6 @@ describe('findCandidates with the Stremio add-on providers', () => {
       [PAN_URL.apibay]: body(fixture('apibay-empty.json')),
       [PAN_URL.torrentsdb]: body(NO_STREAMS),
       [PAN_URL.peerflix]: body(PEERFLIX_PAN),
-      [PAN_URL.yts]: body(NO_YTS),
     });
     const found = await findCandidates(PAN, { fetch });
     expect(calls.map((c) => c.url)).toContain(PAN_URL.peerflix);
@@ -385,7 +368,6 @@ describe('findCandidates with the Stremio add-on providers', () => {
       ['apibay', 'empty'],
       ['torrentsdb', 'empty'],
       ['peerflix', 'ok'],
-      ['yts', 'empty'],
       ['knaben', 'error'],
       ['bitsearch', 'error'],
       ['torrentscsv', 'error'],
@@ -399,11 +381,11 @@ describe('findCandidates with the Stremio add-on providers', () => {
         [TORRENTIO_FILM]: body(NO_STREAMS),
         [APIBAY_FILM]: body(fixture('apibay-empty.json')),
         [TORRENTSDB_FILM]: body(NO_STREAMS),
-        [YTS_FILM]: body(NO_YTS),
       });
       const found = await findCandidates(query, { fetch });
       expect(calls.some((c) => c.url.includes('peerflix'))).toBe(false);
-      expect(found.indexes.find((a) => a.index === 'peerflix')).toMatchObject({ outcome: 'empty', detail: expect.stringMatching(/^not asked: /), listed: 0 });
+      // Nor an attempt: a play's attempts and log do not name it for every title.
+      expect(found.indexes.map((a) => a.index)).not.toContain('peerflix');
     }
   });
 
@@ -414,7 +396,6 @@ describe('findCandidates with the Stremio add-on providers', () => {
       [PAN_URL.apibay]: body(fixture('apibay-empty.json')),
       [PAN_URL.torrentsdb]: body(fixture('cloudflare-challenge.html'), 403, { 'content-type': 'text/html', 'cf-mitigated': 'challenge' }),
       [PAN_URL.peerflix]: () => new Promise<Response>(() => {}),
-      [PAN_URL.yts]: body(NO_YTS),
     });
     const found = await findCandidates(PAN, { fetch: blocked.fetch, timeoutMs: 50 });
     expect(found.indexes).toEqual([
@@ -422,7 +403,6 @@ describe('findCandidates with the Stremio add-on providers', () => {
       expect.objectContaining({ index: 'apibay', outcome: 'empty' }),
       expect.objectContaining({ index: 'torrentsdb', outcome: 'bot_check', listed: 0 }),
       expect.objectContaining({ index: 'peerflix', outcome: 'error', detail: expect.stringMatching(/^timed out after /), listed: 0 }),
-      expect.objectContaining({ index: 'yts', outcome: 'empty' }),
       expect.objectContaining({ index: 'knaben', outcome: 'error', listed: 0 }),
       expect.objectContaining({ index: 'bitsearch', outcome: 'error', listed: 0 }),
       expect.objectContaining({ index: 'torrentscsv', outcome: 'error', listed: 0 }),
@@ -433,7 +413,6 @@ describe('findCandidates with the Stremio add-on providers', () => {
       [PAN_URL.torrentio]: torrentio,
       [PAN_URL.apibay]: body(fixture('apibay-empty.json')),
       [PAN_URL.torrentsdb]: body('', 500),
-      [PAN_URL.yts]: body(NO_YTS),
     });
     const again = await findCandidates(PAN, { fetch: failing.fetch });
     expect(again.indexes.find((a) => a.index === 'torrentsdb')).toMatchObject({ outcome: 'error', detail: 'HTTP 500' });

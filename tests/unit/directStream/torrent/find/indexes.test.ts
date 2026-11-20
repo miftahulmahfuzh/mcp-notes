@@ -10,7 +10,6 @@ import { peerflixIndex } from '../../../../../src/directStream/torrent/find/peer
 import { torrentioIndex } from '../../../../../src/directStream/torrent/find/torrentio.js';
 import { torrentsdbIndex } from '../../../../../src/directStream/torrent/find/torrentsdb.js';
 import type { IndexContext, TorrentQuery } from '../../../../../src/directStream/torrent/find/types.js';
-import { ytsIndex } from '../../../../../src/directStream/torrent/find/yts.js';
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../fixtures/torrent');
 const fixture = (name: string): string => readFileSync(path.join(FIXTURES, name), 'utf8');
@@ -99,26 +98,6 @@ describe('eztv', () => {
     expect(answer.candidates).toHaveLength(1);
     expect(answer.candidates[0]).toMatchObject({ infoHash: '1697fa425af41580da18a07b3dd0bc6b589c51a0', seeds: 0, sizeBytes: 924303336, index: 'eztv' });
     expect(answer.candidates[0]?.trackers).toEqual(expect.arrayContaining(['udp://tracker.opentrackr.org:1337/announce', 'https://tracker.zhuqiy.com:443/announce']));
-  });
-});
-
-describe('yts', () => {
-  it('reads every torrent of the asked film as MP4 with AAC', async () => {
-    const { ctx } = ctxFor({ 'https://yts.example/api/v2/list_movies.json?query_term=tt1727587': fixture('yts-sintel.json') });
-    const answer = await ytsIndex('https://yts.example/api/v2').find(SINTEL, ctx);
-    expect(answer.candidates.map((c) => c.infoHash)).toEqual([
-      'a779fa758f2229586eebc2e5960eb32fe5659596',
-      'b9c4e2d4c0f43a5d1e8f7a6b5c4d3e2f1a0b9c8d',
-      '3d0000000000000000000000000000000000ab3d',
-    ]);
-    expect(answer.candidates[1]).toMatchObject({ name: 'Sintel (2010) [1080p] [bluray] [x264] [YTS]', seeds: 12, site: 'YTS' });
-    expect(answer.candidates[1]?.release).toMatchObject({ direct: true, height: 1080 });
-    expect(answer.candidates[2]?.release.threeD).toBe(true);
-  });
-
-  it('reads an empty list as empty', async () => {
-    const { ctx } = ctxFor({ 'https://yts.example/api/v2/list_movies.json?query_term=tt1727587': '{"status":"ok","data":{"movie_count":0}}' });
-    expect((await ytsIndex('https://yts.example/api/v2').find(SINTEL, ctx)).outcome).toBe('empty');
   });
 });
 
@@ -211,15 +190,9 @@ describe('peerflix', () => {
     ]);
   });
 
-  it('sends no request for a title made in another language, or in an unknown one, and asks for Spanish in any case', async () => {
-    for (const originalLanguage of ['en', 'pt', null]) {
-      const { ctx, urls } = ctxFor({});
-      const answer = await peerflixIndex('https://peerflix.example').find({ ...SHAWSHANK, originalLanguage }, ctx);
-      expect(urls).toEqual([]);
-      expect(answer).toEqual({ outcome: 'empty', detail: expect.stringMatching(/^not asked: .*Spanish/), candidates: [] });
-    }
-    const { ctx, urls } = ctxFor({ 'https://peerflix.example/stream/movie/tt0111161.json': '{"streams":[]}' });
-    await peerflixIndex('https://peerflix.example').find({ ...SHAWSHANK, originalLanguage: 'ES' }, ctx);
-    expect(urls).toEqual(['https://peerflix.example/stream/movie/tt0111161.json']);
+  it('is asked only for a title made in Spanish, in any case', () => {
+    const peerflix = peerflixIndex('https://peerflix.example');
+    for (const originalLanguage of ['en', 'pt', null]) expect(peerflix.asks?.({ ...SHAWSHANK, originalLanguage })).toBe(false);
+    expect(peerflix.asks?.({ ...SHAWSHANK, originalLanguage: 'ES' })).toBe(true);
   });
 });

@@ -177,10 +177,36 @@ describe('TorrentStreams', () => {
     expect(engine.removed).toEqual([HASH]);
   });
 
-  it('records a torrent no peer describes as failed', async () => {
+  it('writes no row for a torrent no peer describes', async () => {
     const { streams, records } = build({ engine: new FakeTorrentEngine([]) });
     await expect(streams.open(PICK, OPEN)).rejects.toMatchObject({ code: 'no_metadata' });
-    expect(records.rows[0]).toMatchObject({ state: 'failed', error: 'no_metadata' });
+    expect(records.rows).toEqual([]);
+  });
+
+  it('a torrent that does not play, opened fresh and never played, leaves no row and no folder', async () => {
+    const { streams, engine, records, folder } = build();
+    await streams.open(PICK, OPEN);
+    await streams.use(HASH, [1]);
+    await put(folder, FILES[1]!.path, VIDEO.subarray(0, 100));
+    await streams.drop(HASH);
+    expect(engine.removed).toEqual([HASH]);
+    expect(records.rows).toEqual([]);
+    await expect(readdir(folder.dirOf(HASH))).rejects.toThrow();
+    await streams.open(PICK, OPEN);
+    await streams.discard(HASH);
+    expect(records.rows).toEqual([]);
+  });
+
+  it('a torrent that does not play keeps the row an earlier play made', async () => {
+    const records = new MemoryTorrentRecords();
+    await records.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: PICK.name, trackers: [] }, new Date(clock - 86_400_000));
+    const { streams, folder } = build({ records });
+    await streams.open(PICK, OPEN);
+    await streams.use(HASH, [1]);
+    await put(folder, FILES[1]!.path, VIDEO.subarray(0, 100));
+    await streams.drop(HASH);
+    expect(records.rows).toHaveLength(1);
+    expect(await onDisk(folder)).toEqual([FILES[1]!.path]);
   });
 
   it('plays a finished download from disk without joining a swarm (R2.9)', async () => {
@@ -204,7 +230,31 @@ describe('TorrentStreams', () => {
     expect(streams.status()).toMatchObject({ port: null, swarm: [] });
     expect(await streams.find(REF)).toMatchObject({ infoHash: HASH, fileIndex: 1, state: 'ready' });
     expect(await streams.filePath(HASH, 1)).toBe(folder.diskPath(HASH, FILES[1]!.path));
+    // Opening, using and reading the file (the header probe) is no play.
+    expect(records.rows[0]?.playedAt).toBeNull();
+    await streams.played(HASH);
     expect(records.rows[0]?.playedAt?.getTime()).toBe(clock);
+  });
+
+  it('marks a download played only when asked, at most once a minute, and never from a read of its file', async () => {
+    const { streams, records } = build();
+    await streams.open(PICK, OPEN);
+    await streams.use(HASH, [1]);
+    expect((await streams.serve(HASH, 1, 'bytes=0-9')).status).toBe(206);
+    expect(records.rows[0]?.playedAt).toBeNull();
+    await streams.played(HASH.toUpperCase());
+    const first = clock;
+    clock += 30_000;
+    await streams.played(HASH);
+    expect(records.rows[0]?.playedAt?.getTime()).toBe(first);
+    clock += 31_000;
+    await streams.played(HASH);
+    expect(records.rows[0]?.playedAt?.getTime()).toBe(clock);
+    // A played torrent that then loses is no loser: its row stays.
+    await streams.drop(HASH);
+    expect(records.rows).toHaveLength(1);
+    await streams.played('f'.repeat(40));
+    await streams.played('not a hash');
   });
 
   it('answers not_on_this_machine for the other machine\'s download', async () => {
@@ -233,6 +283,27 @@ describe('TorrentStreams', () => {
     await expect(readdir(folder.dirOf(OLD))).rejects.toThrow();
   });
 
+  it('sweeps folders no row of this host names and nothing uses, and keeps every other file under the root', async () => {
+    const records = new MemoryTorrentRecords();
+    const KEPT = 'b2'.repeat(20);
+    const ORPHAN = 'd3'.repeat(20);
+    const THEIRS = 'e4'.repeat(20);
+    await records.record('host-a', { infoHash: KEPT, ref: REF, name: 'Kept', release: null, trackers: [] }, new Date(clock));
+    await records.record('host-b', { infoHash: THEIRS, ref: REF, name: 'Theirs', release: null, trackers: [] }, new Date(clock));
+    const { streams, folder } = build({ records });
+    await streams.open(PICK, OPEN);
+    await records.delete('host-a', HASH);
+    for (const hash of [KEPT, ORPHAN, THEIRS, HASH]) {
+      await mkdir(path.join(folder.dirOf(hash), 'notesd-remux', '1'), { recursive: true });
+      await writeFile(path.join(folder.dirOf(hash), 'notesd-remux', '1', 'seg-00000.m4s'), 'x');
+    }
+    await writeFile(path.join(root, 'trackers.json'), '{}');
+    await writeFile(path.join(root, 'tracker-lists.json'), '{}');
+    await mkdir(path.join(root, 'not-a-torrent'), { recursive: true });
+    expect(await streams.prune()).toBe(2);
+    expect((await readdir(root)).sort()).toEqual([HASH, KEPT, 'not-a-torrent', 'tracker-lists.json', 'trackers.json'].sort());
+  });
+
   it('peeks at a swarm without recording, selecting or keeping anything (the trending probe)', async () => {
     const { streams, engine, records, folder } = build();
     const seen = await streams.peek(HASH.toUpperCase(), PICK.trackers, OPEN);
@@ -242,6 +313,48 @@ describe('TorrentStreams', () => {
     expect(engine.removed).toEqual([HASH]);
     expect(records.rows).toEqual([]);
     expect(await onDisk(folder)).toEqual([]);
+  });
+
+  it('never deletes the files of a torrent that has a row or a folder here', async () => {
+    const records = new MemoryTorrentRecords();
+    await records.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: null, trackers: [] }, new Date(clock));
+    const withRow = build({ records });
+    expect(await withRow.streams.peek(HASH, [], OPEN)).toMatchObject({ files: 3, live: true });
+    expect(withRow.engine.removed).toEqual([HASH]);
+    expect(withRow.engine.deletedFiles).toEqual([]);
+
+    const withFolder = build();
+    await put(withFolder.folder, FILES[1]!.path, VIDEO.subarray(0, 10));
+    await withFolder.streams.peek(HASH, [], OPEN);
+    expect(withFolder.engine.deletedFiles).toEqual([]);
+    expect(await onDisk(withFolder.folder)).toEqual([FILES[1]!.path]);
+
+    const fresh = build({ engine: new FakeTorrentEngine([{ infoHash: HASH, name: NAME, files: FILES }]) });
+    await rm(fresh.folder.dirOf(HASH), { recursive: true, force: true });
+    await fresh.streams.peek(HASH, [], OPEN);
+    expect(fresh.engine.deletedFiles).toEqual([HASH]);
+  });
+
+  it('answers from a torrent being opened for a play, and does not leave it', async () => {
+    let letIn: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      letIn = resolve;
+    });
+    class SlowEngine extends FakeTorrentEngine {
+      override async add(spec: Parameters<FakeTorrentEngine['add']>[0]) {
+        await gate;
+        return super.add(spec);
+      }
+    }
+    const { streams, engine } = build({ engine: new SlowEngine([{ infoHash: HASH, name: NAME, files: FILES }]) });
+    const opening = streams.open(PICK, OPEN);
+    await new Promise((r) => setTimeout(r, 5));
+    const peeked = streams.peek(HASH, [], OPEN);
+    letIn();
+    expect(await peeked).toMatchObject({ files: 3, videos: 1 });
+    await opening;
+    expect(engine.removed).toEqual([]);
+    expect(streams.stats(HASH)).not.toBeNull();
   });
 
   it('says a swarm nobody answers is no_metadata, and still leaves it', async () => {

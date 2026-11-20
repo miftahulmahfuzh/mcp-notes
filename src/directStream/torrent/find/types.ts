@@ -150,6 +150,8 @@ export interface TorrentIndex {
   name: string;
   /** The kinds it lists; absent: both. */
   kinds?: ReadonlyArray<TorrentQuery['kind']>;
+  /** Whether this title is one it is asked for; false: no request and no attempt. Absent: every title. */
+  asks?: (query: TorrentQuery) => boolean;
   /**
    * A shorter limit than findCandidates' timeoutMs; the shorter of the two applies. A `fallback` index's own limit
    * applies even when it is longer (phase 9's browser-driven sites need about 40 s).

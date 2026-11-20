@@ -3,7 +3,7 @@ import { parseRelease } from './release.js';
 import type { IndexAnswer, IndexRow, ReleaseHints, TorrentCandidate, TorrentQuery } from './types.js';
 
 /**
- * Public trackers added to every candidate (apibay and YTS list none; a Torrentio row may list only
+ * Public trackers added to every candidate (apibay lists none; a Torrentio row may list only
  * one site's retrackers). The swarm is also found through DHT; these only speed up the first peers.
  */
 export const DEFAULT_TRACKERS: readonly string[] = [

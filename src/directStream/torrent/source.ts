@@ -93,8 +93,10 @@ export interface TorrentSwarm {
   localUrl(infoHash: string, index: number): string;
   /** The video's length once the probe knows it: `/map` then answers seconds (phase 4's grey bar). */
   setDuration(infoHash: string, seconds: number): unknown;
-  /** One user fewer, and with none left the swarm is left at once (a torrent that lost the race, or did not play). Absent: `release`. */
+  /** Gives back a hold taken with `use`; with none left the swarm is left at once (a torrent that lost the race, or did not play). Absent: `release`. */
   drop?(infoHash: string): unknown;
+  /** For a torrent opened and not used: leaves its swarm at once when nothing uses it, and touches nobody's hold. Absent: `release`. */
+  discard?(infoHash: string): unknown;
   /** The peers connected and the download rate of an open torrent, now; null when it is not in the swarm. Absent in tests' fakes. */
   stats?(infoHash: string): Pick<TorrentStats, 'peers' | 'down_kbps'> | null;
 }
@@ -166,6 +168,13 @@ export interface TorrentResolveOptions {
 export type TorrentResolve =
   | { ok: true; torrent: SessionTorrent; source: ResolvedSource; attempts: ResolveAttempt[] }
   | { ok: false; error: 'no_source'; attempts: ResolveAttempt[] };
+
+/** Where the torrent that plays was found, for its log line: `from torrentio`, `from knaben, also listed by apibay`. */
+function foundIn(c: Pick<TorrentCandidate, 'index' | 'listedBy'> | null): string {
+  if (c === null) return '';
+  const others = (c.listedBy ?? []).filter((name) => name !== c.index);
+  return ` (from ${c.index}${others.length === 0 ? '' : `, also listed by ${others.join(', ')}`})`;
+}
 
 /** What one play knows besides the candidate: the same for every torrent it tries. */
 interface PlayFacts {
@@ -374,7 +383,7 @@ export class TorrentSource {
 
   /**
    * Finds the title's torrents and plays the first that works, trying at most MAX_TORRENT_TRIES within
-   * TORRENT_DEADLINE_MS. `attempts` holds one `Index: <name>` per index asked, then per torrent tried one
+   * TORRENT_DEADLINE_MS, one budget for the whole ask (the dub-named round gets what the proper round left). `attempts` holds one `Index: <name>` per index asked, then per torrent tried one
    * `Torrent: <release>`, and after the one that plays its `Subtitles: <tier>` attempts. Never throws.
    */
   async resolve(ref: StreamRef, options: TorrentResolveOptions): Promise<TorrentResolve> {
@@ -429,7 +438,7 @@ export class TorrentSource {
     };
     const out = await this.tryCandidates(ref, query, candidates, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...indexes, ...p.attempts] }), note);
     if (out.ok) {
-      this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), playing ${out.torrent.name}`);
+      this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), playing ${out.torrent.name}${foundIn(out.torrent.candidate)}`);
       return { ...out, attempts: [...indexes, ...out.attempts] };
     }
     // Nothing proper played: the dub-named releases are tried now, in their own round.
@@ -439,8 +448,9 @@ export class TorrentSource {
       return { ok: false, error: 'no_source', attempts: [...firstAttempts, ...left()] };
     }
     options.progress?.({ stage: 'trying releases whose name reads as a dub (the file may still carry the original)', attempts: firstAttempts });
-    const dubbed = await this.tryCandidates(ref, query, dubs, play, this.now() + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...firstAttempts, ...p.attempts] }), note);
-    this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s) and ${dubs.length} dub-named, ${dubbed.ok ? `playing ${dubbed.torrent.name} (its file carries the original ${options.audioLang ?? 'language'})` : 'none played'}`);
+    // The same budget as the proper round: one ask never takes longer than TORRENT_DEADLINE_MS in all.
+    const dubbed = await this.tryCandidates(ref, query, dubs, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...firstAttempts, ...p.attempts] }), note);
+    this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s) and ${dubs.length} dub-named, ${dubbed.ok ? `playing ${dubbed.torrent.name}${foundIn(dubbed.torrent.candidate)} (its file carries the original ${options.audioLang ?? 'language'})` : 'none played'}`);
     return dubbed.ok ? { ...dubbed, attempts: [...firstAttempts, ...dubbed.attempts] } : { ok: false, error: 'no_source', attempts: [...firstAttempts, ...dubbed.attempts, ...left()] };
   }
 
@@ -818,11 +828,15 @@ export class TorrentSource {
     return [{ provider: SUBTITLES_PENDING, outcome: 'skipped', took_s: seconds(started, this.now()), detail: 'the subtitle search goes on behind the play; the player loads the track when it arrives' }];
   }
 
-  /** One user fewer for a torrent that will not play, leaving its swarm at once where the swarm can (`drop`). */
-  private dropNow(infoHash: string): void {
+  /**
+   * Lets go of a torrent that will not play, leaving its swarm at once where the swarm can. `held`: this caller's
+   * `use` took a hold, which is given back (`drop`); without one nobody's hold is touched (`discard`).
+   */
+  private dropNow(infoHash: string, held: boolean): void {
     const swarm = this.opts.swarm;
+    const letGo = held ? swarm.drop : swarm.discard;
     void Promise.resolve()
-      .then(() => (swarm.drop === undefined ? swarm.release(infoHash) : swarm.drop(infoHash)))
+      .then(() => (letGo === undefined ? swarm.release(infoHash) : letGo.call(swarm, infoHash)))
       .catch((err: unknown) => this.log(`[notesd] torrent: could not release ${infoHash}: ${messageOf(err)}`));
   }
 
@@ -943,11 +957,12 @@ export class TorrentSource {
    */
   private race(ref: StreamRef, query: FindQuery, c: TorrentCandidate, position: number, play: PlayFacts, budgetMs: number): Racer {
     const started = this.now();
-    const state = { cancelled: false, opened: false, gone: false };
+    // `held`: this racer's `use` counted it as a user of the torrent; only then is there a hold to give back.
+    const state = { cancelled: false, opened: false, held: false, gone: false };
     const drop = (): void => {
       if (!state.opened || state.gone) return;
       state.gone = true;
-      this.dropNow(c.infoHash);
+      this.dropNow(c.infoHash, state.held);
     };
     const attempt = (outcome: ResolveOutcome, detail: string): ResolveAttempt => ({ provider: torrentLabel(c.name), outcome, took_s: seconds(started, this.now()), detail });
     const fail = (outcome: ResolveOutcome, detail: string, lasting = false): Raced => {
@@ -971,7 +986,14 @@ export class TorrentSource {
         if (picked === null) {
           return fail('no_stream', ref.kind === 'tv' ? `the torrent holds no file of S${pad(ref.season)}E${pad(ref.episode)}` : 'the torrent holds no video file', true);
         }
-        await this.opts.swarm.use(c.infoHash, [picked.video, ...picked.subtitles]);
+        // Set before the call: the swarm counts the user at once, and a cancel while the row is written must give it back.
+        state.held = true;
+        try {
+          await this.opts.swarm.use(c.infoHash, [picked.video, ...picked.subtitles]);
+        } catch (err) {
+          state.held = false;
+          throw err;
+        }
         if (state.cancelled) return left();
         const manifestUrl = this.opts.swarm.localUrl(c.infoHash, picked.video);
         const probeMs = Math.max(PROBE_MIN_MS, Math.min(TORRENT_PROBE_TIMEOUT_MS, budgetMs - (this.now() - started)));
@@ -1073,7 +1095,7 @@ export function indexesOf(finder: NonNullable<Config['torrent']>['finder']): Tor
   const set = finder?.indexes ?? {};
   const bases = Object.fromEntries(Object.entries(set).filter(([, v]) => v !== null && v !== undefined)) as Partial<Record<TorrentIndexName, string>>;
   const off = new Set(TORRENT_INDEX_NAMES.filter((name) => set[name] === null));
-  return defaultIndexes({ bases, yts: !off.has('yts') }).filter((index) => !off.has(index.name as TorrentIndexName));
+  return defaultIndexes({ bases }).filter((index) => !off.has(index.name as TorrentIndexName));
 }
 
 /** The daemon's torrent source, or null when torrents are off (`NOTESD_TORRENT=off`) or phase 1 built no TorrentStreams. */

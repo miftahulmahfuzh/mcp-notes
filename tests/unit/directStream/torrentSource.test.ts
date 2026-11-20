@@ -48,13 +48,16 @@ interface Fakes {
   onFind?: (query: unknown) => void;
   /** Wyzie Synced as a recorder of what it was started with. */
   sync?: SyncRequest[];
-  /** What each swarm delivers; with it the swarm also has `drop` (recorded as `drop <hash>`). */
+  /** What each swarm delivers; with it the swarm also has `drop` and `discard` (recorded as `drop <hash>`, `discard <hash>`). */
   stats?: Record<string, { peers: number; down_kbps: number }>;
   /** Milliseconds before a torrent's file list arrives, and before its header is read. */
   openDelay?: Record<string, number>;
   probeDelay?: Record<string, number>;
   settleMs?: number;
   subtitleHeadMs?: number;
+  /** The source's clock; with it each open may move it on (`openTakesMs`). */
+  clock?: { now: number };
+  openTakesMs?: Record<string, number>;
 }
 
 const wait = (ms: number | undefined): Promise<void> => (ms === undefined ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
@@ -64,9 +67,12 @@ function setup(o: Fakes = {}) {
   const probed: string[] = [];
   const durations: string[] = [];
   const logged: string[] = [];
+  const openTimeouts: Record<string, number> = {};
   const swarm: TorrentSwarm = {
-    open: async (pick) => {
+    open: async (pick, options) => {
       calls.push(`open ${pick.infoHash}`);
+      openTimeouts[pick.infoHash] = options.timeoutMs;
+      if (o.clock !== undefined) o.clock.now += o.openTakesMs?.[pick.infoHash] ?? 0;
       await wait(o.openDelay?.[pick.infoHash]);
       if ((o.failOpen ?? []).includes(pick.infoHash)) throw new Error('no metadata within 20 s');
       return { infoHash: pick.infoHash, files: o.files?.[pick.infoHash] ?? [file(0, 'Film.2026.720p.mp4')] };
@@ -89,6 +95,9 @@ function setup(o: Fakes = {}) {
           stats: (infoHash: string) => o.stats?.[infoHash] ?? null,
           drop: (infoHash: string) => {
             calls.push(`drop ${infoHash}`);
+          },
+          discard: (infoHash: string) => {
+            calls.push(`discard ${infoHash}`);
           },
         }),
   };
@@ -115,13 +124,14 @@ function setup(o: Fakes = {}) {
     ...(o.settleMs === undefined ? {} : { settleMs: o.settleMs }),
     ...(o.subtitleHeadMs === undefined ? {} : { subtitleHeadMs: o.subtitleHeadMs }),
     log: (line) => void logged.push(line),
+    ...(o.clock === undefined ? {} : { now: () => o.clock!.now }),
   });
   // Releases are handed to the swarm on the next tick.
   const settled = async (): Promise<string[]> => {
     await new Promise((r) => setTimeout(r, 0));
     return calls;
   };
-  return { source, calls, settled, probed, durations, logged, finds: () => finds };
+  return { source, calls, settled, probed, durations, logged, openTimeouts, finds: () => finds };
 }
 
 describe('a dub-named release as a last resort', () => {
@@ -145,6 +155,34 @@ describe('a dub-named release as a last resort', () => {
     expect(order).toEqual(['Index: torrentio', 'Torrent: Film.2026.1080p.WEB-DL.x264-PROPER', 'Torrent: Film.2026.1080p.Hindi.Dubbed.WEB-DL']);
     expect(out.attempts[1]?.outcome).toBe('no_stream');
     expect(out.attempts[2]?.outcome).toBe('resolved');
+  });
+
+  it('gets what the proper round left of the one budget, not a budget of its own', async () => {
+    const clock = { now: 1_000_000 };
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264-PROPER')],
+      failOpen: [h(1)],
+      lastResort: [candidate(h(2), 'Film.2026.1080p.Hindi.Dubbed.WEB-DL')],
+      probes: { [h(2)]: MP4_DUAL_ORIG_FIRST },
+      clock,
+      openTakesMs: { [h(1)]: 80_000 },
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok).toBe(true);
+    // 90 s in all, 80 of them spent: the dub-named torrent may take 10 s to open, not 20.
+    expect(t.openTimeouts[h(2)]).toBe(10_000);
+
+    const late = { now: 1_000_000 };
+    const spent = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264-PROPER')],
+      failOpen: [h(1)],
+      lastResort: [candidate(h(2), 'Film.2026.1080p.Hindi.Dubbed.WEB-DL')],
+      clock: late,
+      openTakesMs: { [h(1)]: 88_000 },
+    });
+    const none = await spent.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(none.ok).toBe(false);
+    expect(spent.calls).not.toContain(`open ${h(2)}`);
   });
 
   it('refuses a dub-named release whose file really is only the dub, so the original-language rule holds', async () => {
@@ -397,9 +435,11 @@ describe('TorrentSource: the torrent is chosen by what its swarm delivers', () =
       ['skipped', `still opening when ${B.name} was chosen`],
     ]);
     expect(out.ok && out.torrent.candidates.map((c) => c.infoHash)).toEqual([h(1), h(3)]);
-    // A torrent cancelled while its file list was on its way is let go of as soon as it is open, and never used.
+    // A torrent cancelled while its file list was on its way is let go of as soon as it is open, and never used:
+    // it took no hold, so it gives none back.
     await wait(450);
-    expect(t.calls.filter((c) => c.startsWith('drop ')).sort()).toEqual([`drop ${h(1)}`, `drop ${h(3)}`]);
+    expect(t.calls.filter((c) => c.startsWith('discard ')).sort()).toEqual([`discard ${h(1)}`, `discard ${h(3)}`]);
+    expect(t.calls.some((c) => c.startsWith('drop '))).toBe(false);
     expect(t.calls).not.toContain(`use ${h(1)} 0`);
     expect(t.calls).not.toContain(`use ${h(3)} 0`);
   });

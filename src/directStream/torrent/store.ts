@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { rm, rmdir, stat } from 'node:fs/promises';
+import { readdir, rm, rmdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import type { TorrentFileInfo, TorrentHandle, TorrentStats } from './types.js';
@@ -73,6 +73,29 @@ export class TorrentFolder {
       }
     }
     return removed;
+  }
+
+  /**
+   * The info hashes that have a folder under the root. Anything else there (trackers.json, tracker-lists.json, a
+   * folder not named as an info hash) is never listed, so never deleted by a sweep.
+   */
+  async hashes(): Promise<string[]> {
+    let entries;
+    try {
+      entries = await readdir(this.root, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries.filter((e) => e.isDirectory() && /^[0-9a-f]{40}$/.test(e.name)).map((e) => e.name);
+  }
+
+  /** Whether the torrent has a folder here. */
+  async exists(infoHash: string): Promise<boolean> {
+    try {
+      return (await stat(this.dirOf(infoHash))).isDirectory();
+    } catch {
+      return false;
+    }
   }
 
   /** Deletes the torrent's folder and everything in it. */

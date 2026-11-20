@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { TorrentConfig } from '../../config.js';
 import { contentTypeOf, fileResponse } from '../cache/serve.js';
@@ -237,6 +237,8 @@ export class TorrentRemux {
   private readonly latest = new Map<string, string>();
   /** What each file was started with, so a session that takes its torrent again starts the same remux. */
   private readonly requests = new Map<string, RemuxRequest>();
+  /** Half-made remuxes being deleted after a stop; a new run of the same file waits for its folder to be gone. */
+  private readonly clearing = new Map<string, Promise<void>>();
   private readonly log: (line: string) => void;
 
   constructor(private readonly opts: TorrentRemuxOptions) {
@@ -294,7 +296,10 @@ export class TorrentRemux {
     if (req !== undefined) await this.start(req);
   }
 
-  /** One session fewer on the file; with none left a running ffmpeg is stopped (its half-made remux starts over next time). */
+  /**
+   * One session fewer on the file; with none left a running ffmpeg is stopped and its half-made remux is deleted
+   * once ffmpeg has exited (the next play starts it over anyway).
+   */
   release(infoHash: string, fileIndex: number): void {
     const key = `${infoHash}:${fileIndex}`;
     const run = this.runs.get(key);
@@ -302,10 +307,22 @@ export class TorrentRemux {
     run.users -= 1;
     if (run.users > 0 || run.state !== 'running') return;
     run.state = 'stopped';
-    run.process?.kill();
+    const proc = run.process;
+    proc?.kill();
     this.runs.delete(key);
     if (this.latest.get(infoHash) === key) this.latest.delete(infoHash);
     this.log(`[notesd] torrent remux: ${infoHash} file ${fileIndex} stopped: no session plays it`);
+    const cleared = (proc === null ? Promise.resolve() : proc.exited.then(() => undefined))
+      .then(async () => {
+        await rm(run.dir, { recursive: true, force: true });
+        // The torrent's notesd-remux folder goes too when no other file of it is remuxed.
+        await rmdir(path.dirname(run.dir)).catch(() => undefined);
+      })
+      .catch((err: unknown) => this.log(`[notesd] torrent remux: the half-made remux of ${infoHash} file ${fileIndex} could not be deleted: ${messageOf(err)}`))
+      .finally(() => {
+        if (this.clearing.get(key) === cleared) this.clearing.delete(key);
+      });
+    this.clearing.set(key, cleared);
   }
 
   /** What of the film the remux holds (from 0 to where it is), or null when this torrent has no remux here. */
@@ -368,6 +385,7 @@ export class TorrentRemux {
 
   /** Empties the folder, starts ffmpeg, and resolves once the playlist names a segment. */
   private async begin(run: Run, req: RemuxRequest, timeoutMs: number): Promise<void> {
+    await this.clearing.get(run.key);
     await rm(run.dir, { recursive: true, force: true });
     await mkdir(run.dir, { recursive: true });
     if (run.state !== 'running') throw new RemuxError('remux_failed', 'the daemon closed before ffmpeg started');

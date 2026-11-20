@@ -23,8 +23,6 @@ const BITSEARCH = (q: string): string => `https://bitsearch.to/api/v1/search?q=$
 const TCSV = (q: string): string => `https://torrents-csv.com/service/search?q=${encodeURIComponent(q)}&size=50`;
 const TORRENTIO_SHAWSHANK = 'https://torrentio.strem.fun/stream/movie/tt0111161.json';
 const APIBAY_SHAWSHANK = 'https://apibay.org/q.php?q=tt0111161';
-const YTS_SHAWSHANK = 'https://yts.mx/api/v2/list_movies.json?query_term=tt0111161';
-const NO_YTS = '{"status":"ok","data":{"movie_count":0}}';
 const TITLE_INDEX_NAMES = ['knaben', 'bitsearch', 'torrentscsv'];
 const E0D0 = 'e0d00667650aba9ee05aacbbbd8b55ea8a51f534';
 const YIFY_STREAM = { name: 'Torrentio\n1080p', title: 'The Shawshank Redemption 1994 1080p BrRip\n👤 700 💾 1.6 GB ⚙️ ThePirateBay', infoHash: E0D0.toUpperCase(), behaviorHints: {} };
@@ -104,7 +102,6 @@ describe('the title-search indexes', () => {
     const { fetch, calls } = fakeFetch({
       [TORRENTIO_SHAWSHANK]: json({ streams: [YIFY_STREAM] }),
       [APIBAY_SHAWSHANK]: body('[]'),
-      [YTS_SHAWSHANK]: body(NO_YTS),
       [KNABEN]: body(fixture('knaben-shawshank.json')),
       [BITSEARCH('The Shawshank Redemption 1994')]: body(fixture('bitsearch-shawshank.json')),
       [TCSV('The Shawshank Redemption 1994')]: body(fixture('torrentscsv-shawshank.json')),
@@ -188,7 +185,6 @@ describe('the title-search indexes', () => {
     const { fetch, calls } = fakeFetch({
       [TORRENTIO_SHAWSHANK]: json({ streams: [YIFY_STREAM] }),
       [APIBAY_SHAWSHANK]: body('[]'),
-      [YTS_SHAWSHANK]: body(NO_YTS),
       [KNABEN]: body(fixture('cloudflare-challenge.html'), 403, { 'content-type': 'text/html', 'cf-mitigated': 'challenge' }),
       [BITSEARCH('The Shawshank Redemption 1994')]: () => new Promise<Response>(() => {}),
       [TCSV('The Shawshank Redemption 1994')]: body('', 500),

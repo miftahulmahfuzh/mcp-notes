@@ -10,7 +10,6 @@ export * from './torrentsdb.js';
 export * from './peerflix.js';
 export * from './apibay.js';
 export * from './eztv.js';
-export * from './yts.js';
 export * from './find.js';
 export * from './scrape.js';
 export * from './titleSearch.js';
