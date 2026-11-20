@@ -245,6 +245,29 @@ describe('findCandidates', () => {
     expect(found.candidates).toEqual([]);
   });
 
+  it('asks an index once more when its connection failed at once, and says the socket error when it fails again', async () => {
+    let tries = 0;
+    const refused = (): TypeError => new TypeError('fetch failed', { cause: new AggregateError([Object.assign(new Error('connect ECONNRESET'), { code: 'ECONNRESET' })], '') });
+    const { fetch } = fakeFetch({
+      [TORRENTIO_FILM]: () => {
+        tries += 1;
+        if (tries === 1) throw refused();
+        return new Response(fixture('torrentio-movie-sintel.json'));
+      },
+      [APIBAY_FILM]: () => {
+        throw refused();
+      },
+      [TORRENTSDB_FILM]: body(NO_STREAMS),
+      ...NOTHING_BY_TITLE_FILM,
+    });
+    const found = await findCandidates(SINTEL, { fetch });
+    const byName = Object.fromEntries(found.indexes.map((a) => [a.index, a]));
+    expect(tries).toBe(2);
+    expect(byName.torrentio).toMatchObject({ outcome: 'ok', listed: 32 });
+    expect(byName.torrentio?.detail).toMatch(/asked again after fetch failed: ECONNRESET/);
+    expect(byName.apibay).toMatchObject({ outcome: 'error', detail: 'fetch failed: ECONNRESET' });
+  });
+
   it('sends every request as notesd, whatever an index asks for', async () => {
     const sneaky: TorrentIndex = {
       name: 'sneaky',

@@ -1998,7 +1998,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   TorrentsDB lists sites Torrentio does not (knaben, rargb, sktorrent, rutor); a torrent two indexes list is one
   candidate naming both. Peerflix lists Spanish releases, nearly all dubs, so for a title made in any other language it
   gets no request and has no attempt. Every request says it is notesd; a bot check is the outcome
-  `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
+  `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. A
+  connection that fails at once (`fetch failed`, before any answer) is asked once more a second later, within the
+  index's time, and the error names the socket's code (`fetch failed: ECONNRESET`). It leaves
   out a release that names another title, a release or file named as a program or an archive (`... 1080p WEB
   H264-FLUX.exe`, `.scr`, `.rar`: the shape of a fake, which would only use up one of the play's six tries), a trailer,
   teaser or sample (all an unreleased film has), a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,

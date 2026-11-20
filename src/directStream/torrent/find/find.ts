@@ -22,6 +22,14 @@ export const DEFAULT_INDEX_TIMEOUT_MS = 10_000;
 /** Candidates answered at most (phase 3 keeps the rest for the shuffle button). */
 export const DEFAULT_MAX_CANDIDATES = 20;
 
+/** A connection to an index that failed at once is asked again after this long (once). */
+export const INDEX_RETRY_MS = 1_000;
+
+/** Node's fetch failing before any answer (`TypeError: fetch failed`, with the socket's error as its cause). */
+function isConnectFailure(err: unknown): boolean {
+  return err instanceof TypeError && err.message === 'fetch failed';
+}
+
 /** An index that failed or timed out this many plays in a row is left out for INDEX_COOL_DOWN_MS. */
 export const INDEX_FAILURES_TO_SKIP = 3;
 export const INDEX_COOL_DOWN_MS = 30 * 60_000;
@@ -157,9 +165,18 @@ interface Asked {
   candidates: TorrentCandidate[];
 }
 
-function errorText(err: unknown): string {
+/**
+ * An index's failure as words. Node's fetch says only `fetch failed`; the cause carries the code (`ECONNRESET`,
+ * `EAI_AGAIN`), and a connection tried on several addresses fails with an AggregateError whose message is empty.
+ */
+export function errorText(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
-  return err.cause instanceof Error ? `${err.message}: ${err.cause.message}` : err.message;
+  const cause = err.cause;
+  if (!(cause instanceof Error)) return err.message;
+  const code = (e: unknown): string => (typeof (e as { code?: unknown }).code === 'string' ? (e as { code: string }).code : '');
+  const parts = cause instanceof AggregateError ? [...new Set(cause.errors.map((e) => code(e) || (e instanceof Error ? e.message : String(e))))] : [[code(cause), cause.message].filter((x) => x !== '').join(' ')];
+  const said = parts.filter((x) => x !== '').join(', ');
+  return said === '' ? err.message : `${err.message}: ${said}`;
 }
 
 function seconds(ms: number): number {
@@ -199,7 +216,17 @@ async function askOne(index: TorrentIndex, query: TorrentQuery, run: AskSettings
   };
   let answer: IndexAnswer;
   try {
-    answer = await Promise.race([index.find(query, ctx), timedOut]);
+    try {
+      answer = await Promise.race([index.find(query, ctx), timedOut]);
+    } catch (err) {
+      // A connection that failed at once (`fetch failed`, before any answer) is asked once more after a moment, within
+      // the index's time: on this machine the index requests of a play's first second failed together, now and then.
+      if (!isConnectFailure(err) || controller.signal.aborted || Date.now() - started > limitMs - INDEX_RETRY_MS - 1_000) throw err;
+      await new Promise((resolve) => setTimeout(resolve, INDEX_RETRY_MS));
+      if (controller.signal.aborted) throw err;
+      answer = await Promise.race([index.find(query, ctx), timedOut]);
+      if (answer.outcome !== 'error') answer = { ...answer, detail: `${answer.detail} (asked again after ${errorText(err)})` };
+    }
   } catch (err) {
     answer = { outcome: 'error', detail: run.signal?.aborted ? 'aborted' : errorText(err), candidates: [] };
   } finally {
