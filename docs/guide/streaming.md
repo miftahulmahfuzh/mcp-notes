@@ -1633,13 +1633,16 @@ Someone watching an episode of a series most likely watches the next one after i
 that is whole on this machine starts at once and never stutters. So while an episode plays in the
 player, the daemon downloads the one after it (`src/directStream/ahead.ts`).
 
-- **When.** Once the page has reported two minutes of playing for the episode (its position
-  reports, every 5 s; a pause, a closed lid and a seek count for nothing). Once per play, one
-  episode ahead, never an episode that has not aired, and never for a film.
+- **When.** Once the episode on screen is half through, by the position and the duration its page
+  reports every 5 s, while it plays (a seek past the half while paused fetches nothing until it
+  plays on). A page that cannot say how long the episode is counts ten minutes of playing instead
+  (a pause, a closed lid and a seek count for nothing). Once per play, one episode ahead, never an
+  episode that has not aired, and never for a film.
 - **A cloud play** (NTS, or no codename; from a provider or from the cache) starts a stream cache
   of the next episode, as [a pause does](#a-pause-caches-the-film): marked `auto`, so it clears
-  itself three days after it was last written unless it is asked for. A source that cannot be
-  cached (DASH, DRM) fetches nothing.
+  itself three days after it was last written unless it is asked for. A play streaming DASH,
+  which the cache cannot hold, fetches nothing: the next episode would most likely come from the
+  same provider. Any other source that cannot be cached (DRM) fetches nothing either.
 - **A torrent play** (TS) fetches the next episode from a torrent: the indexes are asked and the
   torrents opened as for a play, with no page, no remux and no subtitle search. The torrent stays in
   the swarm until its file is whole, three hours at most, and is cleared with the other downloads

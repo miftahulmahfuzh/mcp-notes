@@ -227,7 +227,11 @@ type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number } | 
 export interface StreamPositionDeps {
   movies: MovieStreamsSource | null;
   /** `letGo`: the page closed or the film ended, so the session lets go of its torrent (torrent phase 3). */
-  directStream?: { session(id: string): PositionSession | null | Promise<PositionSession | null>; letGo?(id: string): void; watched?(id: string, report: { paused: boolean; over: boolean }): void } | null;
+  directStream?: {
+    session(id: string): PositionSession | null | Promise<PositionSession | null>;
+    letGo?(id: string): void;
+    watched?(id: string, report: { paused: boolean; over: boolean; positionS?: number | null; durationS?: number | null }): void;
+  } | null;
   /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
   live?: StreamLive | null;
 }
@@ -271,7 +275,7 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     // Torrent phase 3: the page is gone or the film is over, so the session lets go of its torrent (a reload takes it again).
     if (over) service.letGo?.(session.id);
     // An episode that is really being watched has its next one fetched to this machine (src/directStream/ahead.ts).
-    service.watched?.(session.id, { paused: report.paused === true, over });
+    service.watched?.(session.id, { paused: report.paused === true, over, positionS: report.position_s, durationS: report.duration_s ?? null });
     if (live !== null && report.beat === true && report.paused === true && !over && live.has(session.id)) {
       const on = live.current();
       if (on !== null) {

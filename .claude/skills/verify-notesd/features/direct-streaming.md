@@ -322,11 +322,12 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 
 ## The next episode, fetched ahead
 - While an episode plays, the daemon caches the next one (cloud) or fetches it from a torrent
-  (`src/directStream/ahead.ts`): after two minutes of playing reports, one episode ahead, nothing
-  for a film; it gives way to every other download and stops when the stream stalls.
+  (`src/directStream/ahead.ts`): once the episode is half through by its playing reports (ten minutes
+  of playing when the page gives no duration), one episode ahead, nothing for a film or a DASH
+  stream; it gives way to every other download and stops when the stream stalls.
   `verify.sh up --direct-stream`, then
   `.claude/skills/verify-notesd/scripts/direct-stream/ahead.sh RUN` (a little over two minutes:
-  it reports as the page does). It checks that nothing is fetched after one minute, that the next
+  it reports a 4-minute episode as the page does). It checks that nothing is fetched a quarter through, that the next
   episode's `auto` cache is ready, that the film fetched nothing, the daemon's `stream ahead:` line,
   and that the next button plays the cached episode. The torrent path is unit-tested
   (`tests/unit/directStream/ahead.test.ts`, `torrentSource.test.ts` "fetchAhead") and can be seen on

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { REPO_ROOT, type Config } from '../config.js';
 import { STREAM_HEALTH_OUTCOMES, type StreamHealthOutcome } from '../db/schema.js';
 import type { Db } from '../db/client.js';
-import { EpisodeAhead } from './ahead.js';
+import { EpisodeAhead, type AheadReport } from './ahead.js';
 import type { AnimeRef } from './anime.js';
 import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type CacheStanding, type CacheSubtitleView, type PlayableCaches, type SessionCache } from './cachePlay.js';
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
@@ -430,9 +430,12 @@ export class DirectStreamService {
    * A position report of the session's page (the position route): an episode that is really being watched has
    * its next one fetched to this machine (ahead.ts). Nothing without `ahead`, for a film, or for an unknown id.
    */
-  watched(id: string, report: { paused: boolean; over: boolean }): void {
+  watched(id: string, report: AheadReport): void {
     const session = this.ahead === null ? null : this.sessions.peek(id);
-    if (session !== null) this.ahead?.watched({ id: session.id, ref: session.ref, via: session.torrent !== null ? 'torrent' : 'cloud' }, report);
+    if (session === null) return;
+    // A cache holds HLS and plain files: a DASH stream's next episode would most likely resolve to the same provider.
+    const cacheable = session.cache !== null || session.source.manifest_kind !== 'dash';
+    this.ahead?.watched({ id: session.id, ref: session.ref, via: session.torrent !== null ? 'torrent' : 'cloud', cacheable }, report);
   }
 
   get host(): string {

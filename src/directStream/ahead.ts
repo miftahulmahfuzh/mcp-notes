@@ -4,20 +4,23 @@ import { refLabel, type StreamRef } from './types.js';
  * The next episode, fetched while this one plays. Someone watching an episode of a series most
  * likely watches the next one after it, and an episode that is whole on this machine starts at once
  * and never stutters (One Piece 788 from the cache, after 787 lagged on a far stream host). So once
- * an episode has really been watched for a while, the daemon downloads the one after it:
+ * an episode is half watched, the daemon downloads the one after it:
  *
  * - a cloud play (NTS, or no codename) into this host's stream cache, marked `auto` like a pause's;
  * - a torrent play (TS) from a torrent, into this host's torrent downloads.
  *
  * The episode on screen comes first. A torrent play waits until its own file is whole on disk. A
  * cloud play that still streams gets a `gentle` download (one file at a time), and it stops when the
- * player says the stream keeps stalling. One episode ahead only, never one that has not aired, and
- * nothing for a film. A play then finds the copy by itself: it looks at this host's cache and
+ * player says the stream keeps stalling. A cloud play of a stream the cache cannot hold (DASH) fetches
+ * nothing: the next episode would most likely resolve to the same provider. One episode ahead only,
+ * never one that has not aired, and nothing for a film. A play then finds the copy by itself: it looks at this host's cache and
  * finished downloads before any provider.
  */
 
-/** An episode counts as watched once its page reported this much playing time. */
-export const AHEAD_AFTER_WATCHED_MS = 120_000;
+/** The next episode is fetched once the one on screen is this far through (its position over its duration). */
+export const AHEAD_AT_SHARE = 0.5;
+/** A page that cannot say how long the episode is: once it reported this much playing time instead. */
+export const AHEAD_AFTER_WATCHED_MS = 10 * 60_000;
 /** Two reports further apart than this (the page reports every 5 s) are not one stretch of watching. */
 export const AHEAD_REPORT_GAP_MS = 15_000;
 /** A torrent play whose own file still downloads is looked at again this often. */
@@ -35,6 +38,18 @@ export interface AheadSession {
   ref: StreamRef;
   /** What the session plays from: a torrent (in the swarm or on disk), else a cloud stream or its cache. */
   via: 'torrent' | 'cloud';
+  /** False: a cloud stream of a kind the stream cache cannot hold (DASH). Unset: it can. */
+  cacheable?: boolean;
+}
+
+/** One position report, as this module reads it. */
+export interface AheadReport {
+  paused: boolean;
+  /** The film ended or the page closed. */
+  over: boolean;
+  /** Where the episode is, and how long it is, in seconds; null or unset: the page did not say. */
+  positionS?: number | null;
+  durationS?: number | null;
 }
 
 /** A torrent being fetched with no page: held in the swarm until `release`. */
@@ -76,7 +91,7 @@ interface Watch {
   session: AheadSession;
   watchedMs: number;
   lastAt: number;
-  /** `watching`: not long enough yet. `waiting`: the episode on screen comes first. `busy`: deciding. `done`: nothing more for this session. */
+  /** `watching`: not far enough yet. `waiting`: the episode on screen comes first. `busy`: deciding. `done`: nothing more for this session. */
   stage: 'watching' | 'waiting' | 'busy' | 'done';
   retryAt: number;
   /** The episode a cloud download was started for, to stop it when the stream stalls. */
@@ -98,7 +113,7 @@ export class EpisodeAhead {
   }
 
   /** A position report of the session's page. Never throws and never waits: what it starts runs behind the report. */
-  watched(session: AheadSession, report: { paused: boolean; over: boolean }): void {
+  watched(session: AheadSession, report: AheadReport): void {
     if (session.ref.kind !== 'tv') return;
     if (report.over) {
       // What was started goes on: the next episode is wanted all the more.
@@ -118,7 +133,8 @@ export class EpisodeAhead {
     // A session that moved to another source (the shuffle button, a pause's cache) is read as it is now.
     watch.session = session;
     if (!report.paused && gap > 0 && gap <= AHEAD_REPORT_GAP_MS) watch.watchedMs += gap;
-    if (watch.stage === 'watching' && watch.watchedMs >= AHEAD_AFTER_WATCHED_MS) this.begin(watch);
+    // Half watched, by a page that is really playing it: a play opened and left, or a seek while paused, fetches nothing.
+    if (watch.stage === 'watching' && !report.paused && watch.watchedMs > 0 && farEnough(report, watch.watchedMs)) this.begin(watch);
     else if (watch.stage === 'waiting' && !report.paused && at >= watch.retryAt) this.begin(watch);
   }
 
@@ -180,6 +196,10 @@ export class EpisodeAhead {
     }
     const cloud = this.deps.cloud();
     if (cloud === null) return 'done';
+    if (session.cacheable === false) {
+      this.log(`[notesd] stream ahead: nothing fetched after ${refLabel(session.ref)}: its stream is of a kind the cache does not hold`);
+      return 'done';
+    }
     const gentle = !(await this.deps.onDisk(session));
     const answer = await cloud.start(next, { gentle });
     if (answer.started) {
@@ -224,6 +244,14 @@ export class EpisodeAhead {
       this.log(`[notesd] stream ahead: could not let go of ${held.torrent.name}: ${messageOf(err)}`);
     }
   }
+}
+
+/** True once the episode is half through; by playing time when the page gave no duration. */
+function farEnough(report: AheadReport, watchedMs: number): boolean {
+  const duration = report.durationS ?? null;
+  const position = report.positionS ?? null;
+  if (duration !== null && duration > 0 && position !== null) return position >= duration * AHEAD_AT_SHARE;
+  return watchedMs >= AHEAD_AFTER_WATCHED_MS;
 }
 
 function sameRef(a: StreamRef, b: StreamRef): boolean {

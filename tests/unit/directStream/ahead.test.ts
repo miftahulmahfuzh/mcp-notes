@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AHEAD_AFTER_WATCHED_MS,
+  AHEAD_AT_SHARE,
   AHEAD_RETRY_MS,
   AHEAD_TORRENT_MAX_MS,
   AHEAD_TORRENT_POLL_MS,
   EpisodeAhead,
+  type AheadReport,
   type AheadSession,
 } from '../../../src/directStream/ahead.js';
 import type { StreamRef } from '../../../src/directStream/types.js';
@@ -13,7 +15,12 @@ const E788: StreamRef = { kind: 'tv', tmdbId: 37854, season: 18, episode: 788 };
 const E789: StreamRef = { kind: 'tv', tmdbId: 37854, season: 18, episode: 789 };
 const cloudSession: AheadSession = { id: 'S1', ref: E788, via: 'cloud' };
 const torrentSession: AheadSession = { id: 'T1', ref: E788, via: 'torrent' };
-const PLAYING = { paused: false, over: false };
+/** A 24-minute episode past its half: the page says where it is with every report. */
+const LENGTH_S = 1440;
+const PLAYING = { paused: false, over: false, positionS: 800, durationS: LENGTH_S };
+/** A page that cannot say how long the episode is. */
+const NO_LENGTH = { paused: false, over: false };
+const at = (positionS: number) => ({ paused: false, over: false, positionS, durationS: LENGTH_S });
 
 interface Fakes {
   next?: StreamRef | null;
@@ -60,7 +67,7 @@ function setup(o: Fakes = {}) {
     log: (line) => void logged.push(line),
   });
   /** `seconds` of playing, reported every 5 s. */
-  const watch = async (session: AheadSession, seconds: number, report = PLAYING): Promise<void> => {
+  const watch = async (session: AheadSession, seconds: number, report: AheadReport = PLAYING): Promise<void> => {
     for (let s = 0; s < seconds; s += 5) {
       now += 5_000;
       ahead.watched(session, report);
@@ -80,32 +87,55 @@ const flush = async (): Promise<void> => {
 afterEach(() => vi.useRealTimers());
 
 describe('the next episode, fetched ahead', () => {
-  it('caches the next episode once this one was watched for two minutes, and only once', async () => {
+  it('caches the next episode once this one is half watched, and only once', async () => {
     const t = setup({ onDisk: true });
-    t.ahead.watched(cloudSession, PLAYING);
-    await t.watch(cloudSession, AHEAD_AFTER_WATCHED_MS / 1000 - 5);
+    const half = LENGTH_S * AHEAD_AT_SHARE;
+    t.ahead.watched(cloudSession, at(0));
+    // Ten minutes in is not half of 24: a play that is only tried fetches nothing.
+    await t.watch(cloudSession, 600, at(half - 5));
     expect(t.calls).toEqual([]);
-    await t.watch(cloudSession, 5);
+    await t.watch(cloudSession, 5, at(half));
     expect(t.calls).toEqual(['cache S18E789']);
     expect(t.logged).toEqual(['[notesd] stream ahead: caching TMDB tv 37854 S18E789 while TMDB tv 37854 S18E788 plays']);
     await t.watch(cloudSession, 600);
     expect(t.calls).toEqual(['cache S18E789']);
   });
 
-  it('counts only playing time: a pause, a gap between reports and a film start nothing', async () => {
+  it('a page that cannot say how long the episode is counts ten minutes of playing: a pause and a gap between reports are none', async () => {
     const t = setup();
-    t.ahead.watched(cloudSession, PLAYING);
-    await t.watch(cloudSession, 600, { paused: true, over: false });
+    t.ahead.watched(cloudSession, NO_LENGTH);
+    await t.watch(cloudSession, 900, { paused: true, over: false });
     // The laptop slept: the next report is an hour later.
     t.tick(3_600_000);
-    await t.watch(cloudSession, 60);
+    await t.watch(cloudSession, AHEAD_AFTER_WATCHED_MS / 1000 - 5, NO_LENGTH);
     expect(t.calls).toEqual([]);
+    await t.watch(cloudSession, 10, NO_LENGTH);
+    expect(t.calls).toEqual(['cache S18E789 gentle']);
+  });
+
+  it('a paused page past the half, a play opened there and left, and a film fetch nothing', async () => {
+    const t = setup();
+    t.ahead.watched(cloudSession, PLAYING);
+    // A seek past the half while paused, and beats from then on.
+    await t.watch(cloudSession, 600, { ...PLAYING, paused: true });
+    expect(t.calls).toEqual([]);
+    const once: AheadSession = { id: 'S2', ref: E788, via: 'cloud' };
+    t.ahead.watched(once, PLAYING);
     const film: AheadSession = { id: 'F1', ref: { kind: 'movie', tmdbId: 550 }, via: 'cloud' };
     t.ahead.watched(film, PLAYING);
     await t.watch(film, 600);
     expect(t.calls).toEqual([]);
-    await t.watch(cloudSession, 70);
+    await t.watch(cloudSession, 10);
     expect(t.calls).toEqual(['cache S18E789 gentle']);
+  });
+
+  it('a cloud play of a stream the cache cannot hold (DASH) fetches nothing', async () => {
+    const t = setup();
+    const dash: AheadSession = { ...cloudSession, cacheable: false };
+    t.ahead.watched(dash, PLAYING);
+    await t.watch(dash, 600);
+    expect(t.calls).toEqual([]);
+    expect(t.logged).toEqual(['[notesd] stream ahead: nothing fetched after TMDB tv 37854 S18E788: its stream is of a kind the cache does not hold']);
   });
 
   it('fetches one file at a time while the episode on screen still streams, and stops when it stalls', async () => {
@@ -144,13 +174,13 @@ describe('the next episode, fetched ahead', () => {
     vi.useFakeTimers();
     const t = setup({ onDisk: false });
     t.ahead.watched(torrentSession, PLAYING);
-    await t.watch(torrentSession, 120);
+    await t.watch(torrentSession, 5);
     expect(t.calls).toEqual([]);
     // Asked again half a minute later, not at every report.
+    t.state.onDisk = true;
     await t.watch(torrentSession, AHEAD_RETRY_MS / 1000 - 5);
     expect(t.calls).toEqual([]);
-    t.state.onDisk = true;
-    await t.watch(torrentSession, 10);
+    await t.watch(torrentSession, 5);
     expect(t.calls).toEqual(['fetch']);
     expect(t.logged).toEqual(['[notesd] stream ahead: fetching TMDB tv 37854 S18E789 from the torrent One.Piece.789.1080p while TMDB tv 37854 S18E788 plays']);
     await vi.advanceTimersByTimeAsync(AHEAD_TORRENT_POLL_MS);
