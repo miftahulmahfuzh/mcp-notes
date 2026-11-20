@@ -1,30 +1,33 @@
-import { mkdir } from 'node:fs/promises';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { QueryFn } from '../chat/agent.js';
 import { DEFAULT_MOVIES_STORY_MODEL } from '../config.js';
-import { claudeEnv } from '../chat/env.js';
+import type { MovieStorySection, MovieStorySource } from '../db/schema.js';
 import { dialoguePage } from '../directStream/dialogue.js';
 import type { StoredDialogue } from '../directStream/dialogueStore.js';
+import { DirectStreamError, type DirectStreamErrorCode, type StreamRef } from '../directStream/types.js';
 import { findClaudeBin } from '../sessions/summarize.js';
+import { runAgentText, type AgentTextRun } from './agentText.js';
 import type { MoviesRepo } from './repo.js';
-import type { StreamRef } from '../directStream/types.js';
 import type { TitleMetadata } from './types.js';
+import type { WebStoryInput, WebStoryWriter, WrittenWebStory } from './webStory.js';
 
 /**
- * The story of a film or an episode, written by Claude from its dialogue (the English subtitle a
- * stream source carried, src/directStream/dialogue.ts) when the owner presses the book icon of an
- * episode. One model call per story, and the story is kept on the dialogue's row, so it is never
- * paid for twice. Same Agent SDK setup as the Haiku fallback (fallback.ts): the owner's login, no
- * tools, no MCP servers, no settings, one turn, no persisted session.
+ * The story of a film, an episode or a whole season, with every spoiler, written once on the owner's click and
+ * kept in `movie_stories` (MoviesRepo.saveStory), so it is never paid for twice and a stored one is answered with
+ * no model call. Web first (webStory.ts): Claude with WebSearch retells it from published recaps and names its
+ * sources. A season is only ever written from the web. An episode or a film the web has no recap of is written
+ * from its dialogue instead (the English subtitle a stream source carried, src/directStream/dialogue.ts), by one
+ * more model call with no tools: the owner's login, no MCP servers, no settings, one turn.
  */
 
 /** Agent SDK model alias; `config.movies.storyModel` (NOTESD_MOVIES_STORY_MODEL) overrides it. */
 export const DEFAULT_STORY_MODEL = DEFAULT_MOVIES_STORY_MODEL;
-/** Wall clock for one story: a film's dialogue is long. */
+/** Wall clock for one story from dialogue: a film's dialogue is long. */
 export const DEFAULT_STORY_TIMEOUT_MS = 240_000;
 /** Characters of dialogue handed to the model: a three-hour film fits; anything longer is cut at a whole minute. */
 export const STORY_DIALOGUE_CHARS = 400_000;
+/** What a season's text says for an episode no published recap told. */
+export const NO_RECAP_TEXT = 'No published recap was found for this episode.';
 
 export const STORY_SYSTEM_PROMPT = [
   'You retell one film or one episode of a series for its owner, who wants the whole story with every spoiler.',
@@ -37,7 +40,7 @@ export const STORY_SYSTEM_PROMPT = [
   'An episode takes about 400 to 800 words, a film about 900 to 1600.',
 ].join(' ');
 
-/** What the writer is given about one title. */
+/** What the dialogue writer is given about one title. */
 export interface StoryInput {
   /** "One Piece (1999)". */
   title: string;
@@ -53,7 +56,7 @@ export interface StoryInput {
   dialogue: string;
 }
 
-/** The model's user message. */
+/** The dialogue writer's user message. */
 export function buildStoryInput(input: StoryInput): string {
   return [
     `Title: ${input.title}`,
@@ -66,7 +69,7 @@ export function buildStoryInput(input: StoryInput): string {
   ].join('\n');
 }
 
-/** The seam between a story and a model. Production: createStoryWriter. Tests: a plain object. */
+/** The seam between a story from dialogue and a model. Production: createStoryWriter. Tests: a plain object. */
 export interface StoryWriter {
   /** Model id or alias: stored with the story. */
   readonly model: string;
@@ -86,85 +89,60 @@ export interface StoryWriterOptions {
   timeoutMs?: number;
 }
 
-/** Claude through the Agent SDK. Null when the claude binary cannot be found: the story route then answers story_off. */
+/** Claude through the Agent SDK, no tools, one turn. Null when the claude binary cannot be found. */
 export function createStoryWriter(opts: StoryWriterOptions): StoryWriter | null {
   const baseEnv = opts.baseEnv ?? process.env;
   const claudeBin = findClaudeBin(opts.claudeBin, baseEnv.PATH);
   if (claudeBin === null) return null;
   const query: QueryFn = opts.query ?? sdkQuery;
   const model = opts.model ?? DEFAULT_STORY_MODEL;
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_STORY_TIMEOUT_MS;
-
-  function optionsFor(abortController: AbortController): Options {
-    return {
-      abortController,
-      cwd: opts.cwd,
-      env: claudeEnv(baseEnv),
-      model,
-      pathToClaudeCodeExecutable: claudeBin as string,
-      settingSources: [],
-      strictMcpConfig: true,
-      mcpServers: {},
-      tools: [],
-      allowedTools: [],
-      permissionMode: 'dontAsk',
-      maxTurns: 1,
-      thinking: { type: 'disabled' },
-      systemPrompt: STORY_SYSTEM_PROMPT,
-      persistSession: false,
-    };
-  }
-
+  const run: AgentTextRun = {
+    query,
+    claudeBin,
+    cwd: opts.cwd,
+    baseEnv,
+    model,
+    tools: [],
+    maxTurns: 1,
+    systemPrompt: STORY_SYSTEM_PROMPT,
+    timeoutMs: opts.timeoutMs ?? DEFAULT_STORY_TIMEOUT_MS,
+    what: 'story',
+  };
   return {
     model,
     async write(input) {
-      await mkdir(opts.cwd, { recursive: true });
-      const controller = new AbortController();
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        controller.abort('timeout');
-      }, timeoutMs);
-      timer.unref();
-      let result: string | null = null;
-      let failure: string | null = null;
-      try {
-        for await (const message of query({ prompt: buildStoryInput(input), options: optionsFor(controller) })) {
-          if (message.type !== 'result') continue;
-          if (message.subtype === 'success' && !message.is_error) result = message.result;
-          else if (message.subtype === 'success') failure = message.result.trim() || 'the model failed without saying why';
-          else failure = message.errors.join('; ').trim() || `the model failed (${message.subtype})`;
-        }
-      } catch (err) {
-        // A CLI that exits non-zero after its result still produced that result: trust it.
-        if (result === null && failure === null) failure = err instanceof Error ? err.message : String(err);
-      } finally {
-        clearTimeout(timer);
-      }
-      const story = (result ?? '').trim();
-      if (story !== '') return story;
-      throw new Error(timedOut ? `no story within ${Math.round(timeoutMs / 1000)} s` : (failure ?? 'the model answered nothing'));
+      return runAgentText(run, buildStoryInput(input));
     },
   };
 }
 
+/** Where a story was written from. */
+export type StoryOrigin = 'web' | 'dialogue';
+
 /** A story as the wall and the tools read it. */
 export interface StoryView {
   season: number;
+  /** 0 for a season's story (season > 0) and for a film's (season 0). */
   episode: number;
+  /** The story. A season's: every section under its "S01E02 · name" heading (seasonText), for a reader of plain text. */
   text: string;
+  origin: StoryOrigin;
+  /** The pages a web story was written from; [] for a story from dialogue. */
+  sources: MovieStorySource[];
+  /** A season's story: one per aired episode, in order (`found: false` and no text where no recap told it); [] otherwise. */
+  sections: MovieStorySection[];
   model: string | null;
   written_at: string | null;
-  /** The stream provider whose subtitle it was written from, and how many lines that was. */
-  provider: string;
-  cues: number;
+  /** A story from dialogue: the stream provider whose subtitle it was written from, and how many lines that was. Null for a web story. */
+  provider: string | null;
+  cues: number | null;
 }
 
 /** Why a story could not be given: the route answers `code`. */
 export class StoryError extends Error {
   override readonly name = 'StoryError';
   constructor(
-    readonly code: 'not_found' | 'story_off' | 'no_dialogue' | 'story_failed',
+    readonly code: 'not_found' | 'story_off' | 'no_story_source' | 'story_failed',
     message: string,
   ) {
     super(message);
@@ -172,21 +150,74 @@ export class StoryError extends Error {
 }
 
 export interface MovieStoriesOptions {
-  /** `story`/`saveStory`: movie_stories; `dialogue`: the subtitle a story names as its source. */
-  repo: Pick<MoviesRepo, 'dialogue' | 'story' | 'saveStory' | 'loadTitleMetadata'>;
+  repo: Pick<MoviesRepo, 'story' | 'saveStory' | 'dialogue' | 'loadTitleMetadata'>;
   /**
    * The title's dialogue, read from a stream source when it is not stored yet
    * (dialogueStore.ts loadDialogue). Null from it: none is stored and none can be read here
    * (direct streaming is off). It throws DirectStreamError when the title cannot be resolved.
    */
   dialogue: (target: StreamRef) => Promise<StoredDialogue | null>;
-  /** Null: NOTESD_MOVIES_STORY_MODEL=off, or no claude binary. Stored stories are still read. */
+  /** Writes an episode or a film from its dialogue when the web has no recap. Null: NOTESD_MOVIES_STORY_MODEL=off, or no claude binary. */
   writer: StoryWriter | null;
+  /** Writes from published recaps (webStory.ts): a season always, an episode or a film first. Null as `writer`. Stored stories are still read. */
+  webWriter: WebStoryWriter | null;
   now?: () => Date;
   log?: (line: string) => void;
 }
 
+type Written = { story: StoryView; cached: boolean };
+
+/** One stored story, without its title. */
+interface StoryRecord {
+  season: number;
+  episode: number;
+  text: string;
+  sections: MovieStorySection[];
+  sources: MovieStorySource[];
+  origin: StoryOrigin;
+  model: string | null;
+  writtenAt: Date;
+}
+
+/** A dialogue that cannot be read because there is none: with no recap on the web either, nothing tells the story. */
+const NOTHING_TO_READ: ReadonlySet<DirectStreamErrorCode> = new Set<DirectStreamErrorCode>(['no_source', 'no_subtitle', 'no_episode']);
+
 const pad = (n: number): string => String(n).padStart(2, '0');
+
+/** A season's sections as one text, each under its "S01E02 · name" heading; an untold one says so. */
+export function seasonText(season: number, sections: readonly MovieStorySection[]): string {
+  return sections.map((s) => `S${pad(season)}E${pad(s.episode)}${s.name === null ? '' : ` · ${s.name}`}\n\n${s.found ? s.text : NO_RECAP_TEXT}`).join('\n\n');
+}
+
+function viewOf(r: StoryRecord, dialogue: { provider: string; cues: number } | null): StoryView {
+  return {
+    season: r.season,
+    episode: r.episode,
+    text: r.text,
+    origin: r.origin,
+    sources: r.sources,
+    sections: r.sections,
+    model: r.model,
+    written_at: r.writtenAt.toISOString(),
+    provider: dialogue?.provider ?? null,
+    cues: dialogue?.cues ?? null,
+  };
+}
+
+function labelOf(meta: TitleMetadata, season: number, episode: number): string {
+  if (meta.kind === 'movie') return meta.title;
+  return episode === 0 ? `${meta.title} season ${season}` : `${meta.title} S${pad(season)}E${pad(episode)}`;
+}
+
+/** What every web story is told about its title. */
+function webTitle(meta: TitleMetadata): Pick<WebStoryInput, 'title' | 'originalTitle' | 'overview'> {
+  const original = meta.originalTitle.trim();
+  return {
+    title: meta.year === null ? meta.title : `${meta.title} (${meta.year})`,
+    originalTitle: original !== '' && original !== meta.title ? original : null,
+    overview: meta.overview.trim() === '' ? null : meta.overview.trim(),
+  };
+}
 
 function storyInput(meta: TitleMetadata, season: number, episode: number, dialogue: string): StoryInput {
   const ep = meta.kind === 'tv' ? (meta.episodes.find((e) => e.season === season && e.episode === episode) ?? null) : null;
@@ -203,7 +234,7 @@ function storyInput(meta: TitleMetadata, season: number, episode: number, dialog
 
 /** The stories of the library: read from the store, and written once on request. Holds only the writes in flight. */
 export class MovieStories {
-  private readonly inFlight = new Map<string, Promise<{ story: StoryView; cached: boolean }>>();
+  private readonly inFlight = new Map<string, Promise<Written>>();
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
 
@@ -212,60 +243,150 @@ export class MovieStories {
     this.log = opts.log ?? ((line: string) => console.log(line));
   }
 
-  /** The stored story of a film (season 0, episode 0) or an episode, or null. Never calls a model. */
+  /** The stored story of a film (0, 0), an episode, or a season (season, 0), or null. Never calls a model. */
   async get(titleId: string, season: number, episode: number): Promise<StoryView | null> {
     const row = await this.opts.repo.story(titleId, season, episode);
     if (row === null) return null;
-    // The subtitle it was written from is named by its dialogue row; a story with none names no provider.
-    const dialogue = await this.opts.repo.dialogue(titleId, season, episode);
-    return {
-      season,
-      episode,
+    const record: StoryRecord = {
+      season: row.season,
+      episode: row.episode,
       text: row.text,
+      sections: row.sections ?? [],
+      sources: row.sources ?? [],
+      origin: row.origin === 'web' ? 'web' : 'dialogue',
       model: row.model,
-      written_at: row.writtenAt.toISOString(),
-      provider: dialogue?.provider ?? '',
-      cues: dialogue?.cues ?? 0,
+      writtenAt: row.writtenAt,
     };
+    const dialogue = record.origin === 'dialogue' ? await this.opts.repo.dialogue(titleId, season, episode) : null;
+    return viewOf(record, dialogue);
   }
 
   /**
-   * The story: the stored one (`cached: true`, no model call), else read the dialogue, have it
-   * written and keep it. Two requests for the same story share one write. Throws StoryError, or
-   * the DirectStreamError of a dialogue that cannot be read.
+   * The story: the stored one (`cached: true`, no model call), else written now and kept. `episode` 0 with a
+   * season above 0 is that season's story (writeSeason). Two requests for the same story share one write.
+   * Throws StoryError, or the DirectStreamError of a subtitle that could not be read for another reason
+   * than there being none.
    */
-  async write(titleId: string, season: number, episode: number): Promise<{ story: StoryView; cached: boolean }> {
+  async write(titleId: string, season: number, episode: number): Promise<Written> {
+    if (episode === 0 && season > 0) return this.writeSeason(titleId, season);
+    return this.once(titleId, season, episode, () => this.writeOne(titleId, season, episode));
+  }
+
+  /** A season's whole story, one section per aired episode, from the web only: no subtitle is ever read for it. */
+  async writeSeason(titleId: string, season: number): Promise<Written> {
+    if (season < 1) throw new StoryError('not_found', 'Season 0 holds the specials: ask for one of its episodes.');
+    return this.once(titleId, season, 0, () => this.writeNewSeason(titleId, season));
+  }
+
+  private async once(titleId: string, season: number, episode: number, make: () => Promise<Written>): Promise<Written> {
     const stored = await this.get(titleId, season, episode);
     if (stored !== null) return { story: stored, cached: true };
     const key = `${titleId} ${season} ${episode}`;
     const running = this.inFlight.get(key);
     if (running !== undefined) return running;
-    const job = this.writeNew(titleId, season, episode).finally(() => this.inFlight.delete(key));
+    const job = make().finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, job);
     return job;
   }
 
-  private async writeNew(titleId: string, season: number, episode: number): Promise<{ story: StoryView; cached: boolean }> {
-    const writer = this.opts.writer;
-    if (writer === null) throw new StoryError('story_off', 'Stories are off on this machine (NOTESD_MOVIES_STORY_MODEL=off, or no claude binary).');
+  private async writeNewSeason(titleId: string, season: number): Promise<Written> {
+    const web = this.opts.webWriter;
+    if (web === null) throw new StoryError('story_off', 'Stories are off on this machine (NOTESD_MOVIES_STORY_MODEL=off, or no claude binary).');
     const meta = await this.opts.repo.loadTitleMetadata(titleId);
     if (meta === null) throw new StoryError('not_found', `No title ${titleId} is stored.`);
-    const target: StreamRef =
-      meta.kind === 'movie' ? { kind: 'movie', tmdbId: meta.tmdbId } : { kind: 'tv', tmdbId: meta.tmdbId, season, episode };
-    const dialogue = await this.opts.dialogue(target);
-    if (dialogue === null) throw new StoryError('no_dialogue', 'Its dialogue is not stored, and direct streaming is off here, so it cannot be read.');
+    if (meta.kind !== 'tv') throw new StoryError('not_found', `${meta.title} is a film: it has no seasons.`);
+    const today = this.now().toISOString().slice(0, 10);
+    // Aired episodes only: a recap of an episode that has not aired cannot exist.
+    const episodes = meta.episodes
+      .filter((e) => e.season === season && e.airDate !== null && e.airDate <= today)
+      .sort((a, b) => a.episode - b.episode)
+      .map((e) => ({ episode: e.episode, name: e.name, airDate: e.airDate }));
+    const label = labelOf(meta, season, 0);
+    if (episodes.length === 0) throw new StoryError('not_found', `${label} has no aired episode.`);
+    const written = await this.askWeb(web, { ...webTitle(meta), scope: 'season', season, episodes }, label);
+    const told = written.sections.filter((s) => s.found).length;
+    // Nothing kept when nothing was told: a later click searches again.
+    if (told === 0) throw new StoryError('no_story_source', `No published recap of ${label} was found.`);
+    const record: StoryRecord = {
+      season,
+      episode: 0,
+      text: seasonText(season, written.sections),
+      sections: written.sections,
+      sources: written.sources,
+      origin: 'web',
+      model: web.model,
+      writtenAt: this.now(),
+    };
+    await this.opts.repo.saveStory({ titleId, ...record });
+    this.log(`[notesd] movies: wrote the story of ${titleId} season ${season} with ${web.model} from the web: ${told} of ${episodes.length} episodes told, ${written.sources.length} sources`);
+    return { story: viewOf(record, null), cached: false };
+  }
+
+  private async writeOne(titleId: string, season: number, episode: number): Promise<Written> {
+    const { webWriter: web, writer } = this.opts;
+    if (web === null && writer === null) throw new StoryError('story_off', 'Stories are off on this machine (NOTESD_MOVIES_STORY_MODEL=off, or no claude binary).');
+    const meta = await this.opts.repo.loadTitleMetadata(titleId);
+    if (meta === null) throw new StoryError('not_found', `No title ${titleId} is stored.`);
+    if (meta.kind === 'movie' && (season !== 0 || episode !== 0)) throw new StoryError('not_found', `${meta.title} is a film: it has no episodes.`);
+    if (meta.kind === 'tv' && episode === 0) throw new StoryError('not_found', `Name an episode or a season of ${meta.title}.`);
+    const label = labelOf(meta, season, episode);
+    if (web !== null) {
+      const ep = meta.kind === 'tv' ? (meta.episodes.find((e) => e.season === season && e.episode === episode) ?? null) : null;
+      const input: WebStoryInput =
+        meta.kind === 'movie'
+          ? { ...webTitle(meta), scope: 'film', season: 0, episodes: [{ episode: 0, name: null, airDate: meta.releaseDate }] }
+          : { ...webTitle(meta), scope: 'episode', season, episodes: [{ episode, name: ep?.name ?? null, airDate: ep?.airDate ?? null }] };
+      const written = await this.askWeb(web, input, label);
+      const section = written.sections[0];
+      if (section !== undefined && section.found) {
+        const record: StoryRecord = { season, episode, text: section.text, sections: [], sources: written.sources, origin: 'web', model: web.model, writtenAt: this.now() };
+        await this.opts.repo.saveStory({ titleId, ...record });
+        this.log(`[notesd] movies: wrote the story of ${label} (${titleId}) with ${web.model} from the web: ${written.sources.length} sources, ${section.text.length} characters`);
+        return { story: viewOf(record, null), cached: false };
+      }
+      this.log(`[notesd] movies: no published recap of ${label} (${titleId}) was found; its subtitle is read instead`);
+    }
+    return this.fromDialogue(meta, titleId, season, episode, label);
+  }
+
+  /** The fallback of an episode or a film the web does not tell: its story from its dialogue. */
+  private async fromDialogue(meta: TitleMetadata, titleId: string, season: number, episode: number, label: string): Promise<Written> {
+    const writer = this.opts.writer;
+    if (writer === null) throw new StoryError('no_story_source', `No published recap of ${label} was found, and stories from subtitles are off here.`);
+    const target: StreamRef = meta.kind === 'movie' ? { kind: 'movie', tmdbId: meta.tmdbId } : { kind: 'tv', tmdbId: meta.tmdbId, season, episode };
+    let dialogue: StoredDialogue | null;
+    try {
+      dialogue = await this.opts.dialogue(target);
+    } catch (err) {
+      if (err instanceof DirectStreamError && NOTHING_TO_READ.has(err.code)) {
+        throw new StoryError('no_story_source', `No published recap of ${label} was found, and its subtitle could not be read: ${err.message}`);
+      }
+      throw err;
+    }
+    if (dialogue === null) throw new StoryError('no_story_source', `No published recap of ${label} was found, and no subtitle of it is stored here (direct streaming is off).`);
     const page = dialoguePage(dialogue.body, 0, STORY_DIALOGUE_CHARS);
     let text: string;
     try {
       text = await writer.write(storyInput(meta, season, episode, page.text));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.log(`[notesd] movies: the story of ${titleId} S${pad(season)}E${pad(episode)} was not written: ${message}`);
+      this.log(`[notesd] movies: the story of ${label} (${titleId}) was not written: ${message}`);
       throw new StoryError('story_failed', `The story could not be written: ${message}`);
     }
-    const at = this.now();
-    await this.opts.repo.saveStory({ titleId, season, episode, text, origin: 'dialogue', model: writer.model, writtenAt: at });
-    this.log(`[notesd] movies: wrote the story of ${titleId} S${pad(season)}E${pad(episode)} with ${writer.model} from ${dialogue.cues} lines (${text.length} characters)`);
-    return { story: { season, episode, text, model: writer.model, written_at: at.toISOString(), provider: dialogue.provider, cues: dialogue.cues }, cached: false };
+    const record: StoryRecord = { season, episode, text, sections: [], sources: [], origin: 'dialogue', model: writer.model, writtenAt: this.now() };
+    await this.opts.repo.saveStory({ titleId, ...record });
+    this.log(`[notesd] movies: wrote the story of ${label} (${titleId}) with ${writer.model} from ${dialogue.cues} lines (${text.length} characters)`);
+    return { story: viewOf(record, dialogue), cached: false };
+  }
+
+  /** The web writer's answer; a failed run is `story_failed` (never a reason to read a subtitle instead). */
+  private async askWeb(web: WebStoryWriter, input: WebStoryInput, label: string): Promise<WrittenWebStory> {
+    try {
+      return await web.write(input);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.log(`[notesd] movies: the story of ${label} was not written from the web: ${message}`);
+      throw new StoryError('story_failed', `The story could not be written: ${message}`);
+    }
   }
 }

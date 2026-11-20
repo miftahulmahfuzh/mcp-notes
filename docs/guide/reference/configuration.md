@@ -223,6 +223,7 @@ None of these belong in `.env.local`. See [install.md](../install.md#tests).
 | `CONNECTORS_LIVE_TEST` | set by `test:live:connectors` | `1` runs only the live connector suite: each `*_schema` tool against the real databases, read-only. |
 | `EMBEDDINGS_LIVE_TEST` | set by `test:live:embeddings` | `1` runs only the live embeddings suite: one real, billed OpenRouter call. |
 | `IMAGE_EMBEDDINGS_LIVE_TEST` | set by `test:live:imageEmbeddings` | `1` runs only the live image embeddings suite: a few real, billed calls. |
+| `WEB_STORY_LIVE_TEST` | set by `test:live:webStory` | `1` runs only the live web story suite: one real, billed Claude run with WebSearch, the owner's login. |
 
 ## Docs tooling
 

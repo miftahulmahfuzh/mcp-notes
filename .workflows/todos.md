@@ -44,6 +44,30 @@
     - migration0043 test's written_at comparison (Date vs the text a raw execute returns) → assert the same instant as UTC ISO text; code unchanged (rung 2: exit criterion 'copied stories keep their time')
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent; the coordinator's integrator reconciles them. No successor to unblock: phase 2's task is minted by its own session.
 
+- [x] **P1-NOTES-SD06** Phase 6: Stories from the web: the season story, the episode story web-first
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns Step 0 (settle from the installed Agent SDK's types whether a run's WebSearch results reach `onMessage` with their URLs: `SEARCH_RESULTS_CARRY_URLS`), the opt-in live test `tests/live/webStory.live.test.ts` (`npm run test:live:webStory`, `WEB_STORY_LIVE_TEST`), `src/movies/agentText.ts` (`runAgentText`), `src/movies/webStory.ts` (`createWebStoryWriter`, `parseWebStory`), `MovieStories` web-first (a season from the web only; an episode or a film from the web, its dialogue only on `found: false`), `StoryView` with `origin`, `sources`, `sections`, error `no_story_source` (404) replacing `no_dialogue`, the story routes accepting `{season}` alone, per-season `has_story`, route descriptions and `npm run docs:gen`. Exit: Step 0 settled; unit tests with a fake writer: season story stored once and served cached; episode web-first; fallback to dialogue only on `found: false`; an invented episode dropped; the no-cross-check branch; `story_off`; the docs test passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 6 of 9)
+  - **Satisfies**: R6 — "Narrate the full story of SXX" on the Season row, written from websites that tell full stories instead of from subtitles · criteria: R6.1, R6.2, R6.4, R6.5, R6.6
+  - **Depends on**: P1-NOTES-SD01
+  - **Plan**: `.workflows/plan/P1-NOTES-SD06.md`
+  - **Completed**: 2026-11-20 23:35
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD06.md, src/movies/agentText.ts, src/movies/webStory.ts, src/movies/story.ts, src/movies/guides.ts, src/movies/read.ts, src/http/moviesApi.ts, src/daemon.ts, src/config.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/configuration.md, vitest.config.ts, package.json, tests/live/webStory.live.test.ts, tests/unit/movies/webStory.test.ts, tests/unit/movies/story.test.ts, tests/unit/directStream/cacheShelf.test.ts, tests/integration/movies.api.int.test.ts
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-232817-746632/evidence
+  - **Drift**:
+    - Step 0 settled: SEARCH_RESULTS_CARRY_URLS = true. @anthropic-ai/claude-agent-sdk 0.3.311: sdk.d.ts:6563 (SDKUserMessage.tool_use_result, 'the tool's full Output object') and sdk-tools.d.ts:3758-3789 (WebSearchOutput.results[].content[].url). Settled from the types only; the billed live test was not run.
+    - Plan's J4 assumed tv-247718 is stored on a `verify.sh up --movies` daemon; it is not (GET answered 404 for 60 s, the seed insert failed its FK). Re-run on a fresh daemon with `POST /api/movies/ensure {kind:'tv', tmdb_id:247718}` first; every step then passed. Phase 9's downloads.sh story stage needs the same step. First run's evidence: /home/miftah/.local/state/notesd-verify/1120-232641-731957/evidence.
+    - web/src/components/movies/StoryModal.tsx still switches on 'no_dialogue' and reads provider/cues as non-null in its foot: phase 7's, as the plan's Handoffs say; typecheck passes.
+    - guides.ts import block is 12 lines, not 11; same edit.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p6 on phase-6-… → proceed there (rung 6: the swarm's per-phase worktree convention)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 6's task as P1-NOTES-SD06, index TaskID column left to the coordinator (rung 6: phase 1's precedent P1-NOTES-SD01)
+    - J4 with no stored title → add the harness's own `POST /api/movies/ensure` before the seed; code unchanged (rung 2: exit criterion 'J1 to J5 pass'; features/movies.md names ensure for tv-247718)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phase 1 of this set (P1-NOTES-SD01); the coordinator's integrator reconciles them. No successor to unblock: phase 7's task is minted by its own session.
+
 - [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
   - **Difficulty**: NORMAL
   - **Type**: Feature

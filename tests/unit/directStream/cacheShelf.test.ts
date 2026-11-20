@@ -104,6 +104,7 @@ function seasons(finished: number[]): SeasonView[] {
     {
       season: 1,
       trailer_key: null,
+      has_story: false,
       episodes: [1, 2, 3].map((episode) => ({ season: 1, episode, movie_id: `M-E00${episode}`, name: `Episode ${episode}`, state: finished.includes(episode) ? 'finished' : 'unwatched' }) as SeasonView['episodes'][number]),
     },
   ];
