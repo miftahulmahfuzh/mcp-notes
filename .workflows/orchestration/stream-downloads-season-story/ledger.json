@@ -123,21 +123,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "aff113e",
       "depends_on": [
         6
       ],
       "difficulty": "NORMAL",
       "n": 7,
-      "note": null,
+      "note": "season head book button 'Narrate the full story of SXX', StoryModal sections/not-found line/Sources links, writeStory season form, on branch phase-7-stream-downloads-season-story; task minted as P1-NOTES-SD07 only, index TaskID column left to coordinator (rung 6, SD01 precedent); npm test had 2 load flakes in untouched files (installGuard --wait timeout, a season-pack torrent test), clean on re-run; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1120-234319-819505/evidence",
       "package": "web",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-11-20T23:45:36+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD07",
       "title": "The story on the page: the season row's button, sections and sources in the modal"
     },
     {
@@ -188,6 +188,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-20T23:39:40+07:00",
+  "updated": "2026-11-20T23:45:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
