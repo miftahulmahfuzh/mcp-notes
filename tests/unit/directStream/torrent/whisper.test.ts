@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildWhisperTier,
   cutArgs,
+  cutFailureText,
+  ffmpegCutter,
   firstStretch,
   parseCues,
   placeCues,
@@ -274,6 +276,26 @@ describe('helpers', () => {
     expect(args.slice(args.indexOf('-ss'), args.indexOf('-ss') + 6)).toEqual(['-ss', '300', '-t', '300', '-i', 'http://127.0.0.1:7317/api/stream/torrent/x/f/0']);
     expect(args).toEqual(expect.arrayContaining(['-map', '0:a:0', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le']));
     expect(args.at(-1)).toBe('/tmp/s.wav');
+  });
+});
+
+describe('a failed cut\'s reason', () => {
+  it('is ffmpeg\'s last error line, never the command line, with no query or key', () => {
+    const raw =
+      "Command failed: ffmpeg -v error -headers 'User-Agent: Mozilla/5.0\r\nReferer: https://host.example/\r\n' -i http://127.0.0.1:7317/api/stream/cache/abc/seg.ts?tok=SECRET -map 0:a:0 /tmp/x.wav\n" +
+      '[hls @ 0x1] Opening https://cdn.example/x.m3u8?sig=abc&key=K for reading\n' +
+      'https://cdn.example/x.m3u8?sig=abc: Server returned 403 Forbidden (access denied)\n';
+    const text = cutFailureText(raw);
+    expect(text).toBe('https://cdn.example/x.m3u8 Server returned 403 Forbidden (access denied)');
+    expect(cutFailureText('Command failed: ffmpeg -headers "Referer: x" -i a\n')).toBe('ffmpeg failed');
+    expect(cutFailureText('see https://w.example/d?key=K1&tok=T1 now')).not.toMatch(/K1|T1/);
+  });
+
+  it('ffmpegCutter answers ffmpeg\'s own last line, not the arguments it was run with', async () => {
+    const bin = path.join(workDir, 'fake-ffmpeg');
+    await writeFile(bin, '#!/bin/sh\necho "frame junk" >&2\necho "Invalid data found when processing input" >&2\nexit 1\n', { mode: 0o755 });
+    const cut = await ffmpegCutter({ ffmpegBin: bin })({ url: 'http://127.0.0.1:1/x?tok=SECRET', inputArgs: ['-headers', 'Referer: https://r.example/'], startS: 0, lengthS: 10, out: path.join(workDir, 'o.wav') }, new AbortController().signal);
+    expect(cut).toEqual({ ok: false, reason: 'Invalid data found when processing input' });
   });
 });
 

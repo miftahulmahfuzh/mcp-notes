@@ -11,7 +11,7 @@ import type { ResolvedSource, StreamRef } from '../../types.js';
 import { INFO_HASH_PATTERN, vttFromBytes, type SubtitleShelf } from './disk.js';
 import { TITLE_OUTSIDE_NAME } from '../../titleSubtitles.js';
 import { IN_STEP_S } from '../../subtitleCheck/match.js';
-import { ffmpegCutter, type AudioCutter } from './whisper.js';
+import { cutFailureText, ffmpegCutter, type AudioCutter } from './whisper.js';
 import { withoutSecrets } from './wyzie.js';
 
 /**
@@ -526,7 +526,7 @@ export class SubtitleSync {
           }
           const cut = await this.opts.cutter({ ...input, startS: heardS, lengthS, out: wav }, signal);
           signal.throwIfAborted();
-          if (!cut.ok) return await fail(true, `the audio at ${Math.round(heardS)} s could not be cut: ${withoutSecrets(cut.reason)}`);
+          if (!cut.ok) return await fail(true, `the audio at ${Math.round(heardS)} s could not be cut: ${cutFailureText(cut.reason)}`);
           if (cut.lengthS >= 0.5) {
             let spans: SpeechSpan[];
             try {

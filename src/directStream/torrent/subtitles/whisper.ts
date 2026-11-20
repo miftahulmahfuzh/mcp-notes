@@ -199,18 +199,38 @@ export function cutArgs(request: StretchRequest): string[] {
   ];
 }
 
+/**
+ * A failed cut's reason as it may be kept, logged or shown: ffmpeg's last error line, never its command line (which
+ * holds a stream host's User-Agent and Referer, a cache address), with every address's query cut off and anything
+ * key-like taken out (a Wyzie key, a download `tok`).
+ */
+export function cutFailureText(text: string): string {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l !== '' && !/^Command failed:/i.test(l));
+  const last = lines.at(-1) ?? 'ffmpeg failed';
+  return last
+    .replace(/((?:[a-z][a-z0-9+.-]*:\/\/|\/)[^\s?#"'<>]*)[?#][^\s"'<>]*/gi, '$1')
+    .replace(/([?&](?:key|tok|tk)=)[^&\s"']*/gi, '$1…')
+    .slice(0, 300);
+}
+
 export function ffmpegCutter(options: { ffmpegBin: string; timeoutMs?: number }): AudioCutter {
+  const timeoutMs = options.timeoutMs ?? WHISPER_CUT_TIMEOUT_MS;
   return async (request, signal) => {
     try {
       await new Promise<void>((resolve, reject) => {
-        execFile(options.ffmpegBin, cutArgs(request), { timeout: options.timeoutMs ?? WHISPER_CUT_TIMEOUT_MS, killSignal: 'SIGKILL', signal }, (err) =>
-          err ? reject(err) : resolve(),
-        );
+        execFile(options.ffmpegBin, cutArgs(request), { timeout: timeoutMs, killSignal: 'SIGKILL', signal }, (err, _stdout, stderr) => {
+          if (!err) return resolve();
+          const killed = (err as { killed?: boolean }).killed === true && !signal.aborted;
+          reject(new Error(killed ? `ffmpeg gave no audio within ${Math.round(timeoutMs / 1000)} s` : String(stderr).trim() || `ffmpeg exited with ${String((err as { code?: unknown }).code ?? 'an error')}`));
+        });
       });
       const size = (await stat(request.out)).size;
       return { ok: true, lengthS: Math.max(0, size - WAV_HEADER_BYTES) / WAV_BYTES_PER_SECOND };
     } catch (err) {
-      return { ok: false, reason: (err instanceof Error ? err.message : String(err)).slice(0, 300) };
+      return { ok: false, reason: cutFailureText(err instanceof Error ? err.message : String(err)) };
     }
   };
 }
@@ -555,7 +575,7 @@ export class WhisperTier {
       try {
         const cut = await this.opts.cutter({ url, startS, lengthS: stretchS, out: wav }, signal);
         signal.throwIfAborted();
-        if (!cut.ok) throw new Error(`the audio at ${startS} s could not be cut: ${cut.reason}`);
+        if (!cut.ok) throw new Error(`the audio at ${startS} s could not be cut: ${cutFailureText(cut.reason)}`);
         if (cut.lengthS < 0.5) {
           endS = startS;
           await save(false);

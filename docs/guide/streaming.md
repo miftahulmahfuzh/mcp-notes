@@ -2116,7 +2116,8 @@ after the play has started:
   and a job whose sessions all show such a subtitle stops before it asks Wyzie.
 - **Once.** One sync per torrent file (or per title, for a cloud stream) on this machine. Its
   outcome is kept beside the subtitle (`synced-<file index>.json`, `synced.json`: the offset, the
-  frame-rate fix, the confidence, never an address). After a success, or after Wyzie said no
+  frame-rate fix, the confidence, never an address; a failed cut's reason is ffmpeg's last error
+  line, never its command line, with no address query, header or key). After a success, or after Wyzie said no
   subtitle lines up, a replay asks nothing and plays what is kept. A failure that may pass (no
   answer, the key's limit, a cut that failed) is tried again by the next play, and so is any
   failure an older version of the outcome file recorded (`v` below 2). A job stops when the
