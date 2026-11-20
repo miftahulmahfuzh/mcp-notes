@@ -2,7 +2,6 @@ import { constants } from 'node:fs';
 import { access, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { openClaudeWindow, pickTmuxSession, promptArgs, type ClaudeWindowDeps } from '../sessions/resume.js';
-import { STREAM_REPORTS_SUBDIR } from './evidence.js';
 import { SESSION_ID_PATTERN } from './sessions.js';
 
 /*
@@ -26,14 +25,6 @@ export const REPORT_SKILL = '/report-stream-bug';
  * the shell. Resume passes no mode because a resumed session is the owner's to drive.
  */
 export const REPORT_PERMISSION_MODE = 'auto';
-
-/**
- * `<dataDir>/movies/stream-reports/`: where phase 1 writes snapshot folders (phase 1's
- * STREAM_REPORTS_SUBDIR; the daemon passes StreamEvidence.reportsDir itself, this is for tests).
- */
-export function streamReportsDir(dataDir: string): string {
-  return path.join(dataDir, 'movies', STREAM_REPORTS_SUBDIR);
-}
 
 /** tmux window name of a report: `stream-bug-<first 6 characters of the session id>`. */
 export function reportWindowName(sessionId: string): string {

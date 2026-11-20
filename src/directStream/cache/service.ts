@@ -320,12 +320,6 @@ export class StreamCache {
     return row === null ? null : this.view(row);
   }
 
-  /** This host's cache of `ref` when it is complete, or null. */
-  async findReady(ref: StreamRef): Promise<StreamCacheView | null> {
-    const view = await this.find(ref);
-    return view !== null && view.state === 'ready' ? view : null;
-  }
-
   /** Every host's cache of `ref`. */
   async forRef(ref: StreamRef): Promise<StreamCacheView[]> {
     return (await this.repo.cachesOf(ref)).map((row) => this.view(row));
