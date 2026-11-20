@@ -425,15 +425,20 @@ describe('/api/stream/cache', () => {
     expect(ahead).toEqual({ started: true, state: 'downloading' });
     const aheadId = (await cache.find(next))?.id ?? '';
     expect((await cache.get(aheadId))?.auto).toBe(true);
+    // The Cache page reads it as fetched ahead (memory only: the row says `auto` alone).
+    expect(cache.activity(aheadId)).toMatchObject({ ahead: true });
     await until(async () => ((await cache.get(aheadId))?.segments_done ?? 0) >= 2);
     // The owner asks for a film: it does not wait behind the episode nobody watches yet.
     const asked = (await posted(app, { kind: 'movie', tmdb_id: 990004 })).cache.id;
+    expect(cache.activity(asked)).toMatchObject({ ahead: false });
     await waitFor(app, asked, 'ready');
+    expect(cache.activity(asked)).toBeNull();
     const then = await cache.get(aheadId);
     expect(then?.state).toBe('downloading');
     expect(then?.segments_done ?? 0).toBeLessThan(24);
     // Its turn comes back by itself, from the files already on disk.
     expect((await waitFor(app, aheadId, 'ready')).segments_done).toBe(24);
+    expect(cache.activity(aheadId)).toBeNull();
     // Asked again for an episode that is there: nothing starts.
     expect(await cache.player().ahead(next, { gentle: false })).toEqual({ started: false, state: 'ready' });
   });

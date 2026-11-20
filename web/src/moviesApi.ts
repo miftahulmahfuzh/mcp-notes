@@ -951,6 +951,22 @@ export async function ensureTitle(kind: TitleKind, tmdbId: number): Promise<stri
 // ---------- the Cache page (GET /api/stream/disk) ----------
 
 export type DiskKind = 'torrent' | 'cloud';
+/** Why a film or episode downloads now: the owner asked, the next episode fetched ahead, or a pause in the player. */
+export type DiskWhy = 'asked' | 'ahead' | 'pause';
+export type DiskDownloadState = 'queued' | 'running' | 'paused';
+
+export interface DiskDownloading {
+  progress: number;
+  why: DiskWhy;
+  state: DiskDownloadState;
+}
+
+export interface DiskDownloadRollup {
+  count: number;
+  progress: number;
+  why: DiskWhy[];
+  state: DiskDownloadState;
+}
 
 export interface DiskEpisode {
   season: number;
@@ -962,6 +978,7 @@ export interface DiskEpisode {
   watched: boolean;
   playing: boolean;
   in_use: boolean;
+  downloading: DiskDownloading | null;
 }
 
 export interface DiskSeason {
@@ -972,6 +989,7 @@ export interface DiskSeason {
   watched: boolean;
   playing: boolean;
   in_use: boolean;
+  downloading: DiskDownloadRollup | null;
   episodes: DiskEpisode[];
 }
 
@@ -994,6 +1012,7 @@ export interface DiskTitle {
   in_use: boolean;
   seasons: DiskSeason[];
   shared_bytes: number;
+  downloading: DiskDownloadRollup | null;
 }
 
 export interface DiskDeletion {
@@ -1012,6 +1031,8 @@ export interface DiskView {
   unnamed_bytes: number;
   budget_bytes: number | null;
   titles: DiskTitle[];
+  /** Films and episodes downloading now. */
+  downloading: number;
   bulk: { watched: { bytes: number; titles: number }; not_interested: { bytes: number; titles: number } };
   pending: DiskDeletion[];
   undo_ms: number;
@@ -1019,7 +1040,7 @@ export interface DiskView {
 
 export type DiskScope = { title_id: string; season?: number; episode?: number } | { bulk: 'watched' | 'not_interested' };
 
-/** What this machine keeps on disk for streaming. Throws ApiError `stream_disk_off`. */
+/** What this machine keeps on disk for streaming, and what downloads now. Throws ApiError `stream_disk_off`. */
 export async function fetchStreamDisk(signal?: AbortSignal): Promise<DiskView> {
   const v = await getJson<Partial<DiskView>>('/api/stream/disk', signal);
   return {
@@ -1029,7 +1050,12 @@ export async function fetchStreamDisk(signal?: AbortSignal): Promise<DiskView> {
     cloud_bytes: v.cloud_bytes ?? 0,
     unnamed_bytes: v.unnamed_bytes ?? 0,
     budget_bytes: v.budget_bytes ?? null,
-    titles: list(v.titles).map((t) => ({ ...t, seasons: list(t.seasons).map((s) => ({ ...s, episodes: list(s.episodes) })) })),
+    titles: list(v.titles).map((t) => ({
+      ...t,
+      downloading: t.downloading ?? null,
+      seasons: list(t.seasons).map((s) => ({ ...s, downloading: s.downloading ?? null, episodes: list(s.episodes).map((e) => ({ ...e, downloading: e.downloading ?? null })) })),
+    })),
+    downloading: v.downloading ?? 0,
     bulk: v.bulk ?? { watched: { bytes: 0, titles: 0 }, not_interested: { bytes: 0, titles: 0 } },
     pending: list(v.pending),
     undo_ms: v.undo_ms ?? 10_000,

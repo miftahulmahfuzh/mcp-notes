@@ -108,6 +108,28 @@
     - Step 3 in a swarm sharing one todos counter → minted only phase 4's task as P1-NOTES-SD04, index TaskID column left to the coordinator (rung 6: precedent of SD01/SD02/SD03/SD06, and the coordinator's note)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2, 3 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 5 mints its own task in its own worktree.
 
+- [x] **P1-NOTES-SD05** Phase 5: The Cache page: Downloading filter, progress bars, why a row downloads
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `cacheShelf.ts` (`downloading: {progress, why, state} | null` on episodes and films, roll-ups on seasons and titles, `ShelfView.downloading`), read-only getters `StreamCache.activity`, `EpisodeAhead.fetching`, `DirectStreamService.aheadFetching`, the daemon's shelf reading `deps.streamDownloads.list()`, `stream_disk` / `GET /api/stream/disk` descriptions with `npm run docs:gen`, and `CachePage.tsx`/`.css`/`.test.tsx` (the `Downloading · N` toggle, progress bars, reason chips, 3 s refresh while anything downloads). Exit: `cacheShelf` unit tests for the three reasons and the roll-ups; `CachePage.test.tsx` for the filter, the bars in both views and the faster refresh; `npm test` passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 5 of 10)
+  - **Satisfies**: R4, R5 — R4: "i think we need to improve Cache page: add "Downloading" filter : by default (cache-default-view), we show all files that are being downloaded together with the downloaded files in the cache list. but we can click this Downloading filter and the list will only show the files that are currently being downloaded only (cache-downloading-view)."; R5: "show live download progress bar in the files in Cache page (both in cache-default-view and cache-downloading-view)" · criteria: R4.1, R4.2, R4.3, R5.1
+  - **Depends on**: P1-NOTES-SD04
+  - **Plan**: `.workflows/plan/P1-NOTES-SD05.md`
+  - **Completed**: 2026-11-21 00:50
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD05.md, src/directStream/cache/service.ts, src/directStream/ahead.ts, src/directStream/service.ts, src/directStream/cacheShelf.ts, src/daemon.ts, src/mcp/streamDiskTool.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, web/src/moviesApi.ts, web/src/components/movies/CachePage.tsx, web/src/components/movies/CachePage.css, web/src/components/movies/CachePage.test.tsx, tests/unit/directStream/cacheShelf.test.ts, tests/unit/directStream/ahead.test.ts, tests/unit/mcp.streamDiskTool.test.ts, tests/integration/directStream.cache.int.test.ts
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-004324-1072468/evidence
+  - **Drift**:
+    - scripts/docs/httpRoutes.ts: the 'GET /api/stream/disk' entry sat at line 342, not 329 (phase 4's group above it); found by its key as the plan says.
+    - src/daemon.ts: the CacheShelf block sat at 568, not 566; the plan's block applied unchanged.
+    - Proof neighbour check: the fixture host's delay was raised to 9000 ms just before it, so movie-990005 was still downloading at the final read (with the plan's 4000 ms it finishes inside the 13 s wait). Assertions unchanged. The journeys were run twice (an earlier run 1121-001439-973876 also passed J1-J3).
+  - **Decided**:
+    - Index names the set worktree; this session ran in its swarm phase worktree …-p5 on phase-5-… → proceeded there (rung 6: the swarm's per-phase worktree convention, and the coordinator's note)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 5's task as P1-NOTES-SD05, index TaskID column left to the coordinator (rung 6: precedent SD01-SD06, and the coordinator's note)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-4 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: the swarm coordinator dispatches later phases.
+
 - [x] **P1-NOTES-SD06** Phase 6: Stories from the web: the season story, the episode story web-first
   - **Difficulty**: HARD
   - **Type**: Feature

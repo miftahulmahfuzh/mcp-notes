@@ -31,6 +31,7 @@ function title(over: Partial<ShelfTitle>): ShelfTitle {
     in_use: false,
     seasons: [],
     shared_bytes: 0,
+    downloading: null,
     ...over,
   };
 }
@@ -53,7 +54,8 @@ const DANDADAN = title({
       watched: false,
       playing: false,
       in_use: false,
-      episodes: [{ season: 1, episode: 4, movie_id: 'M-DD04', name: 'Kicking', bytes: 3 * GIB, kinds: ['torrent'], watched: false, playing: false, in_use: false }],
+      downloading: null,
+      episodes: [{ season: 1, episode: 4, movie_id: 'M-DD04', name: 'Kicking', bytes: 3 * GIB, kinds: ['torrent'], watched: false, playing: false, in_use: false, downloading: null }],
     },
   ],
 });
@@ -69,6 +71,7 @@ function fake(): { api: StreamDiskApi; asked: DeletionScope[]; undone: string[] 
     unnamed_bytes: 0,
     budget_bytes: 40 * GIB,
     titles: [DANDADAN, title({})],
+    downloading: 0,
     bulk: { watched: { bytes: GIB, titles: 1 }, not_interested: { bytes: 0, titles: 0 } },
     pending: [],
     undo_ms: 10_000,
@@ -138,6 +141,23 @@ describe('stream_disk', () => {
     expect(matchTitles(view, 'tv-240411').titles).toHaveLength(1);
     expect(matchTitles(view, 'barb').titles.map((t) => t.title)).toEqual(['Barbie']);
     expect(matchTitles(view, 'nothing').titles).toEqual([]);
+  });
+
+  it('says what downloads now, with its progress and why', async () => {
+    const oppenheimer = title({ title_id: 'movie-872585', movie_id: 'M-OPPN', title: 'Oppenheimer', bytes: 0, torrent_bytes: 0, kinds: [], watched: false, downloading: { count: 1, progress: 0.42, why: ['asked'], state: 'running' } });
+    const base = await fake().api.view();
+    const api: StreamDiskApi = {
+      view: async () => ({ ...base, titles: [oppenheimer], downloading: 1 }),
+      remove: async () => {
+        throw new Error('unused');
+      },
+      undo: async () => {
+        throw new Error('unused');
+      },
+    };
+    const body = json(await (await connect(api)).call({ action: 'list' }));
+    expect(body.downloading).toBe(1);
+    expect(body.titles[0]).toMatchObject({ title: 'Oppenheimer', size: '0 MB', downloading: { count: 1, progress: 0.42, why: ['asked'], state: 'running' } });
   });
 });
 

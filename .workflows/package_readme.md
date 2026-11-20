@@ -2729,6 +2729,17 @@ The download queue (phases 2 and 3) reached over HTTP, MCP and the web client. P
 - Docs: `scripts/docs/httpRoutes.ts` describes the three routes; `docs/guide/reference/{http-api,mcp-tools}.md` regenerated.
 - Tests: unit `tests/unit/directStream/downloadsRoutes.test.ts` (fakes in `tests/unit/directStream/downloadsFakes.ts`), `tests/unit/mcp.streamCacheTools.test.ts`, `web/src/moviesApi.downloads.test.tsx`; integration `tests/integration/streamDownloads.routes.int.test.ts`.
 
+### What downloads on the Cache page: src/directStream/cacheShelf.ts, web/src/components/movies/CachePage.tsx (stream-downloads-season-story phase 5, P1-NOTES-SD05)
+
+The Cache page shows what is downloading now, how far each download is and why it downloads. Plan: `.workflows/plan/P1-NOTES-SD05.md`.
+
+- `cacheShelf.ts`: `DownloadWhy` (`asked | ahead | pause`), `DownloadState` (`queued | running | paused`), `ShelfDownloading {progress 0..1, why, state}` on `ShelfEpisode` (a film's slot too), `ShelfDownloadRollup {count, progress (mean), why[] (asked first), state (running > queued > paused)}` on `ShelfSeason` and `ShelfTitle` (`rollup()`), `ShelfView.downloading` (the count). Sources: the queue (`CacheShelfOptions.downloads`: `ShelfDownloadQueue.list()` -> `ShelfQueued[]`, reason `asked`; its slot is listed even with 0 bytes on disk, and its progress wins), the fetch-ahead torrent (`ahead()`: a `downloading` torrent row of that slot, progress `bytesDone / fileLength`) and a cloud cache (`ShelfCaches.activity(id)`: `asked` for a cache not `auto`, else `ahead` or `pause`; progress the running job's, else the row's segments). One slot named twice keeps the stronger reason (`asked` > `ahead` > `pause`). A torrent fetched only because it plays is `playing`, not downloading.
+- Read-only getters: `StreamCache.activity(id)` -> `CacheActivity {state, ahead, progress}` | null; `EpisodeAhead.fetching()` and `DirectStreamService.aheadFetching()` -> the held `StreamRef` | null.
+- Wiring: `src/daemon.ts` passes `downloads` (`deps.streamDownloads.list()`, queued/running/paused rows only) and `ahead` to `CacheShelf`.
+- `stream_disk` (`src/mcp/streamDiskTool.ts`) answers `downloading` at the top, per title, season and episode; its and `GET /api/stream/disk`'s descriptions say so (`scripts/docs/httpRoutes.ts`, reference docs regenerated).
+- Web: `moviesApi.ts` gains `DiskWhy`, `DiskDownloadState` and the `downloading` fields. `CachePage.tsx`: a `Downloading · N` toggle (disabled at 0) lists only what downloads, unfolded (`shut` set; clicked again it is the default view); each downloading row gets one reason chip per `why` and a progress bar (`Downloading`); the page refreshes every `FAST_REFRESH_MS` (3 s) while anything downloads, else at `REFRESH_MS`; a trash button on a row with 0 bytes is disabled ("nothing on disk yet").
+- Tests: `tests/unit/directStream/{cacheShelf,ahead}.test.ts`, `tests/unit/mcp.streamDiskTool.test.ts`, `web/src/components/movies/CachePage.test.tsx`, `tests/integration/directStream.cache.int.test.ts`.
+
 ### Stories: src/movies/{story,webStory,agentText}.ts (stream-downloads-season-story phase 6, P1-NOTES-SD06)
 
 The story of a film, an episode or a whole season, with every spoiler, written once on the owner's click and kept in `movie_stories` through `MoviesRepo.saveStory`; a stored one is answered with no model call.

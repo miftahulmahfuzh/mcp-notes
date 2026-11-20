@@ -601,6 +601,11 @@ export class DirectStreamService {
     return out;
   }
 
+  /** The next episode a torrent is fetched for now (ahead.ts), for the Cache page; null without `ahead` or with none held. */
+  aheadFetching(): StreamRef | null {
+    return this.ahead?.fetching() ?? null;
+  }
+
   get host(): string {
     return this.opts.host;
   }
