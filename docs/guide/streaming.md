@@ -696,9 +696,9 @@ provider's stream of a foreign-language title plays for the first time, the daem
    six foreign-language streams in the soak of 2026-11-19 read `no audio could be read from the stream`, and a
    dub would have played unheard. A stream that is encrypted, fragmented MP4 or carries its audio in a rendition of
    its own is still `unsure`.
-2. The Whisper worker's `detect` task answers which language it heard and how sure it is (the worker
-   it shares with the torrent subtitle tier; `src/directStream/torrent/subtitles/whisper.ts`, with
-   a dedicated worker for the daemon's cloud check).
+2. The Whisper worker's `detect` task answers which language it heard and how sure it is (the
+   daemon's one worker, `src/directStream/torrent/subtitles/whisper.ts`; a play's `detect` goes ahead
+   of transcriptions waiting their turn, once the one in progress ends).
 3. The heard language and the title's original are normalized to two-letter codes. The original
    (or a reading under 0.6 confidence, or nothing heard) is `original`/`unsure` and plays; a
    confident other language is `dubbed`, and the provider is passed over for the next, exactly as a
@@ -2159,8 +2159,8 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   the request) says which to check. A series named without an episode, with none of its episodes on
   screen, answers `needs_episode`; no title and nothing on screen answers `nothing_playing`.
 - **Hearing.** ffmpeg cuts a minute of audio at six places spread over the film (2%, 20%, 40%, 60%,
-  80% and 93% of its length; five more between them when fewer than 30 lines were heard), and a
-  Whisper worker of the check's own writes down what is said in each with its times. A window whose
+  80% and 93% of its length; five more between them when fewer than 30 lines were heard), and the
+  daemon's Whisper worker writes down what is said in each with its times. A window whose
   bytes are not there (a torrent not downloaded that far) is passed over and named in the answer.
 - **A hint is heard first.** A time in the request (`at`: `12:37`, `1:02:10`, or a range) names a
   place where people talk: a minute from ten seconds before it, or the range as asked, a minute to
@@ -2306,7 +2306,9 @@ up as it reads the track again.
 The stretch the play starts in comes first, then each one after it, then those before it, so cues
 are ahead of the picture soon after the start. On the owner's laptop (22 cores, 8 threads) five
 minutes of Sintel took 2.5 s and a minute of steady dialogue 2.2 s: the voice filter skips music and
-silence. The worker holds about 850 MB while it runs and exits when no torrent needs it.
+silence. The worker holds about 850 MB while it runs. The daemon runs one, shared by the torrent and
+cloud transcripts, the cloud audio-language check and `/sync-subtitle`, one request at a time; it
+exits after three minutes with nothing asked, and the next request loads it again (about 1.3 s).
 
 With the film's length known, only its last stretch may come back short: a shorter cut before it
 (a host that stopped answering) is a failed stretch, left for a replay, and never read as the

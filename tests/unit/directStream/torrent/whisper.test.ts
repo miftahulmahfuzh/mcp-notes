@@ -12,6 +12,7 @@ import {
   firstStretch,
   parseCues,
   placeCues,
+  sharedTranscriber,
   whisperTask,
   WhisperTier,
   WorkerTranscriber,
@@ -334,8 +335,9 @@ describe('WorkerTranscriber (against the fake worker)', () => {
     return file;
   }
 
-  function worker(env: Record<string, string> = {}): WorkerTranscriber {
+  function worker(env: Record<string, string> = {}, idleStopMs?: number): WorkerTranscriber {
     return new WorkerTranscriber({
+      ...(idleStopMs === undefined ? {} : { idleStopMs }),
       python: FAKE_WORKER,
       script: '/not/read/whisper.py',
       model: 'small',
@@ -349,6 +351,49 @@ describe('WorkerTranscriber (against the fake worker)', () => {
 
   it('the fake worker is executable', async () => {
     expect((await stat(FAKE_WORKER)).mode & 0o111).not.toBe(0);
+  });
+
+  it('a play\'s detect goes ahead of queued transcriptions, at the end of the one in progress', async () => {
+    const log = path.join(workDir, 'asked.jsonl');
+    const transcriber = worker({ FAKE_WHISPER_DELAY_MS: '40', FAKE_WHISPER_LOG: log });
+    try {
+      const signal = new AbortController().signal;
+      const clip = await wav(3);
+      const long = [1, 2, 3].map(() => transcriber.transcribe({ wav: clip, task: 'transcribe', language: 'en' }, signal));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const heard = transcriber.detect(clip, signal);
+      await Promise.all([...long, heard]);
+      const order = (await readFile(log, 'utf8')).trim().split('\n').map((l) => (JSON.parse(l) as { task: string }).task);
+      expect(order).toEqual(['transcribe', 'detect', 'transcribe', 'transcribe']);
+    } finally {
+      await transcriber.stop();
+    }
+  });
+
+  it('ends the worker after the idle time, and the next ask starts it again', async () => {
+    const transcriber = worker({}, 60);
+    try {
+      const signal = new AbortController().signal;
+      await transcriber.transcribe({ wav: await wav(3), task: 'transcribe', language: 'en' }, signal);
+      expect(transcriber.running).toBe(true);
+      await until(() => !transcriber.running, 3000);
+      expect(await transcriber.transcribe({ wav: await wav(3), task: 'transcribe', language: 'en' }, signal)).toHaveLength(1);
+      expect(transcriber.running).toBe(true);
+    } finally {
+      await transcriber.stop();
+    }
+  });
+
+  it('a shared view asks through the worker and its stop ends nothing', async () => {
+    const transcriber = worker();
+    try {
+      const view = sharedTranscriber(transcriber);
+      await view.transcribe({ wav: await wav(3), task: 'transcribe', language: 'en' }, new AbortController().signal);
+      await view.stop();
+      expect(transcriber.running).toBe(true);
+    } finally {
+      await transcriber.stop();
+    }
   });
 
   it('loads once and answers each stretch', async () => {

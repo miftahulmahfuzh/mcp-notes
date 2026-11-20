@@ -51,7 +51,7 @@ import { CheckSubjects, SubtitleCheckService } from './directStream/subtitleChec
 import { SubtitleShelf } from './directStream/torrent/subtitles/disk.js';
 import { withHlsSegments } from './directStream/hlsCut.js';
 import { buildSubtitleSync, torrentSyncPlace } from './directStream/torrent/subtitles/synced.js';
-import { buildWhisperTier, ffmpegCutter, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
+import { buildWhisperTier, ffmpegCutter, sharedTranscriber, WHISPER_IDLE_STOP_MS, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
 import { AUDIO_VERDICTS_FILE, AudioLangCheck, AudioVerdicts, ffmpegAudioGrabber, firstAudioOf, hlsSegmentAudioGrabber } from './directStream/audioLang.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
@@ -269,23 +269,27 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // install.sh has made Whisper's Python (the log then says cloud plays are unchanged).
   const whisperCfg = config.torrent?.whisper;
   const audioCheckOn = movies !== null && config.directStream?.enabled === true && config.directStream.audioCheck !== false && picture !== null;
-  let audioDetector: WorkerTranscriber | null = null;
-  if (audioCheckOn && whisperCfg?.enabled === true) {
-    try {
-      await access(whisperCfg.python, fsConstants.X_OK);
-      audioDetector = new WorkerTranscriber({
+  // One Whisper worker (about 850 MB loaded) serves every user: this check, the torrent and cloud transcripts and
+  // /sync-subtitle. It starts on the first ask, ends after WHISPER_IDLE_STOP_MS with nothing asked, and a play's
+  // language check goes ahead of queued transcriptions. Null with Whisper off or before install.sh has made its Python.
+  let sharedWhisper: WorkerTranscriber | null = null;
+  if (whisperCfg?.enabled === true) {
+    if (await access(whisperCfg.python, fsConstants.X_OK).then(() => true, () => false)) {
+      sharedWhisper = new WorkerTranscriber({
         python: whisperCfg.python,
         script: DEFAULT_TORRENT_WHISPER_SCRIPT,
         model: whisperCfg.model,
         threads: whisperCfg.threads,
         modelsDir: join(whisperCfg.dir, 'models'),
         hfHome: join(whisperCfg.dir, 'hf'),
+        idleStopMs: WHISPER_IDLE_STOP_MS,
         log: (line) => console.log(line),
       });
-    } catch {
+    } else if (audioCheckOn) {
       console.log(`[notesd] direct stream: no Whisper Python at ${whisperCfg.python}; cloud audio-language check off. No change to cloud plays until scripts/install.sh installs it.`);
     }
   }
+  const audioDetector = audioCheckOn ? sharedWhisper : null;
   const audioCheck =
     audioDetector === null
       ? null
@@ -330,7 +334,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const cloudWhisper =
     movieStreams === null || config.torrent === undefined
       ? null
-      : await buildCloudWhisper({ whisper: config.torrent.whisper, shelf: titleSubtitles, feeds: titleCues, ffmpegBin: config.torrent.ffmpegBin ?? DEFAULT_FFMPEG_BIN });
+      : await buildCloudWhisper({ whisper: config.torrent.whisper, shelf: titleSubtitles, feeds: titleCues, ffmpegBin: config.torrent.ffmpegBin ?? DEFAULT_FFMPEG_BIN, ...(sharedWhisper === null ? {} : { transcriber: sharedTranscriber(sharedWhisper) }) });
   const outsideSubtitles =
     movieStreams === null || config.torrent === undefined
       ? null
@@ -450,6 +454,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           torrentDir: config.torrent.dir,
           ffmpegBin: config.torrent.ffmpegBin,
           fileUrl: (infoHash, fileIndex) => `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`,
+          ...(sharedWhisper === null ? {} : { transcriber: sharedTranscriber(sharedWhisper) }),
           openFeed: async (infoHash, fileIndex) => {
             const track = whisperTrackId(fileIndex);
             // A feed a stopped run left carries on (the progress file says which stretches are in it); else a new one.
@@ -524,8 +529,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   deps.torrentWhisper = whisperTier;
   deps.cloudWhisper = cloudWhisper;
   deps.titleCues = titleCues;
-  // The cloud audio-language check's Whisper worker (audioLang.ts): closed by startBackground's stop. Null when the check is off.
-  deps.audioDetector = audioDetector;
+  // The shared Whisper worker: ended by startBackground's stop. Null with Whisper off or not installed.
+  deps.audioDetector = sharedWhisper;
   // Wyzie Synced and the per-title subtitle shelf: closed by startBackground's stop; read by the `/api/stream/subs` route.
   deps.torrentSync = subtitleSync;
   deps.titleSubtitles = titleSubtitles;
@@ -533,7 +538,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // worker of its own, started by the first check and ended when none runs. Null without direct streaming, with
   // Whisper off, or before install.sh has made Whisper's Python.
   deps.subtitleCheck = null;
-  if (directStream !== null && whisperCfg?.enabled === true && config.torrent !== undefined && (await access(whisperCfg.python, fsConstants.X_OK).then(() => true, () => false))) {
+  if (directStream !== null && sharedWhisper !== null && config.torrent !== undefined) {
     const ffmpegBin = config.torrent.ffmpegBin;
     deps.subtitleCheck = new SubtitleCheckService(
       new CheckSubjects({
@@ -554,15 +559,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       }),
       new SubtitleChecker({
         cutter: withHlsSegments(ffmpegCutter({ ffmpegBin, timeoutMs: WINDOW_CUT_TIMEOUT_MS }), { ffmpegBin, timeoutMs: WINDOW_CUT_TIMEOUT_MS }),
-        transcriber: new WorkerTranscriber({
-          python: whisperCfg.python,
-          script: DEFAULT_TORRENT_WHISPER_SCRIPT,
-          model: whisperCfg.model,
-          threads: whisperCfg.threads,
-          modelsDir: join(whisperCfg.dir, 'models'),
-          hfHome: join(whisperCfg.dir, 'hf'),
-          log: (line) => console.log(line),
-        }),
+        transcriber: sharedTranscriber(sharedWhisper),
         workDir: join(config.dataDir, 'movies', 'subtitle-check'),
       }),
     );

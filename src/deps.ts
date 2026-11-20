@@ -161,9 +161,9 @@ export interface AppDeps {
   cloudWhisper?: CloudWhisper | null;
   titleCues?: CueFeeds | null;
   /**
-   * The Whisper worker of the cloud audio-language check (audioLang.ts): a dedicated worker it starts on
-   * the first foreign-language cloud play. Null or absent with the check off or Whisper not installed;
-   * startBackground's stop ends its worker.
+   * The daemon's one Whisper worker, shared by the cloud audio-language check (audioLang.ts), the torrent and cloud
+   * transcripts and /sync-subtitle. It starts on the first ask and ends when idle. Null or absent with Whisper off or
+   * not installed; startBackground's stop ends it.
    */
   audioDetector?: WorkerTranscriber | null;
   /**

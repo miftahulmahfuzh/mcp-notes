@@ -114,6 +114,8 @@ export interface BuildCloudWhisperOptions {
   shelf: Pick<TitleSubtitleShelf, 'dir'>;
   feeds: CueFeeds;
   ffmpegBin: string;
+  /** The daemon's shared worker (sharedTranscriber); unset: a worker of its own. */
+  transcriber?: Transcriber;
   log?: (line: string) => void;
 }
 
@@ -132,7 +134,7 @@ export async function buildCloudWhisper(options: BuildCloudWhisperOptions): Prom
     shelf: options.shelf,
     feeds: options.feeds,
     cutter: withHlsSegments(ffmpegCutter({ ffmpegBin: options.ffmpegBin }), { ffmpegBin: options.ffmpegBin }),
-    transcriber: new WorkerTranscriber({ python: whisper.python, script: DEFAULT_TORRENT_WHISPER_SCRIPT, model: whisper.model, threads: whisper.threads, modelsDir: path.join(whisper.dir, 'models'), hfHome: path.join(whisper.dir, 'hf'), log }),
+    transcriber: options.transcriber ?? new WorkerTranscriber({ python: whisper.python, script: DEFAULT_TORRENT_WHISPER_SCRIPT, model: whisper.model, threads: whisper.threads, modelsDir: path.join(whisper.dir, 'models'), hfHome: path.join(whisper.dir, 'hf'), log }),
     log,
   });
 }
