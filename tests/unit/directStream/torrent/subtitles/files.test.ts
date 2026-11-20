@@ -114,4 +114,33 @@ describe('filesTier', () => {
     expect(await tier.find(ctx([file(0, 'Film/Film.mp4'), file(1, 'Film/Film.en.srt')], [1]))).toEqual([]);
     expect(clock).toBe(1000);
   });
+
+  it('on a replay from disk reads the download\'s record of its chosen files', async () => {
+    const srt = path.join(dir, 'dl', 'English.srt');
+    await writeFile(srt, '1\r\n00:00:01,000 --> 00:00:30,000\r\nRelease subtitle line\r\n');
+    const tier = filesTier({
+      torrents: {
+        filePath: (_h, i) => (i === 4 ? srt : null),
+        chosenFiles: async () => ({ video: 0, files: [file(0, 'Film/Film.mp4'), file(4, 'Film/Subs/English.srt')] }),
+      },
+      shelf: new SubtitleShelf(path.join(dir, 'torrents')),
+      convertAss: async () => null,
+    });
+    expect(tier.release).toBe(true);
+    expect(tier.aside).toBe(true);
+    expect(await tier.find(ctx([], []))).toEqual([{ url: `/api/stream/torrent/${HASH}/sub/file-4.vtt`, lang: 'en', label: 'English' }]);
+  });
+
+  it('stops waiting when the session lets go of the torrent', async () => {
+    const stop = new AbortController();
+    let asks = 0;
+    const tier = filesTier({
+      torrents: { filePath: () => (++asks === 2 && stop.abort(), null) },
+      shelf: new SubtitleShelf(path.join(dir, 'torrents')),
+      convertAss: async () => null,
+      sleep: async () => undefined,
+    });
+    expect(await tier.find({ ...ctx([file(0, 'Film/Film.mp4'), file(1, 'Film/Film.en.srt')], [1]), signal: stop.signal })).toEqual([]);
+    expect(asks).toBe(2);
+  });
 });

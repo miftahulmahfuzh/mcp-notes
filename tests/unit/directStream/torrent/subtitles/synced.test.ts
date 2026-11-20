@@ -233,6 +233,19 @@ describe('SubtitleSync', () => {
     expect((await t.sync.outcome())?.in_sync).toBe(true);
   });
 
+  it('stops before asking Wyzie when the release\'s own subtitle took the outside file\'s place, and never replaces it', async () => {
+    const own: CacheSubtitleView = { url: subtitleUrl(HASH, 'file-1.vtt'), lang: 'en', label: 'English' };
+    let target: SyncTarget | null = null;
+    const t = setup({ filmS: 1320, answers: [() => json(OK)], detect: async () => (target !== null && (target.subtitles = [own]), [[10, 200]]) });
+    const s = await t.session();
+    target = s.target;
+    await t.sync.start(s.request);
+    expect(t.w.posts()).toHaveLength(0);
+    expect(s.target).toEqual({ subtitles: [own], subtitleRev: 0 });
+    expect(await t.sync.outcome()).toBeNull();
+    expect(t.logs.at(-1)).toContain('needs no sync');
+  });
+
   it('a film under 30 minutes goes straight to the whole file', async () => {
     const t = setup({ filmS: 1320, answers: [() => json(OK)] });
     const s = await t.session();

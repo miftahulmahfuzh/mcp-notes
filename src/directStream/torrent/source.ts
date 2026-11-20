@@ -9,6 +9,7 @@ import type { TrackerLists } from './trackerLists.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
 import { canRemux, pickAudioStream, type TorrentRemux } from './remux.js';
 import { runSubtitleChain, type SubtitleContext, type SubtitleTier } from './subtitles/chain.js';
+import { rankOf } from './subtitles/disk.js';
 import { hasEnglishSubtitleFile } from './subtitles/files.js';
 import type { TorrentSyncRequest } from './subtitles/synced.js';
 import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick, TorrentStats } from './types.js';
@@ -797,15 +798,24 @@ export class TorrentSource {
   private async startSubtitles(torrent: SessionTorrent, ctx: Omit<SubtitleContext, 'deadline'>, sync: Omit<TorrentSyncRequest, 'signal' | 'target'>): Promise<ResolveAttempt[]> {
     const started = this.now();
     let late = false;
+    const said = (attempts: readonly ResolveAttempt[]): string => attempts.map((a) => `${a.provider.replace(/^Subtitles: /, '')} ${a.outcome} ${a.took_s ?? 0} s`).join(', ');
     const chain = runSubtitleChain(this.opts.tiers, ctx, { log: this.log }).then((out) => {
-      torrent.subtitles = out.subtitles;
+      // A subtitle put on the session meanwhile (/sync-subtitle's checked file) is never replaced by one that ranks lower.
+      const takes = out.subtitles.length > 0 && rankOf(out.subtitles) >= rankOf(torrent.subtitles);
+      if (takes || torrent.subtitles.length === 0) torrent.subtitles = out.subtitles;
       if (late) {
-        if (out.subtitles.length > 0) torrent.subtitleRev += 1;
+        if (takes) torrent.subtitleRev += 1;
         torrent.subtitlesPending = null;
-        const said = out.attempts.map((a) => `${a.provider.replace(/^Subtitles: /, '')} ${a.outcome} ${a.took_s ?? 0} s`).join(', ');
-        this.log(`[notesd] torrent: subtitles of ${ctx.infoHash.slice(0, 8)} ${out.subtitles.length > 0 ? 'arrived' : 'not found'} behind the play, ${seconds(started, this.now())} s after the search began (${said})`);
+        this.log(`[notesd] torrent: subtitles of ${ctx.infoHash.slice(0, 8)} ${out.subtitles.length > 0 ? 'arrived' : 'not found'} behind the play, ${seconds(started, this.now())} s after the search began (${said(out.attempts)})`);
       }
       this.startSync(torrent, sync);
+      // The release's own subtitle file, still downloading when the chain ended, takes the place of what it answered.
+      void out.later?.then((more) => {
+        if (more.subtitles.length === 0 || torrent.stop.signal.aborted || rankOf(more.subtitles) <= rankOf(torrent.subtitles)) return;
+        torrent.subtitles = more.subtitles;
+        torrent.subtitleRev += 1;
+        this.log(`[notesd] torrent: the release's own subtitle of ${ctx.infoHash.slice(0, 8)} arrived ${seconds(started, this.now())} s after the search began and takes the place of the one shown (${said(more.attempts)})`);
+      });
       return out.attempts;
     });
     const headMs = this.opts.subtitleHeadMs ?? SUBTITLE_HEAD_MS;

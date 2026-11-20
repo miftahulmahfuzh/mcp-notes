@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SubtitleShelf, keptTier, vttFromBytes } from '../../../../../src/directStream/torrent/subtitles/disk.js';
+import { SUBTITLE_RANK, SubtitleShelf, keptTier, subtitleRank, vttFromBytes } from '../../../../../src/directStream/torrent/subtitles/disk.js';
 
 const HASH = 'a'.repeat(40);
 const VTT = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello.\n';
@@ -32,6 +32,27 @@ describe('SubtitleShelf', () => {
     expect(await shelf.kept(HASH)).toEqual([]);
     await writeFile(path.join(dir, HASH, '.notesd-subs', 'chosen.json'), '[{"name":"../../etc/passwd","lang":null,"label":""}]');
     expect(await shelf.kept(HASH)).toEqual([]);
+  });
+
+  it('a choice from outside the release never takes the place of a file of the release or a checked one', async () => {
+    const shelf = new SubtitleShelf(dir);
+    const own = await shelf.save(HASH, 'file-1.vtt', VTT, { lang: 'en', label: 'English' });
+    await shelf.save(HASH, 'synced-0.vtt', VTT, { lang: 'en', label: 'English (Wyzie, synced)' });
+    await shelf.save(HASH, 'service-wyzie-1.vtt', VTT, { lang: 'en', label: 'English (Wyzie)' });
+    expect(await shelf.kept(HASH)).toEqual([own]);
+    const checked = await shelf.save(HASH, 'checked-0-ab12.vtt', VTT, { lang: 'en', label: 'English (checked)' });
+    await shelf.save(HASH, 'file-2.vtt', VTT, { lang: 'en', label: 'English' });
+    expect(await shelf.kept(HASH)).toEqual([checked]);
+  });
+
+  it('a kept choice from outside the release is provisional; the release\'s own or a checked one is not', async () => {
+    const shelf = new SubtitleShelf(dir);
+    const tier = keptTier(shelf);
+    expect(tier.provisional?.([{ url: `/api/stream/torrent/${HASH}/sub/synced-0.vtt`, lang: 'en', label: '' }])).toBe(true);
+    expect(tier.provisional?.([{ url: `/api/stream/torrent/${HASH}/sub/file-3.vtt`, lang: 'en', label: '' }])).toBe(false);
+    expect(tier.provisional?.([{ url: `/api/stream/torrent/${HASH}/sub/checked-3-ab.vtt`, lang: 'en', label: '' }])).toBe(false);
+    expect(subtitleRank(`/api/stream/torrent/${HASH}/cues/embedded-0-2`)).toBe(SUBTITLE_RANK.embedded);
+    expect(subtitleRank(`/api/stream/torrent/${HASH}/cues/whisper-0`)).toBe(SUBTITLE_RANK.outside);
   });
 
   it('never names a file outside the folder', () => {

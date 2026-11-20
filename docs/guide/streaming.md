@@ -2021,17 +2021,27 @@ plain file. When the probe says the file is not one Chrome plays as is, the sess
 ### Subtitles for a torrent
 
 A torrent session gets its English subtitle from the first of these that has one. The play
-answer's `attempts` list each one asked as `Subtitles: <tier>`.
+answer's `attempts` list each one asked as `Subtitles: <tier>`. The release's own subtitle (a file
+of the torrent, the text track inside its video) is in step by construction and outranks anything
+from outside it (a subtitle service's file, a borrowed one, Wyzie Synced's re-timing of one, a
+Whisper transcript); only a file `/sync-subtitle` checked against the audio outranks the release's.
 
 1. **Kept.** What an earlier play of the same torrent chose, from
-   `<NOTESD_TORRENT_DIR>/<info hash>/.notesd-subs/`. A replay from disk asks nothing else.
+   `<NOTESD_TORRENT_DIR>/<info hash>/.notesd-subs/`. A kept file of the release, or a checked one,
+   ends the search: a replay from disk asks nothing else. A kept file from outside the release is
+   shown at once, but the torrent's own file and its embedded track are still looked for, and
+   either takes its place. No service is asked again.
 2. **A file in the torrent.** Releases often carry `Film.en.srt`, `Film.eng.srt`, `English.srt`
-   or `Subs/<film>/2_English.srt` beside the video. Those files are downloaded with the video, and
-   the play waits up to 15 s for them. A plain English file comes before an SDH one, SubRip
-   before WebVTT before ASS/SSA (converted with ffmpeg), and a `forced` file is never used. With
-   no English file, the torrent's one subtitle file is used when its name gives no language; the
-   player shows it like an English one. A file that has not arrived in 15 s is skipped for this
-   play, and the next play finds it.
+   or `Subs/<film>/2_English.srt` beside the video. Those files are downloaded with the video (on
+   a replay from disk, the download's record names them). A plain English file comes before an
+   SDH one, SubRip before WebVTT before ASS/SSA (converted with ffmpeg), and a `forced` file is
+   never used. With no English file, the torrent's one subtitle file is used when its name gives
+   no language; the player shows it like an English one. A file already on disk answers at once.
+   One still downloading holds nothing back: the tiers after it are asked meanwhile, and when the
+   file arrives (within 5 minutes, while the session holds the torrent) it takes the place of
+   what they answered, the session's `subtitle_rev` goes up, and it becomes the torrent's kept
+   choice. Its attempt then says `skipped` ("not here yet"), and the daemon log says
+   `the release's own subtitle of <hash start> arrived ...`.
 3. **The subtitle service** (`NOTESD_TORRENT_SUBTITLE_URL`, Stremio's OpenSubtitles add-on). It is
    asked first by the video's OpenSubtitles hash (its size and its first and last 64 KiB, read
    from the torrent ahead of the rest), so the lines match this exact file. If that fails, it is
@@ -2058,8 +2068,8 @@ snapshot of it lists them), and the daemon log says
 `subtitles of <hash start> arrived behind the play, 21.9 s after the search began (...)`. On
 2026-11-17 a film waited 22 s for this search before its first frame.
 
-Behind the play the four tiers still share 40 s: one that would start later is `skipped`, and the
-film goes on without a subtitle.
+Behind the play the blocking tiers (kept, service, borrow) still share 40 s: one that would start
+later is `skipped`, and the film goes on without a subtitle.
 
 A subtitle matched by title or borrowed from a provider may be cut for another release, so its
 lines can come early or late. With a Wyzie key it is re-timed behind the play (see
@@ -2101,7 +2111,9 @@ after the play has started:
   position reports (every 5 s), reads the session again and loads the new file: the film, its
   position and whether subtitles are on stay as they are. The line over the picture says
   `Subtitles synced`, and the G/H delay kept for the title goes back to 0, since it was set
-  against the old timing.
+  against the old timing. A session that shows the release's own subtitle or a checked one by
+  then keeps it: the synced file never takes the place of either, on screen or as the kept choice,
+  and a job whose sessions all show such a subtitle stops before it asks Wyzie.
 - **Once.** One sync per torrent file (or per title, for a cloud stream) on this machine. Its
   outcome is kept beside the subtitle (`synced-<file index>.json`, `synced.json`: the offset, the
   frame-rate fix, the confidence, never an address). After a success, or after Wyzie said no

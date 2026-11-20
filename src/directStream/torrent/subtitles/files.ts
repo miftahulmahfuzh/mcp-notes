@@ -120,6 +120,11 @@ export function hasEnglishSubtitleFile(files: readonly TorrentFileInfo[], subtit
 /** Phase 1's TorrentStreams as this phase reads it: a file's absolute path once it is complete, else null. */
 export interface TorrentFilePaths {
   filePath(infoHash: string, index: number): string | null | Promise<string | null>;
+  /**
+   * The download's own record of its chosen files (the video and the subtitle files beside it), read on a replay from
+   * disk, which joins no swarm and has no file list; null when there is no such download here.
+   */
+  chosenFiles?(infoHash: string): Promise<{ video: number | null; files: TorrentFileInfo[] } | null>;
 }
 
 /** An ASS/SSA file on disk to WebVTT text, or null when it cannot be converted. */
@@ -140,8 +145,11 @@ export function ffmpegAssConverter(ffmpegBin = 'ffmpeg'): AssConverter {
     });
 }
 
-/** The tier waits this long in total for the subtitle files it wants to complete. */
-export const SUBTITLE_FILE_WAIT_MS = 15_000;
+/**
+ * The tier waits this long in total for the subtitle files it wants to complete. It is asked aside (chain.ts), so the
+ * wait holds nothing back: a file that arrives within it takes the place of what the session shows.
+ */
+export const SUBTITLE_FILE_WAIT_MS = 5 * 60_000;
 const SUBTITLE_FILE_POLL_MS = 250;
 /** A subtitle file larger than this is not a subtitle. */
 export const SUBTITLE_FILE_MAX_BYTES = 5 * 1024 * 1024;
@@ -157,9 +165,11 @@ export interface FilesTierDeps {
 }
 
 /**
- * The second tier (R3.1): the best subtitle file inside the torrent, waited for (bounded) and
- * converted to WebVTT, kept as `file-<index>.vtt`. A file that does not complete in time, or that
- * holds no cue, is passed over; [] sends the chain to the next tier.
+ * The second tier (R3.1): the best subtitle file inside the torrent, waited for (bounded, and never past the session's
+ * end) and converted to WebVTT, kept as `file-<index>.vtt`. A file that does not complete in time, or that holds no
+ * cue, is passed over. It is the release's own subtitle and is asked aside: the tiers after it do not wait for it, and
+ * its answer takes the place of theirs whenever it arrives (chain.ts). On a replay from disk the download's record
+ * names the files.
  */
 export function filesTier(deps: FilesTierDeps): SubtitleTier {
   const waitMs = deps.waitMs ?? SUBTITLE_FILE_WAIT_MS;
@@ -167,13 +177,21 @@ export function filesTier(deps: FilesTierDeps): SubtitleTier {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const now = deps.now ?? (() => Date.now());
 
-  const waitFor = async (infoHash: string, index: number, deadline: number): Promise<string | null> => {
+  const waitFor = async (infoHash: string, index: number, deadline: number, signal: AbortSignal): Promise<string | null> => {
     for (;;) {
       const file = await deps.torrents.filePath(infoHash, index);
       if (file !== null) return file;
-      if (now() >= deadline) return null;
+      if (now() >= deadline || signal.aborted) return null;
       await sleep(pollMs);
     }
+  };
+
+  /** The files and the subtitle files beside the video: the play's, else (a replay) the download's record. */
+  const filesOf = async (ctx: Parameters<SubtitleTier['find']>[0]): Promise<{ files: readonly TorrentFileInfo[]; subtitles: readonly number[] }> => {
+    if (ctx.files.length > 0 || deps.torrents.chosenFiles === undefined) return { files: ctx.files, subtitles: ctx.subtitleIndexes };
+    const record = await deps.torrents.chosenFiles(ctx.infoHash);
+    if (record === null) return { files: [], subtitles: [] };
+    return { files: record.files, subtitles: record.files.filter((f) => f.index !== ctx.fileIndex && f.index !== record.video).map((f) => f.index) };
   };
 
   const readVtt = async (file: string, name: string): Promise<string | null> => {
@@ -187,14 +205,17 @@ export function filesTier(deps: FilesTierDeps): SubtitleTier {
 
   return {
     name: 'files',
-    blocks: true,
+    blocks: false,
+    release: true,
+    aside: true,
     async find(ctx): Promise<CacheSubtitleView[]> {
-      const videoName = ctx.files.find((f) => f.index === ctx.fileIndex)?.name ?? '';
-      const picks = rankSubtitleFiles(ctx.files, ctx.subtitleIndexes, videoName);
+      const { files, subtitles } = await filesOf(ctx);
+      const videoName = files.find((f) => f.index === ctx.fileIndex)?.name ?? '';
+      const picks = rankSubtitleFiles(files, subtitles, videoName);
       if (picks.length === 0) return [];
       const deadline = now() + waitMs;
       for (const pick of picks) {
-        const file = await waitFor(ctx.infoHash, pick.file.index, deadline);
+        const file = await waitFor(ctx.infoHash, pick.file.index, deadline, ctx.signal);
         if (file === null) continue;
         const vtt = await readVtt(file, pick.file.name).catch(() => null);
         if (vtt === null) continue;

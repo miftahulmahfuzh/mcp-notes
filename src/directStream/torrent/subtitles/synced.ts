@@ -522,6 +522,11 @@ export class SubtitleSync {
         if (last) return await fail(false, `only ${Math.round(spokenS)} s of speech in the film: too little to line a subtitle up with`);
         continue;
       }
+      // The release's own subtitle (or a checked one) took the place of the outside file meanwhile: nothing to re-time.
+      if ([...job.targets].every((t) => !wantsSync(t.subtitles))) {
+        this.log(`[notesd] torrent sync: ${key} stopped: the session now shows a subtitle that needs no sync`);
+        return;
+      }
       try {
         const got = await wyzieSynced({ ...this.opts.wyzie, fetch: this.opts.fetch }, { ref: request.ref, imdbId: request.imdbId, speech, covered: [[0, round2(heardS)]] }, signal);
         const view = await place.save(got.vtt);
@@ -530,6 +535,8 @@ export class SubtitleSync {
           offset_s: got.info.offsetS, fps: got.info.fps, confidence: got.info.confidence, in_sync: got.info.inSync, release: got.info.release,
         });
         for (const target of job.targets) {
+          // Only a session still showing the outside file takes the synced one: never over the release's own or a checked one.
+          if (!wantsSync(target.subtitles)) continue;
           target.subtitles = [view];
           target.subtitleRev += 1;
         }
