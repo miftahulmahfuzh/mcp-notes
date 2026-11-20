@@ -1232,7 +1232,7 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
     };
 
     /** A torrent session with a Wyzie subtitle; `rev` is what the daemon says now, in the session and in the answer to a position report. */
-    async function synced(storage?: ReturnType<typeof store>) {
+    async function synced(storage?: ReturnType<typeof store>, next: { url: string; label: string } = { url: NEW, label: 'English (Wyzie, synced)' }) {
       const daemon = { rev: 0 };
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
       const { made, createEngine } = fakeEngines();
@@ -1241,11 +1241,11 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
           jsonResponse(
             onTorrent({
               subtitle_rev: daemon.rev,
-              subtitles: [daemon.rev === 0 ? sessionTrack(OLD, 'en', 'English (Wyzie)') : sessionTrack(NEW, 'en', 'English (Wyzie, synced)')],
+              subtitles: [daemon.rev === 0 ? sessionTrack(OLD, 'en', 'English (Wyzie)') : sessionTrack(next.url, 'en', next.label)],
             }),
           ),
         [`GET ${OLD}`]: () => vtt('Out of step.'),
-        [`GET ${NEW}`]: () => vtt('In step.'),
+        [`GET ${next.url}`]: () => vtt('In step.'),
         [`POST ${S1}/position`]: () => jsonResponse({ ok: true, play_id: 'p1', ended: false, subtitle_rev: daemon.rev }),
         [STATUS]: () => downloading(),
         [MAP]: sixtyOnDisk,
@@ -1290,6 +1290,17 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
       await vi.advanceTimersByTimeAsync(3 * POSITION_INTERVAL_MS);
       expect(t.sessionReads()).toBe(2);
       expect(t.controller.getState().subtitleSyncs).toBe(1);
+    });
+
+    it('a subtitle /sync-subtitle checked and re-timed resets the delay too', async () => {
+      const storage = store();
+      const t = await synced(storage, { url: `/api/stream/torrent/${HASH}/sub/checked-0-ab12.vtt`, label: 'English (checked)' });
+      t.controller.shiftSubtitles(-900);
+      t.daemon.rev = 1;
+      await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+      await vi.waitFor(() => expect(t.tracks()).toEqual(['English (checked)']));
+      expect(t.controller.getState()).toMatchObject({ subtitleDelayMs: 0 });
+      expect(storage.kept.size).toBe(0);
     });
 
     it('subtitles the viewer turned off stay off', async () => {

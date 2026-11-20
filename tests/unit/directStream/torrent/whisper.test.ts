@@ -7,9 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildWhisperTier,
   cutArgs,
+  cutFailureText,
+  ffmpegCutter,
   firstStretch,
   parseCues,
   placeCues,
+  sharedTranscriber,
   whisperTask,
   WhisperTier,
   WorkerTranscriber,
@@ -202,6 +205,19 @@ describe('WhisperTier', () => {
     expect(feed.cues.map((cue) => cue.start_s)).toEqual([301, 601, 1]);
   });
 
+  it('a short cut before the end of a film of known length is a failed cut, not the end', async () => {
+    const cuts: number[] = [];
+    const feed = new FakeFeed();
+    const transcriber = new FakeTranscriber();
+    const full = fakeCutter(1000, cuts);
+    const cutter: AudioCutter = async (request, signal) => (request.startS === 300 ? (cuts.push(300), { ok: true, lengthS: 120 }) : full(request, signal));
+    await tier({ cutter, transcriber, feed }).find(ctx());
+    await until(() => transcriber.stops === 1);
+    expect(cuts).toEqual([0, 300, 600, 900]);
+    expect(feed.cues.map((cue) => cue.start_s)).toEqual([1, 601, 901]);
+    expect(feed.completed).toBe(0);
+  });
+
   it('gives up after three failed stretches in a row and leaves the track growing', async () => {
     const cuts: number[] = [];
     const feed = new FakeFeed();
@@ -277,6 +293,26 @@ describe('helpers', () => {
   });
 });
 
+describe('a failed cut\'s reason', () => {
+  it('is ffmpeg\'s last error line, never the command line, with no query or key', () => {
+    const raw =
+      "Command failed: ffmpeg -v error -headers 'User-Agent: Mozilla/5.0\r\nReferer: https://host.example/\r\n' -i http://127.0.0.1:7317/api/stream/cache/abc/seg.ts?tok=SECRET -map 0:a:0 /tmp/x.wav\n" +
+      '[hls @ 0x1] Opening https://cdn.example/x.m3u8?sig=abc&key=K for reading\n' +
+      'https://cdn.example/x.m3u8?sig=abc: Server returned 403 Forbidden (access denied)\n';
+    const text = cutFailureText(raw);
+    expect(text).toBe('https://cdn.example/x.m3u8 Server returned 403 Forbidden (access denied)');
+    expect(cutFailureText('Command failed: ffmpeg -headers "Referer: x" -i a\n')).toBe('ffmpeg failed');
+    expect(cutFailureText('see https://w.example/d?key=K1&tok=T1 now')).not.toMatch(/K1|T1/);
+  });
+
+  it('ffmpegCutter answers ffmpeg\'s own last line, not the arguments it was run with', async () => {
+    const bin = path.join(workDir, 'fake-ffmpeg');
+    await writeFile(bin, '#!/bin/sh\necho "frame junk" >&2\necho "Invalid data found when processing input" >&2\nexit 1\n', { mode: 0o755 });
+    const cut = await ffmpegCutter({ ffmpegBin: bin })({ url: 'http://127.0.0.1:1/x?tok=SECRET', inputArgs: ['-headers', 'Referer: https://r.example/'], startS: 0, lengthS: 10, out: path.join(workDir, 'o.wav') }, new AbortController().signal);
+    expect(cut).toEqual({ ok: false, reason: 'Invalid data found when processing input' });
+  });
+});
+
 describe('WorkerTranscriber (against the fake worker)', () => {
   async function wav(seconds: number): Promise<string> {
     const data = Buffer.alloc(Math.round(seconds * 32000));
@@ -299,8 +335,9 @@ describe('WorkerTranscriber (against the fake worker)', () => {
     return file;
   }
 
-  function worker(env: Record<string, string> = {}): WorkerTranscriber {
+  function worker(env: Record<string, string> = {}, idleStopMs?: number): WorkerTranscriber {
     return new WorkerTranscriber({
+      ...(idleStopMs === undefined ? {} : { idleStopMs }),
       python: FAKE_WORKER,
       script: '/not/read/whisper.py',
       model: 'small',
@@ -314,6 +351,49 @@ describe('WorkerTranscriber (against the fake worker)', () => {
 
   it('the fake worker is executable', async () => {
     expect((await stat(FAKE_WORKER)).mode & 0o111).not.toBe(0);
+  });
+
+  it('a play\'s detect goes ahead of queued transcriptions, at the end of the one in progress', async () => {
+    const log = path.join(workDir, 'asked.jsonl');
+    const transcriber = worker({ FAKE_WHISPER_DELAY_MS: '40', FAKE_WHISPER_LOG: log });
+    try {
+      const signal = new AbortController().signal;
+      const clip = await wav(3);
+      const long = [1, 2, 3].map(() => transcriber.transcribe({ wav: clip, task: 'transcribe', language: 'en' }, signal));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const heard = transcriber.detect(clip, signal);
+      await Promise.all([...long, heard]);
+      const order = (await readFile(log, 'utf8')).trim().split('\n').map((l) => (JSON.parse(l) as { task: string }).task);
+      expect(order).toEqual(['transcribe', 'detect', 'transcribe', 'transcribe']);
+    } finally {
+      await transcriber.stop();
+    }
+  });
+
+  it('ends the worker after the idle time, and the next ask starts it again', async () => {
+    const transcriber = worker({}, 60);
+    try {
+      const signal = new AbortController().signal;
+      await transcriber.transcribe({ wav: await wav(3), task: 'transcribe', language: 'en' }, signal);
+      expect(transcriber.running).toBe(true);
+      await until(() => !transcriber.running, 3000);
+      expect(await transcriber.transcribe({ wav: await wav(3), task: 'transcribe', language: 'en' }, signal)).toHaveLength(1);
+      expect(transcriber.running).toBe(true);
+    } finally {
+      await transcriber.stop();
+    }
+  });
+
+  it('a shared view asks through the worker and its stop ends nothing', async () => {
+    const transcriber = worker();
+    try {
+      const view = sharedTranscriber(transcriber);
+      await view.transcribe({ wav: await wav(3), task: 'transcribe', language: 'en' }, new AbortController().signal);
+      await view.stop();
+      expect(transcriber.running).toBe(true);
+    } finally {
+      await transcriber.stop();
+    }
   });
 
   it('loads once and answers each stretch', async () => {

@@ -550,6 +550,49 @@ describe('TorrentSource: the film starts before the subtitle search ends', () =>
   });
 });
 
+describe('TorrentSource: the release\'s own subtitle arrives after the chain', () => {
+  const service: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/service-wyzie-1.vtt`, lang: 'en', label: 'English (Wyzie)' };
+  const own: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/file-1.vtt`, lang: 'en', label: 'English' };
+  const filesLate = (ms: number): SubtitleTier => ({ name: 'files', blocks: false, aside: true, release: true, find: async () => (await wait(ms), [own]) });
+  const serviceTier: SubtitleTier = { name: 'service', blocks: true, find: async () => [service] };
+
+  it('takes the place of the service\'s file and bumps subtitleRev', async () => {
+    const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')], tiers: [filesLate(400), serviceTier] });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    if (!out.ok) throw new Error('not resolved');
+    expect(out.torrent.subtitles).toEqual([service]);
+    expect(out.torrent.subtitleRev).toBe(0);
+    await wait(500);
+    expect(out.torrent.subtitles).toEqual([own]);
+    expect(out.torrent.subtitleRev).toBe(1);
+    expect(t.logged.some((l) => /release's own subtitle of 00000000 arrived/.test(l))).toBe(true);
+  });
+
+  it('never takes the place of a checked file put on the session meanwhile', async () => {
+    const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')], tiers: [filesLate(400), serviceTier] });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    if (!out.ok) throw new Error('not resolved');
+    const checked: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/checked-0-ab12.vtt`, lang: 'en', label: 'English (checked)' };
+    out.torrent.subtitles = [checked];
+    out.torrent.subtitleRev = 5;
+    await wait(500);
+    expect(out.torrent.subtitles).toEqual([checked]);
+    expect(out.torrent.subtitleRev).toBe(5);
+  });
+
+  it('a late chain does not replace a checked file put on the session while it ran', async () => {
+    const slowService: SubtitleTier = { name: 'service', blocks: true, find: async () => (await wait(80), [service]) };
+    const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')], tiers: [slowService], subtitleHeadMs: 5 });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    if (!out.ok) throw new Error('not resolved');
+    const checked: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/checked-0-ab12.vtt`, lang: 'en', label: 'English (checked)' };
+    out.torrent.subtitles = [checked];
+    await out.torrent.subtitlesPending;
+    expect(out.torrent.subtitles).toEqual([checked]);
+    expect(out.torrent.subtitleRev).toBe(0);
+  });
+});
+
 describe('TorrentSource.next, hold and release', () => {
   it('moves to the next candidate without asking the indexes, and opens a released torrent again', async () => {
     const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A'), candidate(h(2), 'Film.2026.720p.WEB-DL.x264.AAC-B')] });
@@ -640,7 +683,7 @@ describe('runSubtitleChain', () => {
     expect(out.subtitles).toEqual([lone]);
     expect(out.attempts.map((a) => `${a.provider}=${a.outcome}`)).toEqual(['Subtitles: broken=error', 'Subtitles: empty=no_stream', 'Subtitles: files=resolved']);
     expect(lines).toHaveLength(1);
-    expect(await runSubtitleChain([], ctx)).toEqual({ subtitles: [], attempts: [] });
+    expect(await runSubtitleChain([], ctx)).toEqual({ subtitles: [], attempts: [], later: null });
   });
 
   it('shares one 40 s budget among the blocking tiers, skips one past it, never counts a growing tier, and honours a tier\'s own skip', async () => {
@@ -658,6 +701,57 @@ describe('runSubtitleChain', () => {
     expect(out.attempts.map((a) => `${a.provider}=${a.outcome}`)).toEqual(['Subtitles: borrow=skipped', 'Subtitles: slow=no_stream', 'Subtitles: service=skipped', 'Subtitles: whisper=resolved']);
     expect(out.attempts[2]?.detail).toBe('the 40 s subtitle budget was spent');
     expect(out.subtitles[0]?.url).toBe(`/cues/${SUBTITLE_BUDGET_MS}`);
+  });
+
+  const fileSub: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/file-3.vtt`, lang: 'en', label: 'English' };
+  const serviceSub: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/service-wyzie-1.vtt`, lang: 'en', label: 'English (Wyzie)' };
+  const syncedSub: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/synced-0.vtt`, lang: 'en', label: 'English (Wyzie, synced)' };
+  const embeddedSub: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/cues/embedded-0-2`, lang: 'en', label: 'English', growing: true };
+  const files = (ms: number, found: CacheSubtitleView[]): SubtitleTier => tier('files', async () => (await wait(ms), found), { blocks: false, aside: true, release: true });
+
+  it('a release file on disk at once ends the chain: nothing after it is asked', async () => {
+    const out = await runSubtitleChain([files(0, [fileSub]), tier('service', async () => Promise.reject(new Error('must not be asked')))], ctx, { asideHeadMs: 50 });
+    expect(out.subtitles).toEqual([fileSub]);
+    expect(out.attempts.map((a) => `${a.provider}=${a.outcome}`)).toEqual(['Subtitles: files=resolved']);
+    expect(out.later).toBeNull();
+  });
+
+  it('the release file\'s wait holds back neither the embedded track nor the service; arriving later, it is handed over', async () => {
+    const out = await runSubtitleChain([files(60, [fileSub]), tier('embedded', async () => [], { blocks: false, release: true }), tier('service', async () => [serviceSub])], ctx, { asideHeadMs: 5 });
+    expect(out.subtitles).toEqual([serviceSub]);
+    expect(out.attempts.map((a) => `${a.provider}=${a.outcome}`)).toEqual(['Subtitles: embedded=no_stream', 'Subtitles: service=resolved', 'Subtitles: files=skipped']);
+    const later = await out.later;
+    expect(later?.subtitles).toEqual([fileSub]);
+    expect(later?.attempts.map((a) => `${a.provider}=${a.outcome}`)).toEqual(['Subtitles: files=resolved']);
+  });
+
+  it('a release file that arrives while a service is still asked wins at once', async () => {
+    const out = await runSubtitleChain([files(20, [fileSub]), tier('service', async () => (await wait(200), [serviceSub]))], ctx, { asideHeadMs: 5 });
+    expect(out.subtitles).toEqual([fileSub]);
+    expect(out.attempts.map((a) => `${a.provider}=${a.outcome}`)).toEqual(['Subtitles: files=resolved', 'Subtitles: service=skipped']);
+    expect(out.later).toBeNull();
+  });
+
+  it('a kept choice from outside the release is shown, but the release\'s own subtitle still takes its place', async () => {
+    const kept = (found: CacheSubtitleView[]): SubtitleTier => tier('kept', async () => found, { provisional: (f) => f.every((t) => !t.url.includes('/file-') && !t.url.includes('/checked-')) });
+    const service = tier('service', async () => Promise.reject(new Error('must not be asked')));
+    const embedded = tier('embedded', async () => [embeddedSub], { blocks: false, release: true });
+    // The track inside the video outranks a kept service file.
+    const a = await runSubtitleChain([kept([syncedSub]), files(0, []), embedded, service], ctx, { asideHeadMs: 5 });
+    expect(a.subtitles).toEqual([embeddedSub]);
+    // No release subtitle: the kept file stands, and no service is asked.
+    const b = await runSubtitleChain([kept([syncedSub]), files(0, []), tier('embedded', async () => [], { blocks: false, release: true }), service], ctx, { asideHeadMs: 5 });
+    expect(b.subtitles).toEqual([syncedSub]);
+    expect(b.attempts.map((x) => x.provider)).toEqual(['Subtitles: kept', 'Subtitles: files', 'Subtitles: embedded']);
+    // A release file that is still downloading is handed over later.
+    const c = await runSubtitleChain([kept([syncedSub]), files(30, [fileSub]), service], ctx, { asideHeadMs: 5 });
+    expect(c.subtitles).toEqual([syncedSub]);
+    expect((await c.later)?.subtitles).toEqual([fileSub]);
+    // A checked choice ends the chain.
+    const checked = { ...fileSub, url: `/api/stream/torrent/${h(1)}/sub/checked-0-ab.vtt` };
+    const d = await runSubtitleChain([kept([checked]), tier('files', async () => Promise.reject(new Error('must not be asked')), { aside: true, release: true, blocks: false })], ctx);
+    expect(d.subtitles).toEqual([checked]);
+    expect(d.attempts).toHaveLength(1);
   });
 
   it('gives up on a blocking tier still running when the budget runs out', async () => {

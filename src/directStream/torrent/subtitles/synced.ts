@@ -10,7 +10,8 @@ import { withHlsSegments } from '../../hlsCut.js';
 import type { ResolvedSource, StreamRef } from '../../types.js';
 import { INFO_HASH_PATTERN, vttFromBytes, type SubtitleShelf } from './disk.js';
 import { TITLE_OUTSIDE_NAME } from '../../titleSubtitles.js';
-import { ffmpegCutter, type AudioCutter } from './whisper.js';
+import { IN_STEP_S } from '../../subtitleCheck/match.js';
+import { cutFailureText, ffmpegCutter, type AudioCutter } from './whisper.js';
 import { withoutSecrets } from './wyzie.js';
 
 /**
@@ -264,8 +265,27 @@ export function wantsSync(subtitles: readonly CacheSubtitleView[]): boolean {
   return subtitles.length > 0 && subtitles.every((t) => t.growing !== true && SYNCABLE_FILE.test(t.url));
 }
 
+/**
+ * The outcome file's version. A failure an older version wrote (it may have come from a bug fixed since, such as a
+ * cloud stream's audio that could not be cut before hlsCut.ts) is not final: the next play tries again.
+ */
+export const SYNC_OUTCOME_VERSION = 2;
+
+/**
+ * True when a synced answer would move the session's subtitle by less than IN_STEP_S with no frame-rate fix, and that
+ * subtitle is Wyzie's own (a service file named Wyzie, a cloud session's Wyzie file): the re-timing is not worth a new
+ * file. A borrowed or add-on file is replaced whatever the offset, since Wyzie's answer may be another subtitle.
+ */
+export function inStepAlready(info: Pick<SyncedInfo, 'offsetS' | 'fps' | 'inSync'>, shown: readonly CacheSubtitleView[]): boolean {
+  if (info.fps !== null) return false;
+  const small = info.offsetS === null ? info.inSync : Math.abs(info.offsetS) < IN_STEP_S;
+  return small && shown.length > 0 && shown.every((t) => /\/sub\/service-wyzie-[a-z0-9-]+\.vtt$/.test(t.url) || t.label.startsWith('English (Wyzie'));
+}
+
 /** One line of the outcome file. */
 export interface SyncOutcome {
+  /** SYNC_OUTCOME_VERSION when written. */
+  v: number;
   state: 'done' | 'failed';
   /** A failure the next play tries again (no answer, the key's limit, no Python); false: this title cannot be synced. */
   retry: boolean;
@@ -284,7 +304,11 @@ function parseOutcome(raw: unknown): SyncOutcome | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const o = raw as Record<string, unknown>;
   if ((o.state !== 'done' && o.state !== 'failed') || typeof o.retry !== 'boolean') return null;
+  const v = typeof o.v === 'number' && Number.isInteger(o.v) ? o.v : 1;
+  // An older version's failure is not kept: it is tried again. Its success stands.
+  if (v < SYNC_OUTCOME_VERSION && o.state === 'failed') return null;
   return {
+    v,
     state: o.state,
     retry: o.retry,
     reason: text(o.reason),
@@ -384,6 +408,8 @@ export interface SubtitleSyncOptions {
 /** One torrent file being synced, shared by every session that plays it. */
 class SyncJob {
   readonly controller = new AbortController();
+  /** /sync-subtitle chose the film's subtitle: a sync that ends now keeps nothing. */
+  checked = false;
   readonly targets = new Set<SyncTarget>();
   private users = 0;
 
@@ -438,7 +464,10 @@ export class SubtitleSync {
 
   /** Stops the job of one film, if one runs: /sync-subtitle chose its subtitle, and a sync ending later must not replace it. */
   cancel(key: string): void {
-    this.jobs.get(key)?.controller.abort(new Error('the subtitle was checked'));
+    const job = this.jobs.get(key);
+    if (job === undefined) return;
+    job.checked = true;
+    job.controller.abort(new Error('the subtitle was checked'));
   }
 
   /** Stops every job: notesd is stopping. */
@@ -476,7 +505,7 @@ export class SubtitleSync {
     let over = false;
     const fail = async (retry: boolean, reason: string): Promise<void> => {
       await this.saveOutcome(place.outcomeFile, {
-        state: 'failed', retry, reason, at: this.now().toISOString(), covered_s: round2(heardS), offset_s: null, fps: null, confidence: null, in_sync: null, release: null,
+        v: SYNC_OUTCOME_VERSION, state: 'failed', retry, reason, at: this.now().toISOString(), covered_s: round2(heardS), offset_s: null, fps: null, confidence: null, in_sync: null, release: null,
       });
       this.log(`[notesd] torrent sync: ${key} not synced: ${reason}${retry ? ' (the next play tries again)' : ''}`);
     };
@@ -497,7 +526,7 @@ export class SubtitleSync {
           }
           const cut = await this.opts.cutter({ ...input, startS: heardS, lengthS, out: wav }, signal);
           signal.throwIfAborted();
-          if (!cut.ok) return await fail(true, `the audio at ${Math.round(heardS)} s could not be cut: ${withoutSecrets(cut.reason)}`);
+          if (!cut.ok) return await fail(true, `the audio at ${Math.round(heardS)} s could not be cut: ${cutFailureText(cut.reason)}`);
           if (cut.lengthS >= 0.5) {
             let spans: SpeechSpan[];
             try {
@@ -522,14 +551,33 @@ export class SubtitleSync {
         if (last) return await fail(false, `only ${Math.round(spokenS)} s of speech in the film: too little to line a subtitle up with`);
         continue;
       }
+      // The release's own subtitle (or a checked one) took the place of the outside file meanwhile: nothing to re-time.
+      if ([...job.targets].every((t) => !wantsSync(t.subtitles))) {
+        this.log(`[notesd] torrent sync: ${key} stopped: the session now shows a subtitle that needs no sync`);
+        return;
+      }
       try {
         const got = await wyzieSynced({ ...this.opts.wyzie, fetch: this.opts.fetch }, { ref: request.ref, imdbId: request.imdbId, speech, covered: [[0, round2(heardS)]] }, signal);
+        // /sync-subtitle chose a subtitle while Wyzie answered: its choice stands, and nothing is kept.
+        if (job.checked) {
+          this.log(`[notesd] torrent sync: ${key}: the subtitle was checked meanwhile; the synced file is not kept`);
+          return;
+        }
+        const outcome = {
+          v: SYNC_OUTCOME_VERSION, retry: false, at: this.now().toISOString(), covered_s: round2(heardS),
+          offset_s: got.info.offsetS, fps: got.info.fps, confidence: got.info.confidence, release: got.info.release,
+        };
+        if (inStepAlready(got.info, request.target.subtitles)) {
+          // Wyzie's own file, moved by less than a subtitle is ever off by: it was in step. Kept as `done`, never asked again.
+          await this.saveOutcome(place.outcomeFile, { ...outcome, state: 'done', reason: `in step: moved by ${got.info.offsetS ?? 0} s, under ${IN_STEP_S} s`, in_sync: true });
+          this.log(`[notesd] torrent sync: ${key} is in step already (offset ${got.info.offsetS ?? 0} s from the first ${Math.round(heardS)} s); the subtitle is kept as it was`);
+          return;
+        }
         const view = await place.save(got.vtt);
-        await this.saveOutcome(place.outcomeFile, {
-          state: 'done', retry: false, reason: null, at: this.now().toISOString(), covered_s: round2(heardS),
-          offset_s: got.info.offsetS, fps: got.info.fps, confidence: got.info.confidence, in_sync: got.info.inSync, release: got.info.release,
-        });
+        await this.saveOutcome(place.outcomeFile, { ...outcome, state: 'done', reason: null, in_sync: got.info.inSync });
         for (const target of job.targets) {
+          // Only a session still showing the outside file takes the synced one: never over the release's own or a checked one.
+          if (!wantsSync(target.subtitles)) continue;
           target.subtitles = [view];
           target.subtitleRev += 1;
         }

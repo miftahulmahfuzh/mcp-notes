@@ -199,18 +199,38 @@ export function cutArgs(request: StretchRequest): string[] {
   ];
 }
 
+/**
+ * A failed cut's reason as it may be kept, logged or shown: ffmpeg's last error line, never its command line (which
+ * holds a stream host's User-Agent and Referer, a cache address), with every address's query cut off and anything
+ * key-like taken out (a Wyzie key, a download `tok`).
+ */
+export function cutFailureText(text: string): string {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l !== '' && !/^Command failed:/i.test(l));
+  const last = lines.at(-1) ?? 'ffmpeg failed';
+  return last
+    .replace(/((?:[a-z][a-z0-9+.-]*:\/\/|\/)[^\s?#"'<>]*)[?#][^\s"'<>]*/gi, '$1')
+    .replace(/([?&](?:key|tok|tk)=)[^&\s"']*/gi, '$1…')
+    .slice(0, 300);
+}
+
 export function ffmpegCutter(options: { ffmpegBin: string; timeoutMs?: number }): AudioCutter {
+  const timeoutMs = options.timeoutMs ?? WHISPER_CUT_TIMEOUT_MS;
   return async (request, signal) => {
     try {
       await new Promise<void>((resolve, reject) => {
-        execFile(options.ffmpegBin, cutArgs(request), { timeout: options.timeoutMs ?? WHISPER_CUT_TIMEOUT_MS, killSignal: 'SIGKILL', signal }, (err) =>
-          err ? reject(err) : resolve(),
-        );
+        execFile(options.ffmpegBin, cutArgs(request), { timeout: timeoutMs, killSignal: 'SIGKILL', signal }, (err, _stdout, stderr) => {
+          if (!err) return resolve();
+          const killed = (err as { killed?: boolean }).killed === true && !signal.aborted;
+          reject(new Error(killed ? `ffmpeg gave no audio within ${Math.round(timeoutMs / 1000)} s` : String(stderr).trim() || `ffmpeg exited with ${String((err as { code?: unknown }).code ?? 'an error')}`));
+        });
       });
       const size = (await stat(request.out)).size;
       return { ok: true, lengthS: Math.max(0, size - WAV_HEADER_BYTES) / WAV_BYTES_PER_SECOND };
     } catch (err) {
-      return { ok: false, reason: (err instanceof Error ? err.message : String(err)).slice(0, 300) };
+      return { ok: false, reason: cutFailureText(err instanceof Error ? err.message : String(err)) };
     }
   };
 }
@@ -228,8 +248,13 @@ export interface WorkerTranscriberOptions {
   env?: NodeJS.ProcessEnv;
   readyTimeoutMs?: number;
   stretchTimeoutMs?: number;
+  /** The worker ends after this long with nothing asked (reloading the model takes about 1.3 s); unset: only stop() ends it. */
+  idleStopMs?: number;
   log?: (line: string) => void;
 }
+
+/** One worker serves every Whisper user of the daemon; it ends after this long idle, and the next ask starts it again. */
+export const WHISPER_IDLE_STOP_MS = 3 * 60_000;
 
 interface WorkerLine {
   ready?: boolean;
@@ -249,15 +274,20 @@ interface Waiting {
 }
 
 /**
- * The client of one long-lived worker: started on the first stretch, asked one stretch at a time,
- * stopped when nothing needs it. A worker that dies is started again on the next stretch.
+ * The client of one long-lived worker: started on the first ask, asked one request at a time, stopped when nothing
+ * needs it (stop(), or `idleStopMs` with nothing asked). A worker that dies is started again on the next ask.
+ *
+ * Requests wait their turn in a queue; a `detect` (a play waits on it) goes ahead of every queued transcription, at
+ * the end of the request in progress.
  */
 export class WorkerTranscriber implements Transcriber {
   private child: ChildProcess | null = null;
   private ready: Promise<void> | null = null;
   private readonly waiting = new Map<string, Waiting>();
   private nextId = 1;
-  private turn: Promise<unknown> = Promise.resolve();
+  private readonly queue: Array<{ urgent: boolean; start: () => void }> = [];
+  private busy = false;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private stderrTail = '';
   private readonly log: (line: string) => void;
 
@@ -266,35 +296,84 @@ export class WorkerTranscriber implements Transcriber {
   }
 
   transcribe(request: WhisperRequest, signal: AbortSignal): Promise<WhisperCue[]> {
-    // One stretch at a time, so each one's timeout counts only its own run.
-    const run = this.turn.then(() =>
+    // One request at a time, so each one's timeout counts only its own run.
+    return this.inTurn(false, () =>
       this.ask({ wav: request.wav, task: request.task, language: request.language }, signal, (message) => {
         if (Array.isArray(message.cues)) return parseCues(message.cues);
         throw new Error(message.error ?? 'the Whisper worker answered nothing');
       }),
     );
-    this.turn = run.catch(() => undefined);
-    return run;
   }
 
-  /** The clip's spoken language, through the same shared worker as transcribe. Null on any failure: it never fails a play. */
+  /** The clip's spoken language, through the same shared worker as transcribe, ahead of it. Null on any failure: it never fails a play. */
   detect(wav: string, signal: AbortSignal): Promise<DetectedLanguage | null> {
-    const run = this.turn.then(() =>
+    return this.inTurn(true, () =>
       this.ask({ wav, task: 'detect' }, signal, (message) => {
         const language = typeof message.language === 'string' && message.language.trim() !== '' ? message.language.trim() : null;
         const probability = typeof message.probability === 'number' && Number.isFinite(message.probability) ? message.probability : null;
         if (language === null || probability === null) throw new Error(message.error ?? 'the Whisper worker detected no language');
         return { language, probability };
       }),
-    );
-    this.turn = run.catch(() => undefined);
-    return run.then(
+    ).then(
       (value) => value,
       () => null,
     );
   }
 
+  /** Runs `work` when its turn comes: an urgent one before every queued one that is not. */
+  private inTurn<T>(urgent: boolean, work: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const item = {
+        urgent,
+        start: () => {
+          void work()
+            .then(resolve, reject)
+            .finally(() => {
+              this.busy = false;
+              this.next();
+            });
+        },
+      };
+      const at = urgent ? this.queue.findIndex((q) => !q.urgent) : -1;
+      if (at < 0) this.queue.push(item);
+      else this.queue.splice(at, 0, item);
+      this.next();
+    });
+  }
+
+  private next(): void {
+    if (this.busy) return;
+    const item = this.queue.shift();
+    if (item === undefined) {
+      this.armIdle();
+      return;
+    }
+    this.busy = true;
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    item.start();
+  }
+
+  private armIdle(): void {
+    const ms = this.opts.idleStopMs;
+    if (ms === undefined || this.child === null || this.idleTimer !== null) return;
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.busy || this.queue.length > 0 || this.child === null) return;
+      this.log(`[notesd] whisper: worker stopped after ${Math.round(ms / 1000)} s with nothing asked`);
+      void this.stop();
+    }, ms);
+    this.idleTimer.unref();
+  }
+
+  /** True while a worker process runs. */
+  get running(): boolean {
+    return this.child !== null;
+  }
+
   async stop(): Promise<void> {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
     const child = this.child;
     this.child = null;
     this.ready = null;
@@ -423,6 +502,18 @@ export class WorkerTranscriber implements Transcriber {
     });
     return ready;
   }
+}
+
+/**
+ * A user's view of the daemon's one shared worker: it asks through it, and its stop() ends nothing, since another user
+ * may be asking (the worker ends by itself when idle, and the daemon stops it at shutdown).
+ */
+export function sharedTranscriber(worker: Transcriber): Transcriber {
+  return {
+    transcribe: (request, signal) => worker.transcribe(request, signal),
+    detect: (wav, signal) => worker.detect(wav, signal),
+    stop: async () => undefined,
+  };
 }
 
 /** The finished stretches of one file, kept beside the torrent. */
@@ -555,7 +646,12 @@ export class WhisperTier {
       try {
         const cut = await this.opts.cutter({ url, startS, lengthS: stretchS, out: wav }, signal);
         signal.throwIfAborted();
-        if (!cut.ok) throw new Error(`the audio at ${startS} s could not be cut: ${cut.reason}`);
+        if (!cut.ok) throw new Error(`the audio at ${startS} s could not be cut: ${cutFailureText(cut.reason)}`);
+        // With the film's length known, only its last stretch may come back short: a short cut before it failed (a host
+        // that stopped answering), and is never read as the film's end.
+        const known = endS;
+        const lastStretch = known === null || startS + stretchS >= known - 1;
+        if (!lastStretch && cut.lengthS < stretchS - 1) throw new Error(`the cut at ${startS} s gave ${Math.round(cut.lengthS)} s of the ${stretchS} s asked for, before the film's end`);
         if (cut.lengthS < 0.5) {
           endS = startS;
           await save(false);
@@ -633,6 +729,8 @@ export interface BuildWhisperTierOptions {
   openFeed: OpenWhisperFeed;
   /** Default: claude/streaming/torrent/whisper.py in this checkout. */
   script?: string;
+  /** The daemon's shared worker (sharedTranscriber); unset: a worker of the tier's own. */
+  transcriber?: Transcriber;
   log?: (line: string) => void;
 }
 
@@ -657,15 +755,17 @@ export async function buildWhisperTier(options: BuildWhisperTierOptions): Promis
     fileUrl: options.fileUrl,
     openFeed: options.openFeed,
     cutter: ffmpegCutter({ ffmpegBin: options.ffmpegBin }),
-    transcriber: new WorkerTranscriber({
-      python: whisper.python,
-      script: options.script ?? DEFAULT_TORRENT_WHISPER_SCRIPT,
-      model: whisper.model,
-      threads: whisper.threads,
-      modelsDir: path.join(whisper.dir, 'models'),
-      hfHome: path.join(whisper.dir, 'hf'),
-      log,
-    }),
+    transcriber:
+      options.transcriber ??
+      new WorkerTranscriber({
+        python: whisper.python,
+        script: options.script ?? DEFAULT_TORRENT_WHISPER_SCRIPT,
+        model: whisper.model,
+        threads: whisper.threads,
+        modelsDir: path.join(whisper.dir, 'models'),
+        hfHome: path.join(whisper.dir, 'hf'),
+        log,
+      }),
     log,
   });
 }

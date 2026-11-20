@@ -102,6 +102,8 @@ describe('Whisper for a cloud stream no subtitle service covers', () => {
     await t.whisper.track(first, stopAfterOne);
     await expect.poll(() => t.logs.some((l) => /stopped/.test(l))).toBe(true);
     expect((await feedOf(t)).complete).toBe(false);
+    // The ended session's stream is not kept.
+    expect((t.whisper as unknown as { inputs: Map<string, unknown> }).inputs.size).toBe(0);
     const done = t.cuts.length;
     await t.whisper.track(t.session(), () => ({ url: 'http://127.0.0.1:7317/api/stream/cache/C1/f/index.m3u8' }));
     await expect.poll(async () => (await feedOf(t)).complete).toBe(true);

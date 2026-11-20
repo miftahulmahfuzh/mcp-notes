@@ -703,19 +703,17 @@ cloud provider's stream of a foreign-language title is about to play, the daemon
 (`vetted` in `service.ts`): a kept verdict passes a dubbing provider over before the play, and a
 first hearing that takes longer finishes behind the play and is kept for the next one.
 
-1. `ffmpeg` cuts ~30 s of audio, 10 minutes in, from the manifest with the `Referer`, `Origin` and
-   `User-Agent` the resolve captured, to a 16 kHz mono WAV — the format the Whisper worker reads.
-   When ffmpeg cannot open the stream by itself, the segments are read instead, as the picture check reads a
-   frame: eight segments of the smallest rendition from that minute are fetched three at a time with the same
-   headers (asked once more after 1.5 s when the host refuses), each cut at its
-   MPEG-TS sync, and their transport stream is handed to ffmpeg. Some hosts wrap every segment in a small picture
-   file (HyperLink's are PNGs), so ffmpeg found "no stream" in the manifest and the check heard nothing: five of
-   six foreign-language streams in the soak of 2026-11-19 read `no audio could be read from the stream`, and a
-   dub would have played unheard. A stream that is encrypted, fragmented MP4 or carries its audio in a rendition of
-   its own is still `unsure`.
-2. The Whisper worker's `detect` task answers which language it heard and how sure it is (the worker
-   it shares with the torrent subtitle tier; `src/directStream/torrent/subtitles/whisper.ts`, with
-   a dedicated worker for the daemon's cloud check).
+1. ~30 s of audio, 10 minutes in, is cut to a 16 kHz mono WAV, the format the Whisper worker reads,
+   the way Wyzie Synced and `/sync-subtitle` cut a cloud stream
+   ([What the film's sound is read from](#what-the-films-sound-is-read-from)): an HLS stream from its
+   own segments first (its audio rendition, else its smallest one, fetched with the `Referer`,
+   `Origin` and `User-Agent` the resolve captured; MPEG-TS cut at its sync, so a host that wraps
+   every segment in a small picture file is read too, or fragmented MP4 behind its map part), and
+   by ffmpeg on the manifest with the same headers only when that gives nothing. A clip that comes
+   back empty or cut short is `unsure`, as is an encrypted stream.
+2. The Whisper worker's `detect` task answers which language it heard and how sure it is (the
+   daemon's one worker, `src/directStream/torrent/subtitles/whisper.ts`; a play's `detect` goes ahead
+   of transcriptions waiting their turn, once the one in progress ends).
 3. The heard language and the title's original are normalized to two-letter codes. The original
    (or a reading under 0.6 confidence, or nothing heard) is `original`/`unsure` and plays; a
    confident other language is `dubbed`, and the provider is passed over for the next, exactly as a
@@ -2087,17 +2085,27 @@ plain file. When the probe says the file is not one Chrome plays as is, the sess
 ### Subtitles for a torrent
 
 A torrent session gets its English subtitle from the first of these that has one. The play
-answer's `attempts` list each one asked as `Subtitles: <tier>`.
+answer's `attempts` list each one asked as `Subtitles: <tier>`. The release's own subtitle (a file
+of the torrent, the text track inside its video) is in step by construction and outranks anything
+from outside it (a subtitle service's file, a borrowed one, Wyzie Synced's re-timing of one, a
+Whisper transcript); only a file `/sync-subtitle` checked against the audio outranks the release's.
 
 1. **Kept.** What an earlier play of the same torrent chose, from
-   `<NOTESD_TORRENT_DIR>/<info hash>/.notesd-subs/`. A replay from disk asks nothing else.
+   `<NOTESD_TORRENT_DIR>/<info hash>/.notesd-subs/`. A kept file of the release, or a checked one,
+   ends the search: a replay from disk asks nothing else. A kept file from outside the release is
+   shown at once, but the torrent's own file and its embedded track are still looked for, and
+   either takes its place. No service is asked again.
 2. **A file in the torrent.** Releases often carry `Film.en.srt`, `Film.eng.srt`, `English.srt`
-   or `Subs/<film>/2_English.srt` beside the video. Those files are downloaded with the video, and
-   the play waits up to 15 s for them. A plain English file comes before an SDH one, SubRip
-   before WebVTT before ASS/SSA (converted with ffmpeg), and a `forced` file is never used. With
-   no English file, the torrent's one subtitle file is used when its name gives no language; the
-   player shows it like an English one. A file that has not arrived in 15 s is skipped for this
-   play, and the next play finds it.
+   or `Subs/<film>/2_English.srt` beside the video. Those files are downloaded with the video (on
+   a replay from disk, the download's record names them). A plain English file comes before an
+   SDH one, SubRip before WebVTT before ASS/SSA (converted with ffmpeg), and a `forced` file is
+   never used. With no English file, the torrent's one subtitle file is used when its name gives
+   no language; the player shows it like an English one. A file already on disk answers at once.
+   One still downloading holds nothing back: the tiers after it are asked meanwhile, and when the
+   file arrives (within 5 minutes, while the session holds the torrent) it takes the place of
+   what they answered, the session's `subtitle_rev` goes up, and it becomes the torrent's kept
+   choice. Its attempt then says `skipped` ("not here yet"), and the daemon log says
+   `the release's own subtitle of <hash start> arrived ...`.
 3. **The subtitle service** (`NOTESD_TORRENT_SUBTITLE_URL`, Stremio's OpenSubtitles add-on). It is
    asked first by the video's OpenSubtitles hash (its size and its first and last 64 KiB, read
    from the torrent ahead of the rest), so the lines match this exact file. If that fails, it is
@@ -2124,8 +2132,8 @@ snapshot of it lists them), and the daemon log says
 `subtitles of <hash start> arrived behind the play, 21.9 s after the search began (...)`. On
 2026-11-17 a film waited 22 s for this search before its first frame.
 
-Behind the play the four tiers still share 40 s: one that would start later is `skipped`, and the
-film goes on without a subtitle.
+Behind the play the blocking tiers (kept, service, borrow) still share 40 s: one that would start
+later is `skipped`, and the film goes on without a subtitle.
 
 A subtitle matched by title or borrowed from a provider may be cut for another release, so its
 lines can come early or late. With a Wyzie key it is re-timed behind the play (see
@@ -2167,13 +2175,23 @@ after the play has started:
   position reports (every 5 s), reads the session again and loads the new file: the film, its
   position and whether subtitles are on stay as they are. The line over the picture says
   `Subtitles synced`, and the G/H delay kept for the title goes back to 0, since it was set
-  against the old timing.
+  against the old timing. A session that shows the release's own subtitle or a checked one by
+  then keeps it: the synced file never takes the place of either, on screen or as the kept choice,
+  and a job whose sessions all show such a subtitle stops before it asks Wyzie.
 - **Once.** One sync per torrent file (or per title, for a cloud stream) on this machine. Its
   outcome is kept beside the subtitle (`synced-<file index>.json`, `synced.json`: the offset, the
-  frame-rate fix, the confidence, never an address). After a success, or after Wyzie said no
+  frame-rate fix, the confidence, never an address; a failed cut's reason is ffmpeg's last error
+  line, never its command line, with no address query, header or key). After a success, or after Wyzie said no
   subtitle lines up, a replay asks nothing and plays what is kept. A failure that may pass (no
-  answer, the key's limit, a cut that failed) is tried again by the next play. A job stops when
-  the session lets go of the film and starts over with the next play.
+  answer, the key's limit, a cut that failed) is tried again by the next play, and so is any
+  failure an older version of the outcome file recorded (`v` below 2). A job stops when the
+  session lets go of the film and starts over with the next play. A subtitle `/sync-subtitle`
+  checks while Wyzie answers stays, and the synced file is not kept.
+- **In step already.** When the subtitle shown is Wyzie's own file and Wyzie moved it by less than
+  0.6 s with no frame-rate fix (the threshold `/sync-subtitle` calls in step), no synced file is
+  written: the subtitle stays as it was, and the outcome is `done` with `in_sync: true`, so it is
+  not asked again. A borrowed or add-on file is replaced whatever the offset, since Wyzie's
+  answer may be another subtitle.
 - **Cost.** 60 requests of the key per successful sync; a refused or failed one is free.
 - **Limits.** Without Whisper's Python (`scripts/install.sh` installs it; the Whisper tier itself
   may be off) nothing is synced and the daemon log says so. A cloud stream's audio is downloaded a
@@ -2198,15 +2216,15 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
 
 - **Live and idle.** With a stream of the title on screen, the audio is that stream's and the fix is
   put on its session: `subtitle_rev` goes up and the open page loads it on its next position report,
-  without touching the film. With none, this machine's finished torrent download of the title is
+  without touching the film, and sets the G/H delay kept for the title back to 0. With none, this machine's finished torrent download of the title is
   checked, else a cloud source resolved out of sight as the dialogue reader does, and the fix is kept
   for the next play.
 - **Which one, and when nothing is checked.** Idle, `source: "torrent"` or `"cloud"` (a codename in
   the request) says which to check. A series named without an episode, with none of its episodes on
   screen, answers `needs_episode`; no title and nothing on screen answers `nothing_playing`.
 - **Hearing.** ffmpeg cuts a minute of audio at six places spread over the film (2%, 20%, 40%, 60%,
-  80% and 93% of its length; five more between them when fewer than 30 lines were heard), and a
-  Whisper worker of the check's own writes down what is said in each with its times. A window whose
+  80% and 93% of its length; five more between them when fewer than 30 lines were heard), and the
+  daemon's Whisper worker writes down what is said in each with its times. A window whose
   bytes are not there (a torrent not downloaded that far) is passed over and named in the answer.
 - **A hint is heard first.** A time in the request (`at`: `12:37`, `1:02:10`, or a range) names a
   place where people talk: a minute from ten seconds before it, or the range as asked, a minute to
@@ -2352,10 +2370,17 @@ up as it reads the track again.
 The stretch the play starts in comes first, then each one after it, then those before it, so cues
 are ahead of the picture soon after the start. On the owner's laptop (22 cores, 8 threads) five
 minutes of Sintel took 2.5 s and a minute of steady dialogue 2.2 s: the voice filter skips music and
-silence. The worker holds about 850 MB while it runs and exits when no torrent needs it.
+silence. The worker holds about 850 MB while it runs. The daemon runs one, shared by the torrent and
+cloud transcripts, the cloud audio-language check and `/sync-subtitle`, one request at a time; it
+exits after three minutes with nothing asked, and the next request loads it again (about 1.3 s).
+
+With the film's length known, only its last stretch may come back short: a shorter cut before it
+(a host that stopped answering) is a failed stretch, left for a replay, and never read as the
+film's end.
 
 When the session lets go of the torrent the stretch in progress is dropped; restarting notesd stops
-the worker too. Cues already made stay in the feed, and
+the worker too, and the next start deletes the WAV of any stretch (of a sync, a transcript or a
+check) that was being cut, and the empty `notesd-sync` folders. Cues already made stay in the feed, and
 `<NOTESD_TORRENT_DIR>/<info hash>/notesd-whisper/` remembers the finished stretches, so a replay
 carries on from there, and a file transcribed to the end plays with its finished track and runs
 nothing.

@@ -245,6 +245,7 @@ export function embeddedTier(subtitles: EmbeddedSubtitles): SubtitleTier {
   return {
     name: 'embedded',
     blocks: false,
+    release: true,
     async find(ctx: EmbeddedTierContext): Promise<CacheSubtitleView[]> {
       const tracks = ctx.probe.subtitles;
       const track = chooseEmbeddedTrack(tracks);

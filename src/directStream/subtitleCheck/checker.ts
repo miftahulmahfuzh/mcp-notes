@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { CacheSubtitleView } from '../cachePlay.js';
 import type { StreamRef } from '../types.js';
 import type { SyncInput } from '../torrent/subtitles/synced.js';
-import { whisperTask, type AudioCutter, type Transcriber, type WhisperTask } from '../torrent/subtitles/whisper.js';
+import { cutFailureText, whisperTask, type AudioCutter, type Transcriber, type WhisperTask } from '../torrent/subtitles/whisper.js';
 import { withoutSecrets } from '../torrent/subtitles/wyzie.js';
 import type { Candidate } from './candidates.js';
 import { judge, MIN_HEARD_LINES, MIN_LINE_WORDS, retime, wordsOf, type HeardLine, type Judgement } from './match.js';
@@ -242,8 +242,12 @@ export class SubtitleChecker {
     }
   }
 
+  /** Aborted by close(): a cut or a transcription in progress stops with notesd. */
+  private readonly stopping = new AbortController();
+
   /** Ends the Whisper worker: notesd is stopping. */
   async close(): Promise<void> {
+    this.stopping.abort(new Error('notesd is stopping'));
     await this.opts.transcriber.stop();
   }
 
@@ -421,10 +425,11 @@ export class SubtitleChecker {
     heard: HeardLine[],
     stage: (text: string) => void,
   ): Promise<void> {
-    const signal = new AbortController().signal;
+    const signal = this.stopping.signal;
     await mkdir(this.opts.workDir, { recursive: true });
     let short = false;
     for (const [i, { startS, lengthS, hint }] of stretches.entries()) {
+      if (signal.aborted) return;
       const mark = hint === true ? { hint } : {};
       // A film of unknown length: the first window cut short was the end.
       if (short) break;
@@ -434,7 +439,7 @@ export class SubtitleChecker {
         const input = await subject.input();
         const cut = await this.opts.cutter({ ...input, startS, lengthS, out: wav }, signal);
         if (!cut.ok) {
-          windows.push({ ...mark, at_s: startS, length_s: 0, lines: null, problem: 'the audio could not be cut: ' + withoutSecrets(cut.reason).slice(0, 160) });
+          windows.push({ ...mark, at_s: startS, length_s: 0, lines: null, problem: 'the audio could not be cut: ' + cutFailureText(cut.reason).slice(0, 160) });
           continue;
         }
         if (cut.lengthS < lengthS - 1) short = subject.durationS === null;

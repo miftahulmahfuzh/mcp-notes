@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,12 +9,13 @@ import {
   AUDIO_SAMPLE_AT_S,
   AudioLangCheck,
   AudioVerdicts,
-  cutAudioArgs,
+  cutterAudioGrabber,
+  streamInputArgs,
   isDub,
   passesOverAudio,
   type AudioGrabber,
 } from '../../../src/directStream/audioLang.js';
-import type { WhisperDetector } from '../../../src/directStream/torrent/subtitles/whisper.js';
+import type { AudioCutter, StretchRequest, WhisperDetector } from '../../../src/directStream/torrent/subtitles/whisper.js';
 import type { ResolvedSource, StreamRef } from '../../../src/directStream/types.js';
 
 const FILM: StreamRef = { kind: 'movie', tmdbId: 1419406 };
@@ -45,14 +47,30 @@ const detectorOf = (answer: () => { language: string; probability: number } | nu
   return d as WhisperDetector & { calls: number };
 };
 
-describe('the ffmpeg clip arguments', () => {
-  it('seeks, sends the captured headers, and writes 30 s of the first audio stream as 16 kHz mono PCM', () => {
-    const args = cutAudioArgs(source('NexaStream'), 600, '/tmp/clip.wav');
-    expect(args.slice(0, 6)).toEqual(['-v', 'error', '-y', '-ss', '600', '-user_agent']);
-    expect(args).toEqual(expect.arrayContaining(['-headers', 'Referer: https://embed.example/\r\nOrigin: https://embed.example\r\n']));
-    expect(args.slice(args.indexOf('-i'), args.indexOf('-i') + 2)).toEqual(['-i', 'https://cdn-nexastream.example/master.m3u8']);
-    expect(args).toEqual(expect.arrayContaining(['-t', String(AUDIO_CLIP_S), '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-map_metadata', '-1', '-fflags', '+bitexact']));
-    expect(args.at(-1)).toBe('/tmp/clip.wav');
+describe('the audio clip', () => {
+  it('asks the cutter for 30 s at the second named, with the captured headers and the stream itself for its segments', async () => {
+    const asked: StretchRequest[] = [];
+    const cutter: AudioCutter = async (request) => {
+      asked.push(request);
+      await writeFile(request.out, Buffer.alloc(44 + 32_000 * 30));
+      return { ok: true, lengthS: 30 };
+    };
+    const wav = await cutterAudioGrabber(cutter)(source('NexaStream'), 600);
+    expect(wav).not.toBeNull();
+    expect(asked[0]).toMatchObject({ url: 'https://cdn-nexastream.example/master.m3u8', startS: 600, lengthS: AUDIO_CLIP_S, out: wav });
+    expect(asked[0]?.hls?.manifest_url).toBe('https://cdn-nexastream.example/master.m3u8');
+    expect(asked[0]?.inputArgs).toEqual(streamInputArgs(source('NexaStream')));
+    expect(streamInputArgs(source('NexaStream'))).toEqual(expect.arrayContaining(['-headers', 'Referer: https://embed.example/\r\nOrigin: https://embed.example\r\n']));
+    await rm(path.dirname(wav as string), { recursive: true, force: true });
+  });
+
+  it('answers null, and leaves no folder, for a failed or empty cut', async () => {
+    const outs: string[] = [];
+    const failed: AudioCutter = async (request) => (outs.push(request.out), { ok: false, reason: 'the stream host gave 3 s of the 30 s asked for' });
+    const empty: AudioCutter = async (request) => (outs.push(request.out), { ok: true, lengthS: 0 });
+    expect(await cutterAudioGrabber(failed)(source('NexaStream'), 600)).toBeNull();
+    expect(await cutterAudioGrabber(empty)(source('NexaStream'), 600)).toBeNull();
+    for (const out of outs) expect(existsSync(path.dirname(out))).toBe(false);
   });
 });
 
