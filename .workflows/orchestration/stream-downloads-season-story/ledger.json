@@ -104,21 +104,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "30215a3",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 6,
-      "note": null,
+      "note": "web-first stories: runAgentText, webStory.ts (SEARCH_RESULTS_CARRY_URLS=true per sdk.d.ts:6563 + sdk-tools.d.ts:3758, types only, billed live test not run), MovieStories.writeSeason, StoryView origin/sources/sections, no_story_source 404, seasons[].has_story; typecheck, npm test (4503), test:int movies.api+guides (31) green; pushed as origin/phase-6-stream-downloads-season-story (not merged into the set branch); decisions: only phase 6's task minted (P1-NOTES-SD06), J4 needs POST /api/movies/ensure for tv-247718 before the seed (plan omitted it; phase 9's downloads.sh story stage needs it too); handoff p7: StoryModal still reads no_dialogue and non-null provider/cues; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1120-232817-746632/evidence",
       "package": "src/movies`, `src/http",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-20T23:32:16+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD06",
       "title": "Stories from the web: the season story, the episode story web-first"
     },
     {
@@ -188,6 +188,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-20T23:23:36+07:00",
+  "updated": "2026-11-20T23:32:16+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
