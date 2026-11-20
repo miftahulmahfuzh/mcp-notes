@@ -89,3 +89,35 @@ describe('EpisodeList: a play started from a row', () => {
     expect(lines[0]!.getAttribute('role')).toBe('status');
   });
 });
+
+describe('EpisodeList: the season story button', () => {
+  // Stream side lists every season with episodes; a Specials season is added to prove it gets no button.
+  const specials = { ...SERIES.seasons[1]!, season: 0, episodes: SERIES.seasons[1]!.episodes.map((e) => ({ ...e, season: 0 })) };
+  const detail = { ...SERIES, seasons: [specials, { ...SERIES.seasons[0]!, has_story: true }, SERIES.seasons[1]!] };
+
+  it('puts a book icon on each numbered season head, named in the owner\'s words, filled when the season\'s story is stored, and opens that season', () => {
+    const onSeasonStory = vi.fn();
+    render(<EpisodeList {...props({ detail, side: 'stream', onSeasonStory })} />);
+    const s1 = screen.getByRole('button', { name: 'Narrate the full story of S01' });
+    const s2 = screen.getByRole('button', { name: 'Narrate the full story of S02' });
+    expect(s1.closest('.mv-season-head')).toBe(document.querySelector('[data-season="1"] .mv-season-head'));
+    expect(s1.getAttribute('data-stored')).toBe('true');
+    expect(s1.getAttribute('data-tip')).toMatch(/^Narrate the full story of S01 \(stored/);
+    expect(s2.getAttribute('data-stored')).toBeNull();
+    expect(s2.getAttribute('data-tip')).toMatch(/^Narrate the full story of S02 \(full spoilers/);
+    expect(s1.className).toBe('pbtn hov mv-season-story');
+    expect(document.querySelector('[data-season="0"] .mv-season-story')).toBeNull();
+    fireEvent.click(s2);
+    expect(onSeasonStory).toHaveBeenCalledTimes(1);
+    expect(onSeasonStory).toHaveBeenCalledWith(expect.objectContaining({ season: 2 }));
+  });
+
+  it('stays on a folded season and is not there when the page gives no handler', () => {
+    const { unmount } = render(<EpisodeList {...props({ detail, side: 'stream', onSeasonStory: noop })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the episodes of season 1' }));
+    expect(screen.getByRole('button', { name: 'Narrate the full story of S01' })).toBeTruthy();
+    unmount();
+    render(<EpisodeList {...props({ detail, side: 'stream' })} />);
+    expect(screen.queryByRole('button', { name: /Narrate the full story/ })).toBeNull();
+  });
+});

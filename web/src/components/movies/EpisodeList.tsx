@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpenText, CaretDown, CaretRight, CheckCircle, Checks } from '@phosphor-icons/react';
-import type { EpisodeView, FileView, PlayerState, TitleDetail } from '../../moviesApi';
-import { episodeAction, episodeCode, episodeLive, filePlayLabel, primaryFile, seasonsShown, streamLabel, streamSourceText, TILE_LIVE_LABEL, trailerTarget, type MoviesSide, type PlayButtonState, type StreamTarget, type TrailerTarget } from '../../lib/movies';
+import type { EpisodeView, FileView, PlayerState, SeasonView, TitleDetail } from '../../moviesApi';
+import { episodeAction, episodeCode, episodeLive, filePlayLabel, primaryFile, seasonCode, seasonsShown, streamLabel, streamSourceText, TILE_LIVE_LABEL, trailerTarget, type MoviesSide, type PlayButtonState, type StreamTarget, type TrailerTarget } from '../../lib/movies';
 import { FileFlags, FileRow, Meter, PlayButton, StreamAltButton, TrailerButton, WatchedButton } from './parts';
 import { PlayMenu, type PlayMenuProps } from './PlayMenu';
 
@@ -30,6 +30,8 @@ export interface EpisodeListProps {
   onTrailer: (t: TrailerTarget) => void;
   /** Opens an episode's story (StoryModal). Left out, the rows have no book icon. */
   onStory?: (e: EpisodeView) => void;
+  /** Opens a season's whole story (StoryModal, one section per episode). Left out, the season heads have no book icon. */
+  onSeasonStory?: (s: SeasonView) => void;
 }
 
 /** A play menu's run, with the code of the row it was chosen on. */
@@ -46,6 +48,18 @@ function SeasonWatchedButton({ name, episodes, busy, onChange }: { name: string;
   return (
     <button type="button" className={on ? 'pbtn on' : 'pbtn hov'} data-tip={label} aria-label={label} aria-pressed={on} disabled={busy} onClick={() => onChange(!on)}>
       <Checks weight="duotone" />
+    </button>
+  );
+}
+
+function SeasonStoryButton({ season, onOpen }: { season: SeasonView; onOpen: () => void }) {
+  const code = seasonCode(season.season);
+  const stored = season.has_story === true;
+  const label = `Narrate the full story of ${code}`;
+  const tip = stored ? `${label} (stored; full spoilers)` : `${label} (full spoilers; written once from published recaps on the web)`;
+  return (
+    <button type="button" className="pbtn hov mv-season-story" data-tip={tip} aria-label={label} data-stored={stored ? 'true' : undefined} onClick={onOpen}>
+      <BookOpenText weight={stored ? 'fill' : 'duotone'} />
     </button>
   );
 }
@@ -88,7 +102,7 @@ function SeasonFoldButton({ name, folded, onToggle }: { name: string; folded: bo
 }
 
 /** A series' seasons (Library: those with a file on any machine; Stream: all), each with its trailer and every episode with its progress, flags and play icons; then files with no episode. */
-export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onRun, starting = null, onWatched, onSeasonWatched, onEpisodeWatched, onTrailer, onStory }: EpisodeListProps) {
+export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onRun, starting = null, onWatched, onSeasonWatched, onEpisodeWatched, onTrailer, onStory, onSeasonStory }: EpisodeListProps) {
   const { seasons, hidden } = seasonsShown(detail, focus, side);
   const list = useRef<HTMLElement>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => readCollapsed(detail.id));
@@ -122,6 +136,7 @@ export function EpisodeList({ detail, player, focus = null, busy, side, streamEn
             <SeasonFoldButton name={s.season === 0 ? 'Specials' : `season ${s.season}`} folded={isFolded(s)} onToggle={() => toggleSeason(s.season)} />
             <h3 className="mv-season-h">{s.season === 0 ? 'Specials' : `Season ${s.season}`}</h3>
             {s.season > 0 && <TrailerButton target={trailerTarget(detail, s.season)} onWatch={onTrailer} />}
+            {s.season > 0 && onSeasonStory !== undefined && <SeasonStoryButton season={s} onOpen={() => onSeasonStory(s)} />}
             <SeasonWatchedButton name={s.season === 0 ? 'Specials' : `season ${s.season}`} episodes={s.episodes} busy={busy} onChange={(watched) => onSeasonWatched(s.season, watched)} />
             {isFolded(s) && <span className="mv-dim mv-season-sum">{foldedSummary(s.episodes)}</span>}
           </div>
@@ -209,7 +224,7 @@ function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEn
         <button
           type="button"
           className="pbtn hov mv-story"
-          data-tip={e.has_story === true ? `The story of ${code} (stored; full spoilers)` : `Write the story of ${code} from its subtitle (full spoilers; Claude writes it once)`}
+          data-tip={e.has_story === true ? `The story of ${code} (stored; full spoilers)` : `Write the story of ${code} from published recaps on the web (full spoilers; Claude writes it once)`}
           aria-label={e.has_story === true ? `The story of ${code}` : `Write the story of ${code}`}
           data-stored={e.has_story === true ? 'true' : undefined}
           onClick={() => onStory(e)}

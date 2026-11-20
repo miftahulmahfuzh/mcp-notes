@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleNotch, WarningCircle, X } from '@phosphor-icons/react';
 import { ApiError } from '../../api';
-import { writeStory, type StoryView } from '../../moviesApi';
+import { writeStory, type StorySection, type StoryView } from '../../moviesApi';
+import { episodeCode } from '../../lib/movies';
 import './MovieModal.css';
 
 export interface StoryModalProps {
   titleId: string;
   season: number;
-  episode: number;
-  /** What the story is of: "One Piece S18E760 · Destruction of the Capital". */
+  /** The episode; null: the whole season's story, one section per episode. */
+  episode: number | null;
+  /** What the story is of: "One Piece S18E760 · Destruction of the Capital", "MobLand S01". */
   name: string;
   /** A story is stored: it opens at once and no model is called. */
   stored: boolean;
@@ -18,9 +20,14 @@ export interface StoryModalProps {
   load?: typeof writeStory;
 }
 
+/** What an episode of a season's story says when no web source told it. */
+export const STORY_NOT_FOUND_TEXT = 'No published recap was found for this episode.';
+
 /** Why there is no story, in words. */
 export function storyErrorText(code: string, detail: string | null): string {
   switch (code) {
+    case 'no_story_source':
+      return 'No published recap of this was found on the web, and no subtitle could stand in for it, so no story was written.';
     case 'no_subtitle':
       return 'A stream of this episode was found, but it has no English subtitle to write the story from.';
     case 'no_source':
@@ -37,14 +44,45 @@ export function storyErrorText(code: string, detail: string | null): string {
   }
 }
 
+/** What the pop-up says while the story opens or is being written. */
+export function storyWaitText(episode: number | null, stored: boolean): string {
+  if (stored) return 'Opening the story…';
+  return episode === null
+    ? 'Searching the web for published recaps of this season, then writing its story episode by episode. This can take a minute or two, once; after that it opens at once.'
+    : 'Searching the web for a published recap of this episode, then writing its story (from its subtitle only when the web has none). This can take a minute or two, once; after that it opens at once.';
+}
+
+function paragraphs(text: string): string[] {
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p !== '');
+}
+
+function sectionHeading(season: number, s: StorySection): string {
+  const code = episodeCode(season, s.episode);
+  return s.name === null ? code : `${code} · ${s.name}`;
+}
+
+/** Who wrote it, from what, and whether it was just written. */
+function storyFoot(story: StoryView, cached: boolean): string {
+  const by = story.model === null ? 'written' : `written by ${story.model}`;
+  const from =
+    story.origin === 'web'
+      ? `from ${story.sources.length} web ${story.sources.length === 1 ? 'source' : 'sources'}`
+      : `from ${story.cues ?? 0} subtitle lines${story.provider === null ? '' : ` (${story.provider})`}`;
+  return `${by} ${from}${cached ? ' · stored' : ' · just now, and stored'}`;
+}
+
 type Phase = { at: 'writing' } | { at: 'done'; story: StoryView; cached: boolean } | { at: 'failed'; text: string };
 
 /**
- * The whole story of one episode, every spoiler included, in a pop-up over the title's page.
- * Opening it is the request: the daemon reads the episode's dialogue (the English subtitle of a
- * stream source, out of sight) and has Claude write the story from it, once; after that the
- * stored story opens at once. Esc and a click outside close it; a story being written is still
- * finished and kept by the daemon.
+ * The whole story of one episode, or of a whole season, every spoiler included, in a pop-up over
+ * the title's page. Opening it is the request: the daemon writes the story once from published
+ * recaps on the web (an episode falls back to its subtitle when the web has none) and keeps it;
+ * after that the stored story opens at once. A season's story has one section per episode; the
+ * pages it was written from are listed as links under it. Esc and a click outside close it; a
+ * story being written is still finished and kept by the daemon.
  */
 export function StoryModal({ titleId, season, episode, name, stored, onClose, load = writeStory }: StoryModalProps) {
   const [phase, setPhase] = useState<Phase>({ at: 'writing' });
@@ -91,7 +129,7 @@ export function StoryModal({ titleId, season, episode, name, stored, onClose, lo
         {phase.at === 'writing' && (
           <p className="mm-empty mm-story-wait" role="status">
             <CircleNotch className="mm-spin" weight="bold" />
-            {stored ? 'Opening the story…' : 'Reading the subtitle of this episode, then writing its story. This takes a minute, once; after that it opens at once.'}
+            {storyWaitText(episode, stored)}
           </p>
         )}
         {phase.at === 'failed' && (
@@ -102,13 +140,33 @@ export function StoryModal({ titleId, season, episode, name, stored, onClose, lo
         )}
         {phase.at === 'done' && (
           <div className="mm-story-text">
-            {phase.story.text.split(/\n\s*\n/).map((paragraph, i) => (
-              <p key={i}>{paragraph.trim()}</p>
-            ))}
-            <p className="mm-notice mm-story-foot">
-              written{phase.story.model === null ? '' : ` by ${phase.story.model}`} from {phase.story.cues} subtitle lines ({phase.story.provider})
-              {phase.cached ? ' · stored' : ' · just now, and stored'}
-            </p>
+            {phase.story.sections.length > 0
+              ? phase.story.sections.map((s) => {
+                  const heading = sectionHeading(phase.story.season, s);
+                  return (
+                    <section key={s.episode} className="mm-story-sec" aria-label={heading} data-found={s.found ? undefined : 'false'}>
+                      <h3 className="mm-story-h">{heading}</h3>
+                      {s.found ? paragraphs(s.text).map((p, i) => <p key={i}>{p}</p>) : <p className="mm-story-none">{STORY_NOT_FOUND_TEXT}</p>}
+                    </section>
+                  );
+                })
+              : paragraphs(phase.story.text).map((p, i) => <p key={i}>{p}</p>)}
+            {phase.story.sources.length > 0 && (
+              <section className="mm-story-sources" aria-label="Sources">
+                <h3 className="mm-story-h">Sources</h3>
+                <ul>
+                  {phase.story.sources.map((src) => (
+                    <li key={src.url}>
+                      <a href={src.url} target="_blank" rel="noreferrer">
+                        {src.title}
+                      </a>
+                      <span className="mm-notice"> · {src.site}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            <p className="mm-notice mm-story-foot">{storyFoot(phase.story, phase.cached)}</p>
           </div>
         )}
       </div>

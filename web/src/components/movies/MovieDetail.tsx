@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { BookmarkSimple, CaretUp, CheckCircle, DotsThree, EyeSlash, Play } from '@phosphor-icons/react';
-import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setEpisodesWatched, setFileWatched, streamPlay, type CastCredit, type EpisodeView, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
+import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setEpisodesWatched, setFileWatched, streamPlay, type CastCredit, type EpisodeView, type FileView, type PlayerState, type SeasonView, type TitleDetail } from '../../moviesApi';
 import type { NoticeAction } from '../../hooks/useNotice';
 import {
   CAST_LIMIT,
@@ -31,6 +31,7 @@ import {
   type TrailerTarget,
   streamLive,
   episodeCode,
+  seasonCode,
 } from '../../lib/movies';
 import { usePlayProgress } from '../../hooks/usePlayProgress';
 import { EntityModal } from './EntityModal';
@@ -62,6 +63,22 @@ export interface MovieDetailProps {
   streamEnabled?: boolean;
 }
 
+/** What the story pop-up is open on: one episode, or a whole season (`episode` null). */
+interface StoryTarget {
+  season: number;
+  episode: number | null;
+  name: string;
+  stored: boolean;
+}
+
+function episodeStory(title: string, e: EpisodeView): StoryTarget {
+  return { season: e.season, episode: e.episode, name: `${title} ${episodeCode(e.season, e.episode)}${e.name === null ? '' : ` · ${e.name}`}`, stored: e.has_story === true };
+}
+
+function seasonStory(title: string, s: SeasonView): StoryTarget {
+  return { season: s.season, episode: null, name: `${title} ${seasonCode(s.season)}`, stored: s.has_story === true };
+}
+
 /**
  * One title (`/movies/<id>`, `/movies/<id>?side=stream`), a film or a series: poster, facts (release
  * date, runtime or seasons, genres), the stream source line, the Play button (VLC on a file here;
@@ -77,8 +94,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   useEffect(() => setRating(d.rating), [d.rating]);
   /** The trailer playing in the pop-up. It has a video id: a title without one searches YouTube in a new tab instead. */
   const [trailer, setTrailer] = useState<TrailerTarget | null>(null);
-  /** The episode whose story is open in the pop-up. */
-  const [story, setStory] = useState<EpisodeView | null>(null);
+  /** The episode or season whose story is open in the pop-up. */
+  const [story, setStory] = useState<StoryTarget | null>(null);
   /** The person, studio or genre whose pop-up is open. */
   const [guide, setGuide] = useState<GuideEntityRef | null>(null);
   useEffect(() => {
@@ -393,7 +410,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           onSeasonWatched={(season, next) => void markEpisodes({ season }, next, season === 0 ? 'Specials' : `Season ${season}`)}
           onEpisodeWatched={(e: EpisodeView, next) => void markEpisodes({ episodes: [{ season: e.season, episode: e.episode }] }, next, episodeCode(e.season, e.episode))}
           onTrailer={setTrailer}
-          onStory={setStory}
+          onStory={(e) => setStory(episodeStory(d.title, e))}
+          onSeasonStory={(s) => setStory(seasonStory(d.title, s))}
         />
       ) : (
         (side === 'library' || d.files.length > 0) && (
@@ -410,14 +428,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
       {trailer !== null && trailer.key !== null && <TrailerModal videoKey={trailer.key} name={trailer.name} onClose={() => setTrailer(null)} />}
       {guide !== null && <EntityModal entity={guide} detail={d} onClose={() => setGuide(null)} onAsk={onEntity === undefined || asking ? undefined : onEntity} />}
       {story !== null && (
-        <StoryModal
-          titleId={d.id}
-          season={story.season}
-          episode={story.episode}
-          name={`${d.title} ${episodeCode(story.season, story.episode)}${story.name === null ? '' : ` · ${story.name}`}`}
-          stored={story.has_story === true}
-          onClose={() => setStory(null)}
-        />
+        <StoryModal titleId={d.id} season={story.season} episode={story.episode} name={story.name} stored={story.stored} onClose={() => setStory(null)} />
       )}
     </article>
   );
