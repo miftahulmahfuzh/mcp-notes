@@ -88,6 +88,26 @@
     - Integration test batch 'batch-int' vs the uuid column → a fixed uuid in the test, code unchanged (rung 3: phase 1's schema is the reconciled row shape)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2 and 6 of this set, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. No successor to unblock: phase 4 mints its own task in its own worktree.
 
+- [x] **P1-NOTES-SD04** Phase 4: Routes and the tool: `/api/stream/downloads`, `direct_stream_cache`
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/http/streamDownloadsApi.ts` (POST/GET/DELETE `/api/stream/downloads`, mounted after the stream cache routes), the "Stream downloads" group of `scripts/docs/httpRoutes.ts` with `npm run docs:gen`, `direct_stream_cache`'s `provider`/`info_hash`/season start and downloads in `status`/`list`, one sentence in `src/mcp/instructions.ts`, one bullet in the `direct-stream` skill, the client functions `requestDownload`/`fetchDownloads`/`cancelDownload` in `web/src/moviesApi.ts`, and `tests/integration/streamDownloads.routes.int.test.ts`. Exit: route unit tests for every status; the MCP tool's tests; `tests/unit/docs/reference.test.ts` passes; the integration test queues through the route on Postgres and reads it back, and one host never lists or cancels the other's row.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 4 of 10)
+  - **Satisfies**: R1, R2, R3 — the Download button's server side (film, episode, season, a chosen source), the season and episode row downloads, and the live progress the title page reads · criteria: R1.1, R1.3, R1.10, R1.11, R2.1, R2.2, R3.2
+  - **Depends on**: P1-NOTES-SD02, P1-NOTES-SD03
+  - **Plan**: `.workflows/plan/P1-NOTES-SD04.md`
+  - **Completed**: 2026-11-21 00:10
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD04.md, src/http/streamDownloadsApi.ts, src/http/app.ts, src/mcp/streamCacheTools.ts, src/mcp/instructions.ts, claude/skills/direct-stream/SKILL.md, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, web/src/moviesApi.ts, web/src/moviesApi.downloads.test.tsx, tests/unit/directStream/downloadsFakes.ts, tests/unit/directStream/downloadsRoutes.test.ts, tests/unit/mcp.streamCacheTools.test.ts, tests/integration/streamDownloads.routes.int.test.ts
+  - **Proof**: verified-first-pass — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-000528-921728/evidence (90-phase4-journeys.txt; J1-J7), neighbor check cache.sh PASS in /home/miftah/.local/state/notesd-verify/1121-000638-927268/evidence
+  - **Drift**:
+    - web/src/moviesApi.ts was 1050 lines, not 962 (phase 7 landed first); the downloads section was appended at the end as planned
+    - the plan's code blocks were applied verbatim; no other drift
+  - **Decided**:
+    - Step 3 in a swarm sharing one todos counter → minted only phase 4's task as P1-NOTES-SD04, index TaskID column left to the coordinator (rung 6: precedent of SD01/SD02/SD03/SD06, and the coordinator's note)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2, 3 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 5 mints its own task in its own worktree.
+
 - [x] **P1-NOTES-SD06** Phase 6: Stories from the web: the season story, the episode story web-first
   - **Difficulty**: HARD
   - **Type**: Feature

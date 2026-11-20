@@ -1048,3 +1048,110 @@ export async function undoStreamDisk(id: string): Promise<void> {
   const res = await fetch(`/api/stream/disk/deletions/${encodeURIComponent(id)}`, { method: 'DELETE', headers: JSON_HEADERS });
   if (!res.ok) throw await failure(res);
 }
+
+// ---------- downloads (POST, GET, DELETE /api/stream/downloads) ----------
+
+/** How a download was asked for: `auto` (the Download button: a 1080p torrent, then the cloud, then a lower torrent), or one source. */
+export type DownloadVia = 'auto' | 'torrent' | 'cloud';
+export type DownloadState = 'queued' | 'running' | 'paused' | 'done' | 'failed';
+export type DownloadSource = 'torrent' | 'cloud';
+
+/** One download of this machine, as GET /api/stream/downloads lists it (phase 2's DownloadView plus `title_id`). */
+export interface DownloadView {
+  id: string;
+  host: string;
+  available: boolean;
+  /** `movie-<tmdb id>` or `tv-<tmdb id>`, the title's `id`. */
+  title_id: string;
+  kind: TitleKind;
+  tmdb_id: number;
+  /** Null for a film. */
+  season: number | null;
+  /** Null for a film. */
+  episode: number | null;
+  /** `done` only in an answer narrowed to one title (`?title=`): it is on this machine. */
+  state: DownloadState;
+  via: DownloadVia;
+  /** The torrent picked by hand; null otherwise. */
+  info_hash: string | null;
+  /** What it downloads from; null while no source is chosen yet. */
+  source: DownloadSource | null;
+  /** The torrent's info hash or the stream cache's id; null while no source is chosen yet. */
+  source_id: string | null;
+  /** 0 to 1. */
+  progress: number;
+  bytes_done: number;
+  bytes_total: number | null;
+  peers: number | null;
+  down_kbps: number | null;
+  /** Why it failed (`no_source`, ...); null unless `state` is `failed`. */
+  error: string | null;
+  /** What each source it tried saw, when it failed. */
+  detail: string | null;
+  /** Shared by the episodes one season's click queued; null for a single film or episode. */
+  batch: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+export interface DownloadsView {
+  host: string;
+  /** Something is queued, running or paused: read again soon. False: nothing moves, so nothing needs reading again. */
+  active: boolean;
+  downloads: DownloadView[];
+}
+
+/** What the Download button asks for: a film, an episode (a torrent may be named), or a whole season. */
+export type DownloadRequest =
+  | { kind: 'movie'; tmdb_id: number; via?: DownloadVia; info_hash?: string }
+  | { kind: 'tv'; tmdb_id: number; season: number; episode: number; via?: DownloadVia; info_hash?: string }
+  | { kind: 'tv'; tmdb_id: number; season: number; episode?: never; via?: DownloadVia; info_hash?: never };
+
+export interface DownloadQueued {
+  /** Downloads this request made; 0 when everything asked for was queued already or is on this machine. */
+  created: number;
+  whole: number;
+  not_aired: number;
+  downloads: DownloadView[];
+}
+
+function downloadOf(d: DownloadView): DownloadView {
+  const p = typeof d.progress === 'number' && Number.isFinite(d.progress) ? Math.min(1, Math.max(0, d.progress)) : 0;
+  return {
+    ...d,
+    season: d.season ?? null,
+    episode: d.episode ?? null,
+    info_hash: d.info_hash ?? null,
+    source: d.source ?? null,
+    source_id: d.source_id ?? null,
+    progress: p,
+    bytes_done: d.bytes_done ?? 0,
+    bytes_total: d.bytes_total ?? null,
+    peers: d.peers ?? null,
+    down_kbps: d.down_kbps ?? null,
+    error: d.error ?? null,
+    detail: d.detail ?? null,
+    batch: d.batch ?? null,
+    finished_at: d.finished_at ?? null,
+  };
+}
+
+/** Queues a film, an episode or a season; answers at once. Throws ApiError `downloads_off`, `invalid_body`, `unknown_season`. */
+export async function requestDownload(ask: DownloadRequest): Promise<DownloadQueued> {
+  const r = await postJson<Partial<DownloadQueued>>('/api/stream/downloads', ask);
+  return { created: r?.created ?? 0, whole: r?.whole ?? 0, not_aired: r?.not_aired ?? 0, downloads: list(r?.downloads).map(downloadOf) };
+}
+
+/** This machine's queued, running, paused and failed downloads; of one title when `titleId` names it, then with its `done` ones still on this machine. Throws ApiError `downloads_off`. */
+export async function fetchDownloads(titleId: string | null = null, signal?: AbortSignal): Promise<DownloadsView> {
+  const url = titleId === null ? '/api/stream/downloads' : `/api/stream/downloads?title=${enc(titleId)}`;
+  const v = await getJson<Partial<DownloadsView>>(url, signal);
+  return { host: v.host ?? '', active: v.active === true, downloads: list(v.downloads).map(downloadOf) };
+}
+
+/** Cancels a download of this machine. Throws ApiError `unknown_download`. */
+export async function cancelDownload(id: string): Promise<void> {
+  const res = await fetch(`/api/stream/downloads/${enc(id)}`, { method: 'DELETE', headers: JSON_HEADERS });
+  if (!res.ok) throw await failure(res);
+}

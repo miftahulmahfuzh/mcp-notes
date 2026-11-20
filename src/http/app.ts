@@ -31,6 +31,7 @@ import { debugApiRoutes } from './debugApi.js';
 import { directStreamRoutes } from './directStreamApi.js';
 import { streamEvidenceRoutes } from './streamEvidenceApi.js';
 import { streamCacheRoutes } from './streamCacheApi.js';
+import { streamDownloadsRoutes } from './streamDownloadsApi.js';
 import { streamCachePlayRoutes } from './streamCachePlayApi.js';
 import { streamTorrentRoutes } from './streamTorrentApi.js';
 import { streamTorrentCandidatesRoutes } from './streamTorrentCandidatesApi.js';
@@ -120,7 +121,7 @@ export function mcpToolDeps(
  * Adversarial read model, toggle and review-now), moviesApiRoutes and moviesPlayRoutes
  * (movies-library phases 4 and 5: library, user state, sync, playback), directStreamRoutes
  * (direct-streaming phase 3: play, the player's session, the pass-through, refresh),
- * streamEvidenceRoutes (stream bug reporting: the evidence log, page lines, snapshots), streamCacheRoutes (stream-cache phase 5: the stream cache), streamTorrentRoutes (torrent-stream-source phase 1: torrent downloads and their file route), streamTorrentCandidatesRoutes (a title's torrent candidates and the torrent blacklist), streamDiskRoutes (the Cache page: what this machine keeps on disk for streaming), staticRoutes
+ * streamEvidenceRoutes (stream bug reporting: the evidence log, page lines, snapshots), streamCacheRoutes (stream-cache phase 5: the stream cache), streamDownloadsRoutes (stream-downloads phase 4: the download queue the title page and direct_stream_cache fill), streamTorrentRoutes (torrent-stream-source phase 1: torrent downloads and their file route), streamTorrentCandidatesRoutes (a title's torrent candidates and the torrent blacklist), streamDiskRoutes (the Cache page: what this machine keeps on disk for streaming), staticRoutes
  * (P6, last: it owns the SPA fallback; it reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
@@ -156,6 +157,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', directStreamRoutes(deps));
   app.route('/', streamEvidenceRoutes(deps));
   app.route('/', streamCacheRoutes(deps));
+  app.route('/', streamDownloadsRoutes(deps));
   app.route('/', streamCachePlayRoutes(deps));
   app.route('/', streamTorrentRoutes(deps));
   app.route('/', streamTorrentCandidatesRoutes(deps));
