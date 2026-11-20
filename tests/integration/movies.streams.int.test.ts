@@ -421,6 +421,27 @@ describe('direct streaming in the movies store', () => {
       expect(await streams().animeRef(MOBLAND_S1E2, { lookup: async () => Promise.reject(new Error('index down')) })).toBeNull()
     })
 
+    it('plays the audio language the owner set instead of the original language, and goes back to it when cleared', async () => {
+      await repo.upsertTitle({ ...movieMeta(101), originalLanguage: 'fr' }, T0)
+      const LEON = { kind: 'movie' as const, tmdbId: 101 }
+      expect(await streams().originalLanguage(LEON)).toBe('fr')
+      expect(await streams().setAudioLanguage(LEON, 'en')).toBe(true)
+      expect(await streams().originalLanguage(LEON)).toBe('en')
+      expect(await getTitle(db, 'movie-101', CTX)).toMatchObject({ audio_language: 'en' })
+      // New TMDB metadata keeps the owner's choice.
+      await repo.upsertTitle({ ...movieMeta(101), originalLanguage: 'fr' }, at(1))
+      expect(await streams().originalLanguage(LEON)).toBe('en')
+      expect(await streams().setAudioLanguage(LEON, null)).toBe(true)
+      expect(await streams().originalLanguage(LEON)).toBe('fr')
+      expect(await getTitle(db, 'movie-101', CTX)).not.toHaveProperty('audio_language')
+    })
+
+    it('stores the audio language of a title not stored yet once TMDB lists it, and nothing without TMDB', async () => {
+      expect(await new MovieStreams(moviesOf(HOST, null), { log: () => undefined }).setAudioLanguage(FIGHT_CLUB, 'de')).toBe(false)
+      expect(await streams().setAudioLanguage(FIGHT_CLUB, 'de')).toBe(true)
+      expect((await repo.titleById('movie-550'))?.audioLanguage).toBe('de')
+    })
+
     it('keeps the stored language when new TMDB metadata does not carry one', async () => {
       await repo.upsertTitle({ ...movieMeta(550), originalLanguage: 'en' }, T0)
       await repo.upsertTitle(movieMeta(550), at(1))

@@ -77,6 +77,11 @@ export interface DirectStreamHooks {
    * skips a stream dubbed into another language, and the player picks that audio track. Null: unknown.
    */
   originalLanguage?: (ref: StreamRef) => Promise<string | null>;
+  /**
+   * Sets the audio language the title plays in ("en"; null: back to TMDB's original language), which the
+   * originalLanguage hook answers from then on. False when it could not be stored.
+   */
+  setAudioLanguage?: (ref: StreamRef, language: string | null) => Promise<boolean>;
   /** The title the player shows; default `refLabel(ref)`. */
   titleLabel?: (ref: StreamRef) => Promise<string | null>;
   /**
@@ -2144,6 +2149,17 @@ export class DirectStreamService {
       reason: out.error,
       attempts: out.attempts,
     });
+  }
+
+  /**
+   * The owner's audio language for the title ("en"), or null to go back to TMDB's original language: stored through
+   * the setAudioLanguage hook, before a play, so that play and every later one check for that language. False when
+   * it could not be stored (no hook, or the title cannot be stored).
+   */
+  async setAudioLanguage(ref: StreamRef, language: string | null): Promise<boolean> {
+    const hook = this.opts.hooks?.setAudioLanguage;
+    if (hook === undefined) return false;
+    return (await this.hookValue('setAudioLanguage', () => hook(ref, language))) ?? false;
   }
 
   /** The originalLanguage hook's answer when it is a plain language code; else null (the resolver is then not asked to check). */

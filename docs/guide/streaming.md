@@ -459,7 +459,18 @@ requests, with the headers the manifest request carried). `dubbed` is about the 
 provider, so it leaves the provider's health alone. When every stream is a dub the answer is
 `no_source`. A dub's separate English subtitle file is not wasted: when the stream that is kept
 has no English subtitle of its own, the file is added to its tracks (`borrowed_from` names the
-provider it came from). Providers are data, `providers.seed.json`, ten templates read
+provider it came from).
+
+**The owner can set a title's audio language.** TMDB's original language is not always what is
+spoken: Léon: The Professional is a French production shot in English, so every English release
+was refused as `dubbed`. `direct_stream_play`'s `audio_lang` (and `POST /api/stream/play`'s) stores
+a language on the title (`movie_titles.audio_language`, through `MoviesRepo.setAudioLanguage`)
+before the play resolves; `MovieStreams.originalLanguage` answers it in place of TMDB's from then
+on, so the resolver, the torrent probe, the cloud audio check and the subtitles all follow it.
+`movies_get` shows it as `audio_language`; `audio_lang: "original"` clears it. It is set only when
+the owner asks: a dub is still never chosen on our own.
+
+Providers are data, `providers.seed.json`, ten templates read
 from fmovies. `--deadline-s <n>` stops trying providers once `n` seconds have passed (the answer is
 `deadline`, which says nothing about the title). `cli.mjs open <url> --fullscreen` puts a daemon page
 full screen in the streaming Chrome and starts the player with sound, as a click would.

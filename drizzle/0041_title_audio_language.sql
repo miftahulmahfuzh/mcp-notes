@@ -1,0 +1,1 @@
+ALTER TABLE "movie_titles" ADD COLUMN "audio_language" text;

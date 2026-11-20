@@ -319,6 +319,38 @@ describe('direct-stream MCP tools', () => {
     await c.close();
   });
 
+  it('stores audio_lang as the title\'s audio language before the play, and "original" clears it', async () => {
+    const order: string[] = [];
+    const setAudioLanguage = vi.fn(async (_t: StreamTarget, _l: string | null) => { order.push('set'); return true; });
+    const play = vi.fn(async () => { order.push('play'); return { session_id: 's1' }; });
+    const f = fakeDeps({ setAudioLanguage, play });
+    const c = await connect(f.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'saltburn', audio_lang: 'EN' }))).toMatchObject({ started: true });
+    expect(setAudioLanguage.mock.calls).toEqual([[{ kind: 'movie', tmdbId: 930564 }, 'en']]);
+    expect(order).toEqual(['set', 'play']);
+    await c.call('direct_stream_play', { title: 'saltburn', audio_lang: 'original' });
+    await c.call('direct_stream_play', { title: 'saltburn', audio_lang: '' });
+    expect(setAudioLanguage.mock.calls.slice(1)).toEqual([[{ kind: 'movie', tmdbId: 930564 }, null], [{ kind: 'movie', tmdbId: 930564 }, null]]);
+    // Without audio_lang nothing is stored.
+    await c.call('direct_stream_play', { title: 'saltburn' });
+    expect(setAudioLanguage).toHaveBeenCalledTimes(3);
+    // A word that is not a language code starts nothing.
+    const bad = await c.call('direct_stream_play', { title: 'saltburn', audio_lang: 'english' });
+    expect(bad.isError).toBe(true);
+    expect(json(bad)).toMatchObject({ error: 'invalid_input' });
+    expect(play).toHaveBeenCalledTimes(4);
+    await c.close();
+  });
+
+  it('starts nothing when the audio language cannot be stored', async () => {
+    const f = fakeDeps({ setAudioLanguage: vi.fn(async () => false) });
+    const c = await connect(f.deps);
+    const r = await c.call('direct_stream_play', { title: 'saltburn', audio_lang: 'en' });
+    expect(r.isError).toBe(true);
+    expect(f.play).not.toHaveBeenCalled();
+    await c.close();
+  });
+
   it('passes provider "cloud" through (NTM, NTS: never a torrent), and its no_source says no torrent was tried', async () => {
     const f = fakeDeps();
     const c = await connect(f.deps);

@@ -8,7 +8,7 @@ import type { DirectStreamService } from '../directStream/service.js';
 import { isFile } from '../directStream/torrent/subtitles/disk.js';
 import { DirectStreamError, type StreamRef } from '../directStream/types.js';
 import type { StreamLive } from '../movies/streamLive.js';
-import { MovieStreams, type MovieStreamsSource, type StreamSessionRef } from '../movies/streams.js';
+import { audioLanguageArg, MovieStreams, type MovieStreamsSource, type StreamSessionRef } from '../movies/streams.js';
 import { sameOriginOnly } from './sameOrigin.js';
 
 /**
@@ -30,8 +30,14 @@ const resumeS = z.number().min(0).max(172_800);
 const providerName = z.string().trim().min(1).max(60);
 const magnetLink = z.string().trim().min(1).max(4000);
 
+/** The title's audio language set by the owner ("en"); "" or "original" goes back to TMDB's original language. */
+const audioLang = z
+  .string()
+  .max(20)
+  .refine((v) => audioLanguageArg(v) !== undefined, 'a 2- or 3-letter language code, or "" / "original"');
+
 export const playBody = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('movie'), tmdb_id: tmdbId, season: z.null().optional(), episode: z.null().optional(), resume_s: resumeS.nullish(), provider: providerName.nullish(), magnet: magnetLink.nullish() }),
+  z.strictObject({ kind: z.literal('movie'), tmdb_id: tmdbId, season: z.null().optional(), episode: z.null().optional(), resume_s: resumeS.nullish(), provider: providerName.nullish(), magnet: magnetLink.nullish(), audio_lang: audioLang.nullish() }),
   z.strictObject({
     kind: z.literal('tv'),
     tmdb_id: tmdbId,
@@ -40,6 +46,7 @@ export const playBody = z.discriminatedUnion('kind', [
     resume_s: resumeS.nullish(),
     provider: providerName.nullish(),
     magnet: magnetLink.nullish(),
+    audio_lang: audioLang.nullish(),
   }),
 ]);
 
@@ -103,6 +110,10 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     }
     try {
       const ref = refFromBody(body.data);
+      // The owner's audio language for the title, stored before the play resolves so this play checks for it too.
+      if (body.data.audio_lang !== undefined && body.data.audio_lang !== null) {
+        await service().setAudioLanguage(ref, audioLanguageArg(body.data.audio_lang) ?? null);
+      }
       // No source named: direct streaming first; the streaming sites only when it found nothing (`site`, `site_url`, `site_play`).
       const played = await service().play(ref, { resumeS: body.data.resume_s ?? null, provider: body.data.provider ?? null, magnet: body.data.magnet ?? null });
       return c.json({ ok: true, ...played });

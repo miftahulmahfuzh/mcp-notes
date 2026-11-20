@@ -257,6 +257,8 @@ export interface TitleDetail extends TitleListItem {
   /** What last played the title through each stream method on this host (`cloud`, `torrent`, a site's name): where a play that names the method goes first. */
   played_methods: PlayedMethod[];
   metadata_fetched_at: string | null;
+  /** The audio language the owner set for the title ("en"), played instead of TMDB's original language; absent when not set. */
+  audio_language?: string;
 }
 
 /** One stream method's last play of a title on this host. `provider` names the cloud provider; null for a torrent or a site. */
@@ -1094,6 +1096,7 @@ export async function getTitle(db: Db, id: string, ctx: ReadContext): Promise<Ti
     stream_sources: streamSources,
     ...(await playedThrough(db, t.id, ctx.host, plays)),
     metadata_fetched_at: isoOrNull(t.metadataFetchedAt),
+    ...(t.audioLanguage === null ? {} : { audio_language: t.audioLanguage }),
   };
 }
 

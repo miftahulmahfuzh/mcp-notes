@@ -42,7 +42,7 @@ import type { MagnetReport } from '../directStream/torrent/source.js';
 import type { UpdateSourceAnswer, WatchPages } from '../directStream/updateSource.js';
 import { getTitle } from '../movies/read.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
-import { MovieStreams } from '../movies/streams.js';
+import { audioLanguageArg, MovieStreams } from '../movies/streams.js';
 import { TmdbError, type TmdbCatalog, type TmdbClient, type TmdbDiscovery, type TmdbGenre, type TmdbNamedHit } from '../movies/tmdb.js';
 import { titleId, type TitleKind } from '../movies/types.js';
 import { DEFAULT_WALL_URL } from './instructions.js';
@@ -81,6 +81,8 @@ export interface DirectStreamToolDeps {
    * it outlasted PLAY_ANSWER_MS: the play goes on in the daemon, and the same call again joins it.
    */
   play(target: StreamTarget, provider?: string, magnet?: string): Promise<unknown>;
+  /** MovieStreams.setAudioLanguage: the title's audio language set by the owner ("en"; null: TMDB's original again). False when not stored. Absent in tests' fakes. */
+  setAudioLanguage?(target: StreamTarget, language: string | null): Promise<boolean>;
   /** This host's source verified inside the freshness window, or null. */
   freshSource(target: StreamTarget): Promise<FreshSource | null>;
   /** What the library knows of each of these title keys (movieTools.ts libraryMarks); a key it does not hold is absent. */
@@ -158,6 +160,7 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
     providers: () => service.providers(),
     updateSource: (site, pages) => service.updateSource(site, pages),
     learnMagnet: (magnet) => service.learnMagnet(magnet),
+    setAudioLanguage: (target, language) => new MovieStreams(movies).setAudioLanguage(target, language),
   };
 }
 
@@ -198,6 +201,8 @@ const PLAY_DESCRIPTION =
   'The error no_source means no provider and no torrent (and, without provider, no streaming site) could stream it, and nothing started: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, dubbed, unplayable, skipped_browser_only, skipped_no_template); when no provider resolved, the torrent source was tried before answering, and its attempts follow: "Index: <name>" for each torrent index asked and "Torrent: <release>" for each torrent tried (dubbed: its audio is another language; unplayable: Chrome cannot play the file as is; no_stream: no file list or too little data from the swarm in time); "Site: <name>" for each streaming site asked after them (no_stream: it does not list the title or episode; skipped: several titles of that name, none guessed). When a provider was named, offer /idlix or /lk21. ' +
   'When it plays from a torrent, play.session.provider is Torrent and play.session.torrent is { info_hash, file_index, name, index, state, seeds }; a title whose torrent download is whole on this machine plays again from disk with no index and no swarm asked (no Index: or Torrent: attempt). Several torrents are opened side by side and the one whose swarm delivers plays: its attempt names the peers connected and the rate, and the others are skipped ("its header arrived too", "still opening"). An index that failed three plays in a row is skipped for half an hour ("Index: <name>" skipped). One call tries at most six torrents; when more were found, a failed play ends with the attempt "Torrents: not tried yet" saying how many are left, and the daemon remembers the ones that failed: calling again with the same arguments tries the next ones, not the same (say so, and call again only when the owner asks). Attempts may also hold "Subtitles: <tier>" for each subtitle source asked; "Subtitles: pending" means the film started before the subtitle search ended, and the player adds the track when it arrives (say so). The error torrent_off means torrents are off on this machine (NOTESD_TORRENT=off). ' +
   'A stream always plays in the title\'s original language: a provider whose stream is dubbed into another language is skipped (dubbed), and play.session.audio says what was heard (languages; original true when the stream names the original language, null when it names none). ' +
+  'The original language is TMDB\'s unless the owner set the title\'s audio language: pass audio_lang (a language code, "en") for a title whose spoken language differs from TMDB\'s original language (a French production shot in English, such as Léon: The Professional, refused as dubbed), or when the owner explicitly asks for another audio language ("Léon with English audio"). ' +
+  'It is stored on the title before the play resolves, so this play and every later one check for that language (movies_get shows it as audio_language); audio_lang "original" (or "") clears it. Never pass it on your own to get past a dubbed refusal: a dub is never chosen without the owner. ' +
   'The errors resolve_failed and open_failed mean the streaming Chrome could not be used: reason says why (no_chrome, chrome_not_reachable, ...). ' +
   'When this machine holds a cache of the film or episode (made with direct_stream_cache), the play comes from it: play.session.cached is { id, state, height }. state ready plays from disk with no provider asked (attempts is empty, and it works with the internet down); state downloading plays what is on disk and fetches each part not there yet as the film reaches it. A failed cache, or one made on the other machine, is not used: the play resolves as usual. ' +
   'Tell the owner it plays in the streaming Chrome window and that a double click, F, Esc or F11 leaves full screen. Works only on the machine with Windows Chrome.';
@@ -575,12 +580,22 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         asked_as: titleField
           .optional()
           .describe('Only after the owner picked a title from did_you_mean: the name they first used for it, word for word. It is remembered as another name of this title.'),
+        audio_lang: z
+          .string()
+          .trim()
+          .max(20)
+          .optional()
+          .describe('The audio language to play the title in from now on, as a 2- or 3-letter code ("en"): only for a title whose spoken language differs from TMDB\'s original language (a French production shot in English), or when the owner explicitly asks for another audio language. Stored on the title before the play. "original" or "" clears it.'),
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ title, year, kind, season, episode, absolute_episode, asked_as, provider, magnet }) => {
+    async ({ title, year, kind, season, episode, absolute_episode, asked_as, provider, magnet, audio_lang }) => {
       const d = deps.directStream;
       if (!d) return off();
+      const audioLanguage = audio_lang === undefined ? undefined : audioLanguageArg(audio_lang);
+      if (audio_lang !== undefined && audioLanguage === undefined) {
+        return failJson({ error: 'invalid_input', message: 'audio_lang is a 2- or 3-letter language code ("en"), or "original" to go back to TMDB\'s original language.' });
+      }
       return respond(async () => {
         const result = await lookupTitle(parseTitleRequest(title, year ?? null, kind ?? null), d);
         if (result.status === 'none') {
@@ -704,6 +719,10 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         // A title played by a key the library did not hold (a pick from direct_stream_discover) has no
         // name until the resolve stores it: read it again, so the answer names what plays.
         const stored = async (): Promise<TitleCandidate> => (c.movieId === null ? ((await d.library.byKey(c.kind, c.tmdbId)) ?? c) : c);
+        // The owner's audio language for the title, stored before the play resolves so this play checks for it too.
+        if (audioLanguage !== undefined && d.setAudioLanguage !== undefined && !(await d.setAudioLanguage(target, audioLanguage))) {
+          throw new LookupError('invalid_input', `The audio language of ${label(c)} could not be stored (the title is not in the library and TMDB could not be asked); nothing started.`);
+        }
         try {
           const play = magnet !== undefined ? await d.play(target, provider, magnet) : provider === undefined ? await d.play(target) : await d.play(target, provider);
           const pending = pendingPlay(play);

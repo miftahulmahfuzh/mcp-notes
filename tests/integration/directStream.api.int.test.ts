@@ -322,6 +322,21 @@ describe('the original language', () => {
     expect((await calls()).filter((c) => c.includes('--anime'))).toHaveLength(1);
   });
 
+  it('stores the body\'s audio_lang as the title\'s audio language before the resolve, which then checks for it', async () => {
+    let stored: string | null = null;
+    const set: Array<string | null> = [];
+    const { app } = await ready('host-a', {
+      originalLanguage: async () => stored ?? 'fr',
+      setAudioLanguage: async (_ref, language) => { set.push(language); stored = language; return true; },
+    });
+    expect((await played(app, { kind: 'movie', tmdb_id: 101, audio_lang: 'EN' })).session.audio_lang).toBe('en');
+    const [resolve] = await calls();
+    expect(resolve?.slice(resolve.indexOf('--audio-lang'), resolve.indexOf('--audio-lang') + 2)).toEqual(['--audio-lang', 'en']);
+    expect((await played(app, { kind: 'movie', tmdb_id: 101, audio_lang: 'original' })).session.audio_lang).toBe('fr');
+    expect(set).toEqual(['en', null]);
+    expect((await play(app, { kind: 'movie', tmdb_id: 101, audio_lang: 'english' })).status).toBe(400);
+  });
+
   it('asks for no audio check when the language is unknown, is not a code, or its hook fails', async () => {
     for (const originalLanguage of [async () => null, async () => 'korean (south)', async () => Promise.reject(new Error('tmdb down'))]) {
       const { app } = await ready('host-a', { originalLanguage });

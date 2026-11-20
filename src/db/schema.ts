@@ -1007,6 +1007,11 @@ export const movieTitles = pgTable(
     originalTitle: text('original_title').notNull(),
     /** TMDB's `original_language` ("ko"); null: not asked yet. Direct streaming plays this audio, never a dub. */
     originalLanguage: text('original_language'),
+    /**
+     * The audio language the owner set for the title ("en"), for a title whose spoken language is not TMDB's original
+     * language (a French production shot in English). When set, direct streaming plays this audio instead; null: TMDB's.
+     */
+    audioLanguage: text('audio_language'),
     year: integer('year'),
     releaseDate: date('release_date', { mode: 'string' }),
     overview: text('overview').notNull().default(''),

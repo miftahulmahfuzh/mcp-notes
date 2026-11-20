@@ -89,6 +89,16 @@ function describeTarget(target: StreamTarget): string {
   return target.kind === 'movie' ? `movie ${target.tmdbId}` : `tv ${target.tmdbId} S${target.season ?? '?'}E${target.episode ?? '?'}`;
 }
 
+/**
+ * A play's `audio_lang` argument: a 2- or 3-letter language code ("en"), lower-cased; null for "" or "original"
+ * (back to TMDB's original language); undefined when it is neither.
+ */
+export function audioLanguageArg(raw: string): string | null | undefined {
+  const value = raw.trim().toLowerCase();
+  if (value === '' || value === 'original') return null;
+  return /^[a-z]{2,3}$/.test(value) ? value : undefined;
+}
+
 /** True when one of the tracks is English (`en`, `en-US`, `eng`, `English`). */
 export function hasEnglishSubtitle(subtitles: ReadonlyArray<{ lang?: string | null }> | undefined): boolean {
   return (subtitles ?? []).some((s) => {
@@ -183,13 +193,15 @@ export class MovieStreams {
   }
 
   /**
-   * The title's original language (TMDB's code, "ko"), for the resolver's dub check: the stored one,
-   * else TMDB's, which is then stored on the title when it has a row. Null when nothing says.
+   * The title's original language (TMDB's code, "ko"), for the resolver's dub check: the audio language the owner
+   * set for the title when there is one (setAudioLanguage), else the stored original language, else TMDB's, which
+   * is then stored on the title when it has a row. Null when nothing says.
    */
   async originalLanguage(target: StreamTarget): Promise<string | null> {
     try {
       const id = titleId(target.kind, target.tmdbId);
       const row = await this.movies.repo.titleById(id);
+      if (row !== null && row.audioLanguage !== null) return row.audioLanguage;
       if (row !== null && row.originalLanguage !== null) return row.originalLanguage;
       const tmdb: (TmdbClient & Partial<TmdbTitleNames>) | null = this.movies.tmdb;
       if (tmdb === null || tmdb.originalLanguage === undefined) return null;
@@ -200,6 +212,16 @@ export class MovieStreams {
       if (!(err instanceof TmdbError)) this.log(`[notesd] direct stream: could not read the original language of ${describeTarget(target)}: ${messageOf(err)}`);
       return null;
     }
+  }
+
+  /**
+   * Sets the audio language a title plays in ("en"), for a title whose spoken language is not TMDB's original
+   * language; null goes back to TMDB's. The title row is ensured first. False when it cannot be stored.
+   */
+  async setAudioLanguage(target: StreamTarget, language: string | null): Promise<boolean> {
+    const id = await this.ensureTitle(target);
+    if (id === null) return false;
+    return this.movies.repo.setAudioLanguage(id, language, this.now());
   }
 
   /**

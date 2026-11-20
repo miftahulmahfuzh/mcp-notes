@@ -350,6 +350,19 @@ export class MoviesRepo {
   }
 
   /**
+   * Stores the audio language the owner set for a title ("en"), played instead of TMDB's original language; null
+   * clears it. False when the title is not stored.
+   */
+  async setAudioLanguage(id: string, language: string | null, now: Date = new Date()): Promise<boolean> {
+    const rows = await this.db
+      .update(movieTitles)
+      .set({ audioLanguage: language, updatedAt: now })
+      .where(eq(movieTitles.id, id))
+      .returning({ id: movieTitles.id });
+    return rows.length > 0;
+  }
+
+  /**
    * Remembers one more name the owner uses for a title (already normalized), once. False when the
    * title is not stored or already has it.
    */

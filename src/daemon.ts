@@ -410,6 +410,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             recordResolve: (ref, result) => movieStreams.recordResolve(ref, result),
             resumeS: (ref) => movieStreams.resumeS(ref),
             originalLanguage: (ref) => movieStreams.originalLanguage(ref),
+            setAudioLanguage: (ref, language) => movieStreams.setAudioLanguage(ref, language),
             titleLabel: (ref) => movieStreams.titleLabel(ref),
             anime: (ref) => movieStreams.animeRef(ref, animeMapper),
             neighbors: (ref) => movieStreams.neighbors(ref),
