@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { Dirent } from 'node:fs';
 import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -106,24 +107,9 @@ export class CacheStore {
     }
   }
 
-  /** The bytes the cache's folder takes on disk (allocated blocks, as the torrent budget counts); 0 when there is no folder. */
+  /** The bytes the cache's folder takes on disk (allocated blocks, as the torrent budget counts), every file under it (its seek previews too); 0 when there is no folder. */
   async diskSize(id: string): Promise<number> {
-    let total = 0;
-    let names: string[];
-    try {
-      names = await readdir(this.dir(id));
-    } catch {
-      return 0;
-    }
-    for (const name of names) {
-      try {
-        const s = await stat(this.file(id, name));
-        if (s.isFile()) total += s.blocks > 0 ? s.blocks * 512 : s.size;
-      } catch {
-        // gone meanwhile
-      }
-    }
-    return total;
+    return blocksUnder(this.dir(id));
   }
 
   async remove(id: string): Promise<void> {
@@ -143,4 +129,30 @@ export class CacheStore {
     await rename(tmp, final);
     for (const part of parts) await rm(this.file(id, part), { force: true });
   }
+}
+
+/** The allocated bytes of every file under `dir`, at any depth; 0 for a folder that is not there. */
+async function blocksUnder(dir: string): Promise<number> {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let total = 0;
+  for (const entry of entries) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      total += await blocksUnder(file);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    try {
+      const s = await stat(file);
+      total += s.blocks > 0 ? s.blocks * 512 : s.size;
+    } catch {
+      // gone meanwhile
+    }
+  }
+  return total;
 }

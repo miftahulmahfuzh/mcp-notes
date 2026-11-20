@@ -239,6 +239,10 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     );
   }
 
+  // Seek previews: a sweep of the films on disk 30 s after start and every half hour; nothing joins a swarm or fetches.
+  const streamPreviews = deps.streamPreviews ?? null;
+  streamPreviews?.start();
+
   // Torrents (torrent-stream-source phase 1): old downloads are cleared and the tick starts; nothing joins a swarm here.
   const torrents = deps.torrents ?? null;
   if (torrents !== null) {
@@ -273,6 +277,9 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     if (summaryDue !== null) clearTimeout(summaryDue);
     delete deps.kickSummaries;
     await inbox.close();
+    // The previews' ffmpeg reads the caches' and the torrents' files (and phase 2's loopback gate): it stops, keeping
+    // no part of its sheet, before anything it reads closes. Bounded: the running ffmpeg is killed at once.
+    await streamPreviews?.close();
     // In parallel: each close is bounded by its grace (5 s), well under main.ts's 10 s exit.
     await Promise.all([
       embeddings?.close(),

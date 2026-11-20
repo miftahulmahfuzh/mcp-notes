@@ -20,6 +20,8 @@
 #                                       direct_stream_discover and absolute episode numbers are proven on
 #                                       (with --torrent: direct-stream/codenames.sh, the watch codenames)
 #                                       The daily stream canary (NOTESD_STREAM_CANARY) is always pinned off.
+#                                       Seek previews (NOTESD_STREAM_PREVIEWS) are off unless the caller sets
+#                                       NOTESD_STREAM_PREVIEWS=on, which passes through (this machine's ffmpeg).
 #                                       --torrent (implies --direct-stream) turns torrents on against a loopback
 #                                       seeder of a generated film and pack (scripts/torrent/; TORRENT_FIXTURE_FILE=
 #                                       <path> seeds that file as the film); without it NOTESD_TORRENT=off is pinned
@@ -368,6 +370,9 @@ EOF
   fi
   # A throwaway daemon never asks the providers on its own: the daily canary is pinned off.
   env+=(NOTESD_STREAM_CANARY=off)
+  # Seek previews (src/directStream/previews/): off, so a run builds nothing it was not asked to; a caller's
+  # NOTESD_STREAM_PREVIEWS=on passes through for the journeys that make sheets with this machine's ffmpeg.
+  env+=("NOTESD_STREAM_PREVIEWS=${NOTESD_STREAM_PREVIEWS:-off}")
   # NOTESD_STREAMING=off always, and no flag turns it on: streaming_find / streaming_play would run
   # the real claude/streaming/cli.mjs, which plays a film full screen in the owner's streaming Chrome.
   env+=(NOTESD_STREAMING=off)

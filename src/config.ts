@@ -220,6 +220,12 @@ export interface DirectStreamConfig {
   canary?: boolean
   /** The daily trending list. Unset in a literal: off. */
   trending?: TrendingConfig
+  /**
+   * `NOTESD_STREAM_PREVIEWS`, default on: seek previews (src/directStream/previews/), sprite sheets made in the
+   * background by one niced ffmpeg from the part of a film that is on this machine and listed per stream session.
+   * `off`, or unset in a literal: nothing is made and GET /api/stream/sessions/:id/previews answers no frame.
+   */
+  previews?: boolean
 }
 
 /** Direct streaming off. Tests build `Config` literals with it (or leave `directStream` out, which is the same). */
@@ -228,6 +234,7 @@ export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
   freshDays: DEFAULT_STREAM_FRESH_DAYS,
   cli: DEFAULT_DIRECT_STREAM_CLI,
   cacheDir: null,
+  previews: false,
 }
 
 /** `claude/streaming/torrent/whisper.py` in this checkout: the Whisper worker the torrent source runs (torrent phase 8). */
@@ -967,6 +974,7 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     firstProvider: DEFAULT_STREAM_FIRST_PROVIDER,
     audioCheck: parseSwitch('NOTESD_STREAM_AUDIO_CHECK', env.NOTESD_STREAM_AUDIO_CHECK),
     canary: parseSwitch('NOTESD_STREAM_CANARY', env.NOTESD_STREAM_CANARY),
+    previews: parseSwitch('NOTESD_STREAM_PREVIEWS', env.NOTESD_STREAM_PREVIEWS),
     trending: parseTrending(env),
   }
 }
@@ -1111,7 +1119,7 @@ function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback:
  * a health interval of 1-4999 ms or an extra VLC arg that sets the HTTP interface throw ConfigError).
  * Direct streaming keys: NOTESD_DIRECT_STREAM, NOTESD_STREAM_FRESH_DAYS, NOTESD_DIRECT_STREAM_CLI, NOTESD_ANIME_MAP_URL,
  * NOTESD_STREAM_CACHE_DIR (a freshness window below 1, a relative resolver path or a relative cache folder throw ConfigError).
- * Stream canary key: NOTESD_STREAM_CANARY (default on).
+ * Stream canary key: NOTESD_STREAM_CANARY (default on). Seek previews key: NOTESD_STREAM_PREVIEWS (default on).
  * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS, NOTESD_TORRENT_BUDGET_GB, NOTESD_TORRENT_SUBTITLE_WAIT_MS,
  * NOTESD_TORRENT_TRACKER_LISTS (on or off; anything else throws ConfigError),
  * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
