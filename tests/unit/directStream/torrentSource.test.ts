@@ -55,6 +55,9 @@ interface Fakes {
   probeDelay?: Record<string, number>;
   settleMs?: number;
   subtitleHeadMs?: number;
+  /** The source's clock; with it each open may move it on (`openTakesMs`). */
+  clock?: { now: number };
+  openTakesMs?: Record<string, number>;
 }
 
 const wait = (ms: number | undefined): Promise<void> => (ms === undefined ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
@@ -64,9 +67,12 @@ function setup(o: Fakes = {}) {
   const probed: string[] = [];
   const durations: string[] = [];
   const logged: string[] = [];
+  const openTimeouts: Record<string, number> = {};
   const swarm: TorrentSwarm = {
-    open: async (pick) => {
+    open: async (pick, options) => {
       calls.push(`open ${pick.infoHash}`);
+      openTimeouts[pick.infoHash] = options.timeoutMs;
+      if (o.clock !== undefined) o.clock.now += o.openTakesMs?.[pick.infoHash] ?? 0;
       await wait(o.openDelay?.[pick.infoHash]);
       if ((o.failOpen ?? []).includes(pick.infoHash)) throw new Error('no metadata within 20 s');
       return { infoHash: pick.infoHash, files: o.files?.[pick.infoHash] ?? [file(0, 'Film.2026.720p.mp4')] };
@@ -118,13 +124,14 @@ function setup(o: Fakes = {}) {
     ...(o.settleMs === undefined ? {} : { settleMs: o.settleMs }),
     ...(o.subtitleHeadMs === undefined ? {} : { subtitleHeadMs: o.subtitleHeadMs }),
     log: (line) => void logged.push(line),
+    ...(o.clock === undefined ? {} : { now: () => o.clock!.now }),
   });
   // Releases are handed to the swarm on the next tick.
   const settled = async (): Promise<string[]> => {
     await new Promise((r) => setTimeout(r, 0));
     return calls;
   };
-  return { source, calls, settled, probed, durations, logged, finds: () => finds };
+  return { source, calls, settled, probed, durations, logged, openTimeouts, finds: () => finds };
 }
 
 describe('a dub-named release as a last resort', () => {
@@ -148,6 +155,34 @@ describe('a dub-named release as a last resort', () => {
     expect(order).toEqual(['Index: torrentio', 'Torrent: Film.2026.1080p.WEB-DL.x264-PROPER', 'Torrent: Film.2026.1080p.Hindi.Dubbed.WEB-DL']);
     expect(out.attempts[1]?.outcome).toBe('no_stream');
     expect(out.attempts[2]?.outcome).toBe('resolved');
+  });
+
+  it('gets what the proper round left of the one budget, not a budget of its own', async () => {
+    const clock = { now: 1_000_000 };
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264-PROPER')],
+      failOpen: [h(1)],
+      lastResort: [candidate(h(2), 'Film.2026.1080p.Hindi.Dubbed.WEB-DL')],
+      probes: { [h(2)]: MP4_DUAL_ORIG_FIRST },
+      clock,
+      openTakesMs: { [h(1)]: 80_000 },
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok).toBe(true);
+    // 90 s in all, 80 of them spent: the dub-named torrent may take 10 s to open, not 20.
+    expect(t.openTimeouts[h(2)]).toBe(10_000);
+
+    const late = { now: 1_000_000 };
+    const spent = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264-PROPER')],
+      failOpen: [h(1)],
+      lastResort: [candidate(h(2), 'Film.2026.1080p.Hindi.Dubbed.WEB-DL')],
+      clock: late,
+      openTakesMs: { [h(1)]: 88_000 },
+    });
+    const none = await spent.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(none.ok).toBe(false);
+    expect(spent.calls).not.toContain(`open ${h(2)}`);
   });
 
   it('refuses a dub-named release whose file really is only the dub, so the original-language rule holds', async () => {

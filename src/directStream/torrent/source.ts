@@ -383,7 +383,7 @@ export class TorrentSource {
 
   /**
    * Finds the title's torrents and plays the first that works, trying at most MAX_TORRENT_TRIES within
-   * TORRENT_DEADLINE_MS. `attempts` holds one `Index: <name>` per index asked, then per torrent tried one
+   * TORRENT_DEADLINE_MS, one budget for the whole ask (the dub-named round gets what the proper round left). `attempts` holds one `Index: <name>` per index asked, then per torrent tried one
    * `Torrent: <release>`, and after the one that plays its `Subtitles: <tier>` attempts. Never throws.
    */
   async resolve(ref: StreamRef, options: TorrentResolveOptions): Promise<TorrentResolve> {
@@ -448,7 +448,8 @@ export class TorrentSource {
       return { ok: false, error: 'no_source', attempts: [...firstAttempts, ...left()] };
     }
     options.progress?.({ stage: 'trying releases whose name reads as a dub (the file may still carry the original)', attempts: firstAttempts });
-    const dubbed = await this.tryCandidates(ref, query, dubs, play, this.now() + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...firstAttempts, ...p.attempts] }), note);
+    // The same budget as the proper round: one ask never takes longer than TORRENT_DEADLINE_MS in all.
+    const dubbed = await this.tryCandidates(ref, query, dubs, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...firstAttempts, ...p.attempts] }), note);
     this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s) and ${dubs.length} dub-named, ${dubbed.ok ? `playing ${dubbed.torrent.name}${foundIn(dubbed.torrent.candidate)} (its file carries the original ${options.audioLang ?? 'language'})` : 'none played'}`);
     return dubbed.ok ? { ...dubbed, attempts: [...firstAttempts, ...dubbed.attempts] } : { ok: false, error: 'no_source', attempts: [...firstAttempts, ...dubbed.attempts, ...left()] };
   }

@@ -1858,7 +1858,8 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   daemon's file route (30 s at most). A file whose audio names only languages other than the title's original is
   `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
-  one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six and 90 seconds.
+  one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six torrents and what
+  is left of the same 90 seconds, so one ask never takes longer.
 - **Asking again tries the next torrents, not the same ones.** The finder keeps up to twenty candidates, and one
   ask tries six. The torrent source remembers, per film or episode and in memory (until the daemon restarts), each
   torrent that was tried and did not play. The next ask of the same title (the Torrent Stream row again, the same
