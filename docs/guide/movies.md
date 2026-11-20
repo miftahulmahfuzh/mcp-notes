@@ -500,6 +500,8 @@ would carry on with, and the menu's first line names it (`play S01E03 from`).
   stream asks the indexes), and a play on it moves to another source. Listing joins no swarm.
   The same list and blacklist are `direct_stream_torrents` in chat
   ([streaming.md](streaming.md#the-torrent-candidates-of-a-title)).
+
+  ![Every torrent of a film: the indexes' releases with their size, seeds, where from and audio, a play and a blacklist button each](img/movies/torrents.png)
 - **Each row says what it remembers**: `VidRock first, as on Nov 18, 2026`, `the same torrent as
   on Nov 17, 2026`, `played S01E03 · Nov 16, 2026`, or `found nothing on Nov 15, 2026`. The row the
   title last played through is flagged `played last`.
