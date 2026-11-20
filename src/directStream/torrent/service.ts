@@ -47,6 +47,11 @@ export interface TorrentStreamsOptions {
   keepDays: number;
   /** NOTESD_TORRENT_DISCOVERY, for the status. */
   discovery: boolean;
+  /**
+   * Sweep folders no row of this host names (default true). False while the old shared database is still to be
+   * merged (`importPending`): a download whose row is only there yet must keep its files.
+   */
+  sweepOrphans?: boolean;
   lingerMs?: number;
   tickMs?: number;
   now?: () => Date;
@@ -424,7 +429,8 @@ export class TorrentStreams {
   /**
    * Deletes this host's downloads not played for `keepDays`, with their folders, then every folder under the torrent
    * dir that no row of this host names and nothing uses now (a torrent left behind by a crash or an older daemon).
-   * Files under the root (the tracker book, the tracker lists) are never touched. Never throws.
+   * Files under the root (the tracker book, the tracker lists) are never touched. The folder sweep is skipped with
+   * `sweepOrphans: false` (the shared import still pending). Never throws.
    */
   async prune(): Promise<number> {
     this.lastPrune = this.nowMs();
@@ -441,6 +447,7 @@ export class TorrentStreams {
     } catch (err) {
       this.log(`[notesd] torrent: could not clear old downloads: ${messageOf(err)}`);
     }
+    if (this.opts.sweepOrphans === false) return cleared;
     try {
       const named = new Set((await this.repo.all()).filter((r) => r.host === this.host).map((r) => r.infoHash));
       for (const hash of await this.folder.hashes()) {
@@ -624,6 +631,8 @@ export interface TorrentStreamsOverrides {
   engine?: TorrentEngine;
   now?: () => Date;
   log?: (line: string) => void;
+  /** False while the shared import is pending: no folder a row does not name is swept. */
+  sweepOrphans?: boolean;
 }
 
 /**
@@ -650,6 +659,7 @@ export function buildTorrentStreams(
     keepDays: t.keepDays,
     discovery: t.discovery,
     log,
+    ...(overrides.sweepOrphans === undefined ? {} : { sweepOrphans: overrides.sweepOrphans }),
     ...(overrides.now === undefined ? {} : { now: overrides.now }),
   });
 }

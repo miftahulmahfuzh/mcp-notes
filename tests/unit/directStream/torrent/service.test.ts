@@ -28,7 +28,7 @@ const MIN = 60_000;
 let root: string;
 let clock: number;
 
-function build(options: { host?: string; records?: MemoryTorrentRecords; engine?: FakeTorrentEngine } = {}) {
+function build(options: { host?: string; records?: MemoryTorrentRecords; engine?: FakeTorrentEngine; sweepOrphans?: boolean } = {}) {
   const records = options.records ?? new MemoryTorrentRecords();
   const engine = options.engine ?? new FakeTorrentEngine([{ infoHash: HASH, name: NAME, files: FILES }]);
   const folder = new TorrentFolder(root);
@@ -43,6 +43,7 @@ function build(options: { host?: string; records?: MemoryTorrentRecords; engine?
     now: () => new Date(clock),
     log: () => undefined,
     every: () => () => undefined,
+    ...(options.sweepOrphans === undefined ? {} : { sweepOrphans: options.sweepOrphans }),
   });
   return { streams, engine, records, folder };
 }
@@ -314,6 +315,18 @@ describe('TorrentStreams', () => {
     await mkdir(path.join(root, 'not-a-torrent'), { recursive: true });
     expect(await streams.prune()).toBe(2);
     expect((await readdir(root)).sort()).toEqual([HASH, KEPT, 'not-a-torrent', 'tracker-lists.json', 'trackers.json'].sort());
+  });
+
+  it('sweeps no folder a row does not name while the shared import is pending, and still clears stale rows', async () => {
+    const records = new MemoryTorrentRecords();
+    const OLD = 'a1'.repeat(20);
+    const ORPHAN = 'd3'.repeat(20);
+    await records.record('host-a', { infoHash: OLD, ref: REF, name: 'Old', release: null, trackers: [] }, new Date(clock - 30 * 86_400_000));
+    const { streams, folder } = build({ records, sweepOrphans: false });
+    await mkdir(folder.dirOf(OLD), { recursive: true });
+    await mkdir(folder.dirOf(ORPHAN), { recursive: true });
+    expect(await streams.start()).toBe(1);
+    expect(await readdir(root)).toEqual([ORPHAN]);
   });
 
   it('is not built with torrents off or direct streaming off, and building it joins nothing (R2.6)', () => {

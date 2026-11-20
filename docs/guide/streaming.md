@@ -1901,7 +1901,8 @@ DHT node and no peer.
    file (the header probe, the remux, a subtitle tier) are no play. A download never played counts from
    when it finished, else from when it was made. At start and every six hours the same clearing also
    deletes each folder under `NOTESD_TORRENT_DIR` named as an info hash that no row of this machine names
-   and nothing uses; the tracker book and the tracker lists beside them stay.
+   and nothing uses; the tracker book and the tracker lists beside them stay. While the old shared database
+   is still to be merged, that folder sweep is skipped: a download whose row is only there yet keeps its files.
 8. Peers are reached over TCP only, with no switch. uTP beside it made things worse from this machine, WSL 2
    behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP alone fetched 183, 226, 184
    and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB.

@@ -434,7 +434,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(db), { sweepOrphans: !importPending });
   // Torrents (torrent-stream-source phase 1): null with NOTESD_TORRENT=off or direct streaming off.
   // Building it joins nothing: the WebTorrent engine starts with the first torrent opened.
-  const torrents = buildTorrentStreams(config, directStream, db);
+  // As with the stream cache, a download whose row is still only in the old shared database keeps its folder.
+  const torrents = buildTorrentStreams(config, directStream, db, { sweepOrphans: !importPending });
   // The public tracker lists (wider-torrent-sources phase 3): one store, read by every torrent opened and every scrape,
   // and the job that refreshes it once a day from startBackground. Off with NOTESD_TORRENT_TRACKER_LISTS, torrents or
   // discovery off: no store, and a job that does nothing.
