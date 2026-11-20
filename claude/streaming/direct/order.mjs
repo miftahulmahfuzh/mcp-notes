@@ -18,27 +18,33 @@ export function deadRank(health) {
 
 /** How a `no_stream` attempt's detail starts when the provider's own page did not load (resolve.mjs writes it). */
 export const UNREACHABLE = 'unreachable: ';
-/** The first rest of a provider that is down or behind a check; each further failure doubles it, up to REST_MAX_MS. */
+/** The first rest of a provider that keeps failing; each further failure doubles it, up to REST_MAX_MS. */
 export const REST_MS = 24 * 3_600_000;
 export const REST_MAX_MS = 7 * 24 * 3_600_000;
 
 /**
- * Until when (epoch ms) a provider is not asked at all, or null when it is asked as usual. A provider rests when
- * it never gave a stream on this machine, failed DEAD_AFTER times in a row or more, and its last try says the
- * failure is the provider's own, not the title's: its page did not load (`unreachable: ...`) or it showed a bot
- * check. Seven dead providers at 39 s each held a play of a title nobody carries back for minutes. It is asked
- * again once the rest is over (a day after its last failure, then two, four, up to a week), so a provider that
- * came back is found without anyone looking; `--only` asks it at any time. A provider that loads and merely has
- * no stream of this title never rests: that says nothing of the next title.
+ * Until when (epoch ms) a provider is not asked at all, or null when it is asked as usual. A provider rests once its
+ * last DEAD_AFTER tries or more here each failed with the provider's own answer: no stream (its page did not load,
+ * or loaded with nothing to play) or a bot check. An old success does not keep it awake: VidLink gave one stream and
+ * then failed 16 times in a row, and every play asked it first. An `error` (the sniffer or Chrome failed on this
+ * machine) says nothing of the provider and never starts a rest. It is asked again once the rest is over (a day
+ * after its last failure, then two, four, up to a week), so a provider that came back is found without anyone
+ * looking, and one stream resets its count; `--only` asks it at any time.
  */
 export function restingUntil(health) {
-  if (!health || health.last_success_at || (health.consecutive_failures ?? 0) < DEAD_AFTER) return null;
-  const own = health.last_outcome === 'bot_check' || (health.last_outcome === 'no_stream' && String(health.last_detail ?? '').startsWith(UNREACHABLE));
-  if (!own) return null;
+  if (!health || (health.consecutive_failures ?? 0) < DEAD_AFTER) return null;
+  if (health.last_outcome !== 'bot_check' && health.last_outcome !== 'no_stream') return null;
   const failedAt = Date.parse(health.last_failure_at ?? '');
   if (!Number.isFinite(failedAt)) return null;
   const rest = Math.min(REST_MAX_MS, REST_MS * 2 ** Math.min(10, (health.consecutive_failures ?? 0) - DEAD_AFTER));
   return failedAt + rest;
+}
+
+/** Why a resting provider rests, as its skipped attempt says it. */
+export function restReason(health) {
+  if (health?.last_outcome === 'bot_check') return 'it shows a bot check';
+  if (String(health?.last_detail ?? '').startsWith(UNREACHABLE)) return 'its page does not load';
+  return 'it gave no stream';
 }
 
 /**

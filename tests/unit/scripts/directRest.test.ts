@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { readHealth } from '../../../claude/streaming/direct/cli.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { DEAD_AFTER, REST_MAX_MS, REST_MS, restingUntil, UNREACHABLE } from '../../../claude/streaming/direct/order.mjs';
+import { DEAD_AFTER, REST_MAX_MS, REST_MS, restingUntil, restReason, UNREACHABLE } from '../../../claude/streaming/direct/order.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { resolveTitle } from '../../../claude/streaming/direct/resolve.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
@@ -35,15 +35,23 @@ describe('restingUntil', () => {
     expect(restingUntil(down({ consecutive_failures: DEAD_AFTER + 2 }))).toBe(T0 + 4 * REST_MS);
     expect(restingUntil(down({ consecutive_failures: 400 }))).toBe(T0 + REST_MAX_MS);
   });
-  it('never rests a provider that loads and has no stream of the title, however often', () => {
-    expect(restingUntil(down({ consecutive_failures: 40, last_detail: '60 requests, 0 media hits, 4 clicks, 0 advert tabs closed' }))).toBeNull();
-    expect(restingUntil(down({ last_outcome: 'error', last_detail: 'the sniffer timed out' }))).toBeNull();
+  it('a provider that loads and has no stream, DEAD_AFTER times in a row, rests too', () => {
+    expect(restingUntil(down({ last_detail: '60 requests, 0 media hits, 4 clicks, 0 advert tabs closed' }))).toBe(T0 + REST_MS);
   });
-  it('never rests a provider that gave a stream here once, a fresh one, or one with fewer failures', () => {
-    expect(restingUntil(down({ last_success_at: '2026-11-01T00:00:00.000Z' }))).toBeNull();
+  it('an old success does not keep a provider awake: VidLink, one stream then 16 failures in a row', () => {
+    expect(restingUntil(down({ last_success_at: '2026-11-01T00:00:00.000Z', consecutive_failures: 16 }))).toBe(T0 + REST_MAX_MS);
+    expect(restingUntil(down({ last_success_at: '2026-11-01T00:00:00.000Z', last_outcome: 'bot_check', last_detail: '' }))).toBe(T0 + REST_MS);
+  });
+  it('never rests on an error of this machine (the sniffer, Chrome), a fresh provider, or one with fewer failures', () => {
+    expect(restingUntil(down({ last_outcome: 'error', last_detail: 'the sniffer timed out' }))).toBeNull();
     expect(restingUntil(down({ consecutive_failures: DEAD_AFTER - 1 }))).toBeNull();
     expect(restingUntil(null)).toBeNull();
     expect(restingUntil(down({ last_failure_at: null }))).toBeNull();
+  });
+  it('says why it rests', () => {
+    expect(restReason(down())).toBe('its page does not load');
+    expect(restReason(down({ last_outcome: 'bot_check' }))).toBe('it shows a bot check');
+    expect(restReason(down({ last_detail: '60 requests, 0 media hits' }))).toBe('it gave no stream');
   });
 });
 
@@ -58,7 +66,7 @@ describe('resolveTitle: a resting provider', () => {
     expect(s.asked).toEqual(['good.example']);
     const dead = out.attempts.find((a: Json) => a.provider === 'Dead');
     expect(dead).toMatchObject({ outcome: 'skipped', took_s: 0 });
-    expect(dead.detail).toBe('resting: it never gave a stream here and failed 5 times in a row (its page does not load); asked again after 2026-11-20 10:00 UTC');
+    expect(dead.detail).toBe('resting: it failed 5 times in a row (its page does not load); asked again after 2026-11-20 10:00 UTC');
     expect(out.attempts.find((a: Json) => a.provider === 'Good')).toMatchObject({ outcome: 'no_stream' });
   });
 

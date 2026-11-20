@@ -479,18 +479,18 @@ provider that never gave a stream on this machine and failed five
 times in a row goes last of all (it is still tried); then English subtitle (the seed's "has one"
 stands even when the last title it resolved had none), delivery, health, quality, speed.
 
-**A provider that is down rests.** A provider whose own page does not load (its name no longer resolves, the
+**A provider that keeps failing rests.** A provider whose own page does not load (its name no longer resolves, the
 connection fails, its origin answers 5xx: Cloudflare's 521, 522 and 523) has no stream to wait for: the sniffer
 ends the watch 3 s after it sees that, and the attempt reads `no_stream`,
 `unreachable: HTTP 523; 8 requests, ...`. Seven such providers cost a title nobody carries 39 s each. Once a
-provider has never given a stream on this machine, has failed five times in a row, and its last failure was its
-own (`unreachable`, or a bot check), it is not asked at all: its attempt is `skipped`,
-`resting: it never gave a stream here and failed 5 times in a row (its page does not load); asked again after
-2026-11-20 10:00 UTC`, and its health is left as it was. It is asked again a day after its last failure, then
-after two days, four, up to a week, so a provider that came back is found by an ordinary resolve; `--only` (a
-provider the owner names, `/update-cloud-source`'s probe, the campaign) asks it at any time. A provider that
-loads and merely has no stream of the title never rests, and nothing deletes a provider (`order.mjs`
-`restingUntil`).
+provider's last five tries or more here failed in a row with its own answer (no stream, its page not loading, or a
+bot check), it is not asked at all, whatever it gave before: its attempt is `skipped`,
+`resting: it failed 5 times in a row (its page does not load); asked again after 2026-11-20 10:00 UTC` (or
+`it shows a bot check`, `it gave no stream`), and its health is left as it was. It is asked again a day after its
+last failure, then after two days, four, up to a week, so a provider that came back is found by an ordinary
+resolve, and one stream resets its count; `--only` (a provider the owner names, `/update-cloud-source`'s probe,
+the campaign) asks it at any time. An `error` (the sniffer or Chrome failed on this machine) says nothing of the
+provider and never starts a rest (`order.mjs` `restingUntil`).
 
 **Side by side once the play goes badly.** The providers are asked one after another, and a provider that
 loads but has no stream of the title takes its full 35 s to say so: thirteen of them cost A Story About Fire
