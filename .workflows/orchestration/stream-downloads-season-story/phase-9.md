@@ -4,7 +4,8 @@
 **Analysis:** `.workflows/analyze/20261120-213359-K7Q2_code_analyzer.md`
 **Satisfies:** R3, R4, R6 — the owner sees a download's bar on the title page, can filter the Cache page to what downloads, and opens a season's story; this phase writes those features down and proves them end to end on the real daemon
 **Criteria:** R3.1, R4.2, R6.1
-**Depends on:** Phase 5, Phase 8 (and through them 1, 2, 3, 4, 6, 7)
+**Depends on:** Phase 5, Phase 8, Phase 10 (and through them 1, 2, 3, 4, 6, 7)
+**Office rule:** wherever this plan says a download on SSID `Employee` goes to the cloud alone or never switches WARP, write what phase 10 built instead: the same order on every network; no peer on `Employee` with WARP off switches WARP on once and asks again; WARP is held while the torrent is in the swarm and put back after; the owner's own WARP is never touched. `CLAUDE.md`'s WARP sentence gains "a torrent download the owner asked for that found no peer at all on SSID `Employee`". The lines concerned are listed in phase-10.md, Handoffs.
 **Difficulty:** NORMAL
 **Package:** `docs/guide`, `.claude/skills/verify-notesd`
 

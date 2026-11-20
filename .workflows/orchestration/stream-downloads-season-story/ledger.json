@@ -43,21 +43,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "36a6bf9",
       "depends_on": [
         2
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "season downloads: requestSeason, SeasonDownloads/SeasonPackJob, fetchPack, useSlot/releaseSlot; plan applied verbatim; int test batch 'batch-int' -> fixed uuid (stream_downloads.batch is uuid, rung 3: phase 1's schema), code unchanged; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1120-234456-sd03/evidence",
       "package": "src/directStream/downloads`, `torrent",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-20T23:48:09+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD03",
       "title": "Season downloads: aired episodes, the season pack, a row per episode"
     },
     {
@@ -167,7 +167,8 @@
       "commit": null,
       "depends_on": [
         5,
-        8
+        8,
+        10
       ],
       "difficulty": "NORMAL",
       "n": 9,
@@ -183,11 +184,32 @@
       "status": "pending",
       "task_id": null,
       "title": "Guides, pictures, the feature map and the end-to-end proof"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        3,
+        4
+      ],
+      "difficulty": "HARD",
+      "n": 10,
+      "note": null,
+      "package": "src/directStream/downloads",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-10.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Office network: a torrent download through WARP before the cloud"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-20T23:45:36+07:00",
+  "updated": "2026-11-20T23:48:16+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
