@@ -78,6 +78,19 @@ describe('stream_torrents', () => {
     expect((await repo.byHash(HASH)).map((r) => r.host)).toEqual(['host-b']);
   });
 
+  it('deletes one episode of a pack (the Cache page) and leaves its other episodes and the other host', async () => {
+    const e1 = { kind: 'tv', tmdbId: 1399, season: 1, episode: 1 } as const;
+    await repo.record('host-a', { infoHash: HASH, ref: e1, name: NAME, release: null, trackers: [] }, T0);
+    await repo.record('host-a', { infoHash: HASH, ref: EPISODE, name: NAME, release: null, trackers: [] }, T0);
+    await repo.record('host-b', { infoHash: HASH, ref: e1, name: NAME, release: null, trackers: [] }, T0);
+    expect(await repo.deleteSlot('host-a', { infoHash: HASH, season: 1, episode: 1 })).toBe(true);
+    expect(await repo.deleteSlot('host-a', { infoHash: HASH, season: 1, episode: 1 })).toBe(false);
+    expect((await repo.byHash(HASH)).map((r) => [r.host, r.season, r.episode])).toEqual([
+      ['host-a', 1, 2],
+      ['host-b', 1, 1],
+    ]);
+  });
+
   it('refuses contradictions', async () => {
     const base = { host: 'host-a', infoHash: HASH, kind: 'movie' as const, tmdbId: 550, name: NAME };
     expect(await pgCode(db.insert(streamTorrents).values({ ...base, infoHash: HASH.toUpperCase() }))).toBe('23514');
