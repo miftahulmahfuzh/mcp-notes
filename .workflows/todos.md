@@ -153,6 +153,29 @@
     - Step 3 in a swarm sharing one todos counter → minted only phase 7's task as P1-NOTES-SD07, index TaskID column left to the coordinator (rung 6: precedent of P1-NOTES-SD01/SD02/SD06)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 8's task is minted by its own session.
 
+- [x] **P1-NOTES-SD08** Phase 8: The title page: Download buttons, the choose menu, progress bars
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/movies/DownloadButton.tsx` (+ test): an icon button (Phosphor `DownloadSimple`, named `Download <name>`) with a caret named `Choose how to download <name>` opening a `role="menu"` of Best torrent (1080p), Cloud, Pick a torrent… (`TorrentsModal` with a download action per candidate, sending `info_hash`; none for a season), a cancel icon while queued, running or paused, a thin `role="progressbar"` bar named `Download of <name>`; states idle, active, on this machine (from the title's `done` rows), failed. `MovieDetail.tsx` (a film's head button; none at a series' head), `EpisodeList.tsx` (season head and each episode row), `TorrentsModal.tsx` (the download action), `Movies.css`. `web/src/lib/downloads.ts` (+ test): `useDownloads(titleId)` asks `GET /api/stream/downloads?title=` once and with the page's refresh, and every 2.5 s only while `active` (queued, running or paused) and the tab is visible; season progress is the mean of its rows; `downloadBody` builds phase 4's `DownloadRequest` variants; the notice reads `requestDownload`'s `created` and, for a season, says how many episodes `not_aired` left out (not aired, or no air date). Exit: component tests for the three placements, the menu's three choices and what each sends, the bar while downloading or paused, no polling when nothing is active, cancel; `npm test` and `npm run typecheck` pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 8 of 10)
+  - **Satisfies**: R1, R2, R3 — an icon button Download on the title page (the 1080p magnet by default, else NT cloud sources) with a small dropdown "Choose how to download <movie/series name>", the download button in Season row (the whole season) and episode row (only that episode), and a live progress bar of the download the title page can see · criteria: R1.1, R1.3, R2.1, R2.2, R3.1, R3.3
+  - **Depends on**: P1-NOTES-SD04, P1-NOTES-SD07
+  - **Plan**: `.workflows/plan/P1-NOTES-SD08.md`
+  - **Completed**: 2026-11-21 00:35
+  - **Method**: /implement
+  - **Files**: web/src/lib/downloads.ts, web/src/lib/downloads.test.tsx, web/src/testing/downloadFixtures.ts, web/src/components/movies/DownloadButton.tsx, web/src/components/movies/DownloadButton.test.tsx, web/src/components/movies/TorrentsModal.tsx, web/src/components/movies/TorrentsModal.test.tsx, web/src/components/movies/EpisodeList.tsx, web/src/components/movies/EpisodeList.test.tsx, web/src/components/movies/MovieDetail.tsx, web/src/components/movies/Movies.css, .claude/skills/verify-notesd/scripts/stream/download-buttons.steps.mjs, .workflows/todos.md, .workflows/plan/P1-NOTES-SD08.md
+  - **Proof**: verified-after-fix — 9 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-002021-1002627/evidence (J1-J7 + neighbor check via download-buttons.steps.mjs PASS; J8, J9 the vitest files). First run failed J6 (a season click sent no POST while S01E02 was downloading), fixed in DownloadButton.tsx; second run failed only the neighbor check, the drive's fixture choice corrected.
+  - **Drift**:
+    - Line numbers differ from the plan (phase 7 landed, moviesApi.ts longer); every anchor was found by text. No behavioural drift.
+    - Remote branch phase-8-... did not exist at fetch time: nothing to rebase onto.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p8 on phase-8-… → proceeded there (rung 6: the swarm's per-phase worktree convention)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 8's task as P1-NOTES-SD08, index TaskID column left to the coordinator (rung 6: precedent SD01–SD07, and the coordinator's note)
+    - A season button click while one of its episodes is already queued/running/paused → still POSTs the season (the daemon leaves out what is queued or whole) instead of only re-reading, as the plan's `click` did; a film or an episode that downloads is only read again. With a unit test (rung 1/2: criterion R2.1 and Proof journey J6 over the plan's code block)
+    - The drive's neighbor check opens The Dog Stars (movie-990002) instead of Oldboy (movie-990004) → same assertions on a page that is the Library side: `detailSide` shows a title no machine holds a file of as the Stream page whatever the address says, and the fixture library has a file record of The Dog Stars (rung 6: the app's existing rule; changing it is outside this phase's Owns)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1–7 of this set; the coordinator's integrator reconciles them. readme-updater not run, matching phase 7 (web-only). No successor to unblock: phase 9's task is minted by its own session.
+
 - [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
   - **Difficulty**: NORMAL
   - **Type**: Feature

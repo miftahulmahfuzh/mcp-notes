@@ -34,8 +34,10 @@ import {
   seasonCode,
 } from '../../lib/movies';
 import { usePlayProgress } from '../../hooks/usePlayProgress';
+import { useDownloads } from '../../lib/downloads';
 import { EntityModal } from './EntityModal';
 import { EpisodeList } from './EpisodeList';
+import { DownloadButton, type DownloadsBinding } from './DownloadButton';
 import { EntityLink, FileRow, LiveStatus, StreamAltButton, TrailerButton } from './parts';
 import { PlayMenu } from './PlayMenu';
 import { Poster } from './Poster';
@@ -119,6 +121,11 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   const streaming = live === null ? streamLive(d.id, player) : null;
   /** playing / paused / stalled, as on the poster in the grid; null when nothing of this title is on screen (or VLC is stopped). */
   const now = tileLive(d.id, player);
+
+  /** Downloads to this machine, Stream side with streaming on only: read with each refresh of the title, and every 2.5 s while one is queued, running or paused (useDownloads). */
+  const downloadsOn = side === 'stream' && streamEnabled;
+  const titleDownloads = useDownloads(downloadsOn ? d.id : null, d);
+  const downloads: DownloadsBinding | undefined = downloadsOn ? { rows: titleDownloads.rows, onNotice: (text) => onNotice(text), onChanged: titleDownloads.reload } : undefined;
 
   /** What a play being started was asked to do; null when none is. The line beside Play follows it (usePlayProgress). */
   const [doing, setDoing] = useState<string | null>(null);
@@ -324,6 +331,9 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             </button>
             <PlayMenu detail={d} episode={null} player={player} busy={busy} streamEnabled={streamEnabled} size="page" onRun={(act, failed, what) => void run(act, failed, what)} />
             {alt !== null && <StreamAltButton size="page" state={streamLabel(alt, streamEnabled)} busy={busy} onClick={() => streamOne(alt)} />}
+            {downloads !== undefined && d.kind === 'movie' && (
+              <DownloadButton detail={d} scope={{ kind: 'movie' }} rows={downloads.rows} size="page" onNotice={downloads.onNotice} onChanged={downloads.onChanged} />
+            )}
             <TrailerButton target={trailerTarget(d)} onWatch={setTrailer} />
             <button
               type="button"
@@ -410,6 +420,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           onSeasonWatched={(season, next) => void markEpisodes({ season }, next, season === 0 ? 'Specials' : `Season ${season}`)}
           onEpisodeWatched={(e: EpisodeView, next) => void markEpisodes({ episodes: [{ season: e.season, episode: e.episode }] }, next, episodeCode(e.season, e.episode))}
           onTrailer={setTrailer}
+          downloads={downloads}
           onStory={(e) => setStory(episodeStory(d.title, e))}
           onSeasonStory={(s) => setStory(seasonStory(d.title, s))}
         />
