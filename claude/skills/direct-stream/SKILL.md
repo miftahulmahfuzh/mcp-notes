@@ -46,6 +46,10 @@ the last of the request, and never part of the title: take it off before reading
   because no cloud provider or torrent had it. A codename or a magnet never falls back to a site.
 - `provider: "cloud"` never falls back to a torrent, and `provider: "torrent"` asks no cloud
   provider. When one answers `no_source`, say so and offer the other; do not switch unasked.
+- On the office network (SSID `Employee`) torrent peers are not reached without Cloudflare WARP.
+  "warp on TM ..." is the `warp` tool with `action: "on"`, then the play. A torrent play that
+  found no peer at all there with WARP off ends with an attempt `WARP` saying WARP may help: tell
+  the user and offer `/warp on`; never switch it unasked.
 
 ## Step 1: work out one title
 

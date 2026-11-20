@@ -7,6 +7,9 @@ import { parseRelease, type TorrentCandidate } from '../../../src/directStream/t
 import type { MediaProbe } from '../../../src/directStream/torrent/probe.js';
 import { TorrentSource, type DownloadOnDisk, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
 import { directStreamRoutes } from '../../../src/http/directStreamApi.js';
+import { WARP_ATTEMPT, type TorrentWarp } from '../../../src/directStream/torrentWarp.js';
+import { TorrentError } from '../../../src/directStream/torrent/types.js';
+import type { WarpState, WarpSwitch } from '../../../src/streaming/warp.js';
 
 const HEADERS = { origin: 'http://localhost', 'content-type': 'application/json' };
 const PLAY_FILM = { kind: 'movie', tmdb_id: 467905 };
@@ -32,6 +35,9 @@ interface Setup {
   disk?: DownloadOnDisk | null;
   ready?: string[];
   now?: () => Date;
+  /** True while no peer answers: every open then fails as the engine's no_metadata does. */
+  peerless?: () => boolean;
+  warp?: TorrentWarp | null;
 }
 
 function setup(o: Setup = {}) {
@@ -41,6 +47,7 @@ function setup(o: Setup = {}) {
   const swarm: TorrentSwarm = {
     open: async (pick) => {
       swarmCalls.push(`open ${pick.infoHash}`);
+      if (o.peerless?.() === true) throw new TorrentError('no_metadata', 'No peer sent the file list within 20 s.');
       return { infoHash: pick.infoHash, files: [{ index: 0, path: 'Film.2026.720p.mp4', name: 'Film.2026.720p.mp4', length: 1_000_000 }] };
     },
     use: (infoHash) => {
@@ -75,6 +82,7 @@ function setup(o: Setup = {}) {
       },
     },
     torrent: () => (o.torrents === false ? null : torrent),
+    warp: o.warp ?? null,
     sessions,
     ...(o.now === undefined ? {} : { now: o.now }),
     log: () => undefined,
@@ -232,5 +240,44 @@ describe('a torrent session', () => {
     expect(refreshed.status).toBe(200);
     expect(refreshed.json.torrent.info_hash).toBe(h(1));
     expect((await t.settled()).slice(-2)).toEqual([`open ${h(1)}`, `use ${h(1)}`]);
+  });
+});
+
+describe('a torrent play on the office network that found no peer at all', () => {
+  const officeWarp = (): WarpSwitch & { on: () => boolean; calls: string[] } => {
+    let warp: WarpState['warp'] = 'disconnected';
+    const calls: string[] = [];
+    return {
+      calls,
+      on: () => warp === 'connected',
+      status: async () => ({ ok: true, warp, ssid: 'Employee' }),
+      set: async (on) => {
+        calls.push(on ? 'on' : 'off');
+        warp = on ? 'connected' : 'disconnected';
+        return { ok: true, warp, ssid: 'Employee', changed: true };
+      },
+    };
+  };
+
+  it('says WARP may help, and switches nothing, without the automatic flip', async () => {
+    const sw = officeWarp();
+    const t = setup({ peerless: () => true, warp: { switch: sw, auto: false } });
+    const { status, json } = await post(t.app, '/api/stream/play', { ...PLAY_FILM, provider: 'torrent' });
+    expect(status).toBe(502);
+    expect(json.attempts.at(-1)).toMatchObject({ provider: WARP_ATTEMPT, outcome: 'skipped' });
+    expect(sw.calls).toEqual([]);
+  });
+
+  it('with the flip: WARP on, the same torrent asked again, and it plays', async () => {
+    const sw = officeWarp();
+    const t = setup({ resolve: RESOLVED, peerless: () => !sw.on(), warp: { switch: sw, auto: true } });
+    const { status, json } = await post(t.app, '/api/stream/play', { ...PLAY_FILM, provider: 'torrent' });
+    expect(status).toBe(200);
+    expect(sw.calls).toEqual(['on']);
+    const providers = json.attempts.map((a: { provider: string }) => a.provider);
+    expect(providers).toContain(WARP_ATTEMPT);
+    // The first round's "not tried yet" is no longer true once WARP asked again.
+    expect(providers).not.toContain('Torrents: not tried yet');
+    expect(providers.filter((p: string) => p.startsWith('Torrent: Film')).length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -10,6 +10,7 @@ import type { MoviesService } from './movies/service.js';
 import type { GenreGuides } from './movies/guides.js';
 import type { MovieStories } from './movies/story.js';
 import type { StreamingRunner } from './streaming/service.js';
+import type { WarpSwitch } from './streaming/warp.js';
 import type { DirectStreamService } from './directStream/service.js';
 import type { StreamCache } from './directStream/cache/service.js';
 import type { TorrentStreams } from './directStream/torrent/service.js';
@@ -70,6 +71,11 @@ export interface AppDeps {
    * sets it unless NOTESD_STREAMING=off; null or absent (tests), the tools answer streaming_off.
    */
   streaming?: StreamingRunner | null;
+  /**
+   * Cloudflare WARP's switch on the Windows side (src/streaming/warp.ts) behind the `warp` tool. The daemon always
+   * builds it (it runs nothing until asked); null or absent (tests): the tool answers warp_off.
+   */
+  warp?: WarpSwitch | null;
   /**
    * Direct streaming (DIRECT_STREAMING_PLAN phase 3): registry, resolves, sessions and the
    * pass-through. Null or absent when NOTESD_DIRECT_STREAM=off, NOTESD_MOVIES=off or `movies` is

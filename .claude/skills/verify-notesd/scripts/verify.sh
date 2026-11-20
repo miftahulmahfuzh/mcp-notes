@@ -254,6 +254,8 @@ EOF
     # A throwaway daemon never reads the public tracker lists or asks their trackers (torrent/trackerLists.ts),
     # with or without --torrent (whose discovery is off anyway).
     NOTESD_TORRENT_TRACKER_LISTS=off
+    # A throwaway daemon never reads or switches the machine's Cloudflare WARP for a torrent play (torrentWarp.ts).
+    NOTESD_STREAM_WARP=off
     # Every run's tmux is the recording fake: the report button and resume never open a window in
     # the owner's tmux. TMUX_FAKE (printed below) is where its calls.log and switches live.
     NOTESD_TMUX_BIN="$HERE/stream/fake-tmux.sh"

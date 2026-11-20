@@ -598,6 +598,12 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   daemon pins it off: `$V up` logs `[notesd] tracker lists off: NOTESD_TORRENT_TRACKER_LISTS=off` and its torrent folder
   holds no `tracker-lists.json`. Live: `jq '.trackers | length' <NOTESD_TORRENT_DIR>/tracker-lists.json` a minute after a
   restart, and the daemon log's `[notesd] tracker lists: N of M new trackers answered` line.
+- Cloudflare WARP for torrents (the `warp` tool, `/warp`, `src/directStream/torrentWarp.ts`): `warp` answers WARP's state
+  and the SSID and switches on or off; a torrent play where every torrent ended at "no file list from the swarm" on SSID
+  `Employee` with WARP off gains an attempt `WARP` (a hint, or with `TORRENT_WARP_AUTO` one more ask through WARP, kept on
+  only when it played). Proven by `npx vitest run tests/unit/scripts/warp.test.ts tests/unit/streaming.warp.test.ts tests/unit/mcp.warpTool.test.ts tests/unit/directStream/torrentPlay.test.ts`
+  (fake warp-cli, netsh and switch). Every throwaway daemon pins `NOTESD_STREAM_WARP=off`, so no play reads or switches the
+  machine's WARP. Live: `node claude/streaming/warp.mjs status` answers `{"ok":true,"warp":...,"ssid":...}`.
 
 ## /sync-subtitle: a subtitle checked against the film's audio
 - `direct_stream_sync_subtitle` (the `/sync-subtitle` skill): Whisper hears a minute at six places of the

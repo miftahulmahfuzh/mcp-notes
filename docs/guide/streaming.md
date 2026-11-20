@@ -119,7 +119,8 @@ installed on the Windows side, the command switches it the other way round (`war
 `disconnect`), waits until it is there and asks the site once more. When that worked WARP stays
 that way and `warp` in the answer says so; when it did not, WARP is put back and the first
 failure is the answer. WARP carries the whole laptop's traffic, so it is touched only after a
-site failed, and never for a torrent or a cloud stream. `NOTESD_STREAM_WARP=off` stops it. A tab left on Chrome's own error page by the failed try is closed and opened again, so the
+site failed, and never for a cloud stream (for a torrent, see [Cloudflare WARP for
+torrents](#cloudflare-warp-for-torrents)). `NOTESD_STREAM_WARP=off` stops it. A tab left on Chrome's own error page by the failed try is closed and opened again, so the
 second try really loads the site.
 
 flicksy has no catalogue of its own: its search is TMDB's, so every title TMDB lists is found, and
@@ -2023,6 +2024,37 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 - **Off.** With `NOTESD_TORRENT=off` nothing above happens: no index is asked, no swarm joined, plays are exactly as
   without torrents, and a play with `provider: "torrent"` answers 503 `torrent_off`.
 
+### Cloudflare WARP for torrents
+
+On the office network (Wi-Fi SSID `Employee`) no torrent peer answers: the firewall lets the trackers' and
+indexes' answers through and nothing from a swarm. Cloudflare WARP wraps the machine's traffic in one tunnel to
+Cloudflare, so the firewall sees the tunnel and not the peers.
+
+**The switch.** The `warp` tool (`action` `status`, `on` or `off`) and the `/warp` skill run
+`claude/streaming/warp.mjs` (`node warp.mjs status|on|off`), which reads WARP with `warp-cli.exe status` and the
+Wi-Fi network with `netsh.exe wlan show interfaces` on the Windows side, switches with `warp-cli connect` or
+`disconnect` and waits up to 20 s until it is there. It answers `warp` (`connected`, `disconnected`, `connecting`,
+`unknown`, `not_installed`), `ssid` (null with no Wi-Fi), `changed`, and `error` (`not_installed`,
+`did_not_switch`: it was asked back to where it was). The owner's switch works whatever `NOTESD_STREAM_WARP` says;
+the chat bar has the tool too. A switch drops every open connection of the machine for a second or two.
+
+**A torrent play that found no peer at all.** When every torrent a play tried ended at "no file list from the
+swarm in time" (a torrent that answered with a dub, the wrong files or too little of the file means peers are
+reached, and WARP is no help), on SSID `Employee` with WARP off, the answer gains one attempt `WARP`:
+
+> WARP: no torrent peer answered on the office network (Employee) with Cloudflare WARP off: turning WARP on (/warp
+> on) may reach them
+
+Nothing is switched: the owner says `/warp on` (or "warp on TM ...") and asks again. The automatic flip is built
+(`torrentThroughWarp` with `TORRENT_WARP_AUTO`): WARP on, the swarm failures of that film or episode forgotten so
+the same torrents are tried again, one more ask; WARP stays on when that played (the attempt `WARP` says so) and
+is put back off when it did not. It stays off until a measurement shows torrents get through WARP.
+
+Never for a cloud stream, never on another network, and never when WARP is already on. `NOTESD_STREAM_WARP=off`
+(every `verify.sh` daemon) builds none of it.
+
+**Measured.** Not yet.
+
 ### The player page on a torrent
 
 ![A torrent session: the magnet, 23 peers and 3.2 MB/s beside the title; on the timeline, white is watched, thick grey is on disk, thin is not downloaded yet](img/streaming/player-torrent.png)
@@ -2559,6 +2591,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - `/update-cloud-source`'s frame reader has the same gate: a site whose fresh navigation re-triggers its Cloudflare challenge every time is read instead from a tab the owner already solved by hand (`claude/streaming/direct/cli.mjs gate <site>`, reusing `torrent/tab.ps1` and `torrent/browser.mjs` — origin-agnostic despite living under `torrent/`). `templates --from-tab` (or `direct_stream_update_source`'s `from_tab: true`) then reads that SAME tab's current `<iframe>` addresses with a JS expression (`readFrameTemplatesFromTab`, `claude/streaming/direct/frames.mjs`), never a new navigation — so it sees only the top page's own frames, not one nested inside another cross-origin frame, which the sniffer's fresh-navigation path still sees when the site has no challenge. `no_tab`: no gated tab answered; gate it again.
   - A magnet the owner pasted plays that exact torrent with no index asked: `direct_stream_play`'s `magnet` arg → `DirectStreamService.magnetSession` → `TorrentSource.playMagnet`, which builds one candidate with `candidateFromMagnet` (info hash + `tr=` trackers + `dn` name) and runs it through the same open/probe/remux path. The owner still names the title (ref, poster, resume, original-language check); the original-language rule still refuses a dub or a non-video torrent (an OST). Only a pasted magnet is ever played — nothing is built or guessed.
   - A release whose index name reads as a dub is kept out of normal ranking but offered as `ranked.lastResort` (`find/rank.ts`): `TorrentSource.resolve` tries these in their own round only after every proper candidate fails, and the header probe decides by the real audio (a dual-audio file carrying the original plays; a true dub stays `dubbed`). The original audio track is always the one that plays: the remux maps it (`pickAudioStream`), and a directly-playable dual-audio file whose original is not the default is remuxed, or refused as `dubbed` when no remux can force it (`playsOriginalDirect` in `torrent/source.ts`).
+  - Cloudflare WARP for torrents (`src/directStream/torrentWarp.ts`, `src/streaming/warp.ts` over `claude/streaming/warp.mjs`, the one place WARP and the SSID are read or switched): the owner switches WARP with the `warp` tool or `/warp`. A torrent ask (index or pasted magnet) where every torrent tried ended at `NO_FILE_LIST` (`noPeersAtAll`), on SSID `Employee` with WARP off, gains an attempt `WARP`: a hint, or with `TORRENT_WARP_AUTO` WARP on, the swarm failures forgotten (`TorrentSource.forgetNoPeers`) and one more ask, kept on only when that played. Never for a cloud stream. `NOTESD_STREAM_WARP=off` (verify.sh pins it) builds none of it; the owner's switch works either way.
   - Torrents (`src/directStream/torrent/*`): `TorrentsRepo` is the only writer of `stream_torrents`. A torrent is in the swarm only while something uses it, and only its video and subtitle files are selected, read or served; nothing from a torrent is ever run. Tests use `DEFAULT_TORRENT_CONFIG` (off) or a fake engine; the real-engine test seeds over loopback with DHT and trackers off.
 
 ## Where the code is
@@ -2572,6 +2605,7 @@ rule it states; the few that must never change are also in the repository's `CLA
 | `claude/skills/pahe/`, `idlix/`, `lk21/`, `flicksy/`, `dramacool/` | The skills; `pahe/search.mjs` also holds the title parsing the others share |
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
+| `claude/streaming/warp.mjs`, `src/streaming/warp.ts`, `src/directStream/torrentWarp.ts`, `src/mcp/warpTool.ts` | Cloudflare WARP: the switch (`node warp.mjs status\|on\|off`, the SSID from `netsh`), the daemon's side of it, a torrent play that found no peer on the office network, the `warp` tool |
 | `src/streaming/sitePlays.ts`, `src/http/sitePlayApi.ts` | A site's play kept with its title (`recordSitePlay`), a title TMDB does not list (`siteTitleKeeper`), a play sent back to its site (`replayOnSite`); the routes the command and the Stream side call |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
 | `src/directStream/torrent/find/scrape.ts`, `src/directStream/torrent/origins.ts`, `src/directStream/torrent/trackerLists.ts` | The tracker scrape before a play (seeders the trackers know) and the connect-only check; a magnet's index by its trackers (`KNOWN_ORIGINS`) and the tracker book; the public tracker lists, read and checked once a day |

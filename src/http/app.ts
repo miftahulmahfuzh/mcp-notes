@@ -96,6 +96,7 @@ export function mcpToolDeps(
     adversary: deps.adversary,
     movies: movieToolDeps(deps),
     streaming: deps.streaming ?? null,
+    warp: deps.warp ?? null,
     directStream: directStreamToolDeps(deps),
     streamCache: streamCacheToolDeps(deps),
     subtitleCheck: subtitleCheckToolDeps(deps),

@@ -20,7 +20,9 @@ import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type Dir
 import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
 import { readMagnet } from './torrent/origins.js';
-import { namesCloud, namesTorrent, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource , type MagnetReport } from './torrent/source.js';
+import { namesCloud, namesTorrent, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type MagnetReport } from './torrent/source.js';
+import { TORRENT_WARP_AUTO, torrentThroughWarp, WARP_ATTEMPT, type TorrentWarp } from './torrentWarp.js';
+import type { WarpSwitch } from '../streaming/warp.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
@@ -316,6 +318,11 @@ export interface DirectStreamServiceOptions {
   ahead?: boolean;
   /** The provider every resolve tries before the others while it keeps working (order.mjs `first`). Unset or null: none. */
   firstProvider?: string | null;
+  /**
+   * Cloudflare WARP for a torrent play that found no peer at all on the office network (torrentWarp.ts): a hint, or
+   * with `auto` one more ask through WARP. Never for a cloud stream. Unset or null (NOTESD_STREAM_WARP=off, tests): nothing.
+   */
+  warp?: TorrentWarp | null;
   /** How long a play waits for the stream checks before it opens; default CHECK_HEAD_MS (a test's seam). */
   checkHeadMs?: number;
   /**
@@ -983,21 +990,23 @@ export class DirectStreamService {
     // Never inside serial(): the cloud resolve above has returned, and phase 6's borrow tier queues on serial().
     const before = cloud?.attempts ?? [];
     if (track !== null) track.attempts = [...before];
-    const out = await source.resolve(ref, {
-      audioLang,
-      imdbId,
-      names,
-      resumeS: startS,
-      cloudTried: cloud !== null && cloud.code === 'no_source',
-      ...(track === null
-        ? {}
-        : {
-            progress: (p) => {
-              track.stage = p.stage;
-              track.attempts = [...before, ...p.attempts];
-            },
-          }),
-    });
+    const ask = (): Promise<TorrentResolve> =>
+      source.resolve(ref, {
+        audioLang,
+        imdbId,
+        names,
+        resumeS: startS,
+        cloudTried: cloud !== null && cloud.code === 'no_source',
+        ...(track === null
+          ? {}
+          : {
+              progress: (p) => {
+                track.stage = p.stage;
+                track.attempts = [...before, ...p.attempts];
+              },
+            }),
+      });
+    const out = await this.throughWarp(ref, await ask(), ask);
     const attempts = [...before, ...out.attempts];
     if (!out.ok) {
       await this.failed(ref, 'torrent');
@@ -1027,14 +1036,16 @@ export class DirectStreamService {
     const namesHook = this.opts.hooks?.titleNames;
     const names = namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref));
     const startS = await this.startAt(ref, resumeS);
-    const out = await source.playMagnet(ref, {
-      magnet,
-      audioLang,
-      imdbId,
-      names,
-      resumeS: startS,
-      ...(track === null ? {} : { progress: (p) => { track.stage = p.stage; track.attempts = [...p.attempts]; } }),
-    });
+    const ask = (): Promise<TorrentResolve> =>
+      source.playMagnet(ref, {
+        magnet,
+        audioLang,
+        imdbId,
+        names,
+        resumeS: startS,
+        ...(track === null ? {} : { progress: (p) => { track.stage = p.stage; track.attempts = [...p.attempts]; } }),
+      });
+    const out = await this.throughWarp(ref, await ask(), ask);
     if (!out.ok) throw new DirectStreamError('no_source', `The pasted torrent could not stream ${refLabel(ref)}.`, { attempts: out.attempts });
     const session = this.sessions.createTorrent(ref, out.source, out.attempts, startS, audioLang, out.torrent);
     this.followSubtitles(session);
@@ -1074,6 +1085,22 @@ export class DirectStreamService {
 
   private torrentSource(): TorrentSource | null {
     return this.opts.torrent?.() ?? null;
+  }
+
+  /**
+   * A torrent ask that found no peer at all, on the office network with WARP off (torrentWarp.ts): a hint in the
+   * answer, or with the automatic flip WARP on and one more ask, the failed swarms tried again. Anything else as is.
+   */
+  private async throughWarp(ref: StreamRef, out: TorrentResolve, again: () => Promise<TorrentResolve>): Promise<TorrentResolve> {
+    const warp = this.opts.warp ?? null;
+    if (out.ok || warp === null) return out;
+    const next = await torrentThroughWarp(warp, out, () => {
+      this.torrentSource()?.forgetNoPeers(ref);
+      return again();
+    });
+    const added = next.attempts.find((a) => a.provider === WARP_ATTEMPT);
+    if (added !== undefined) this.log(`[notesd] direct stream: ${refLabel(ref)}: WARP: ${added.outcome}: ${added.detail}`);
+    return next;
   }
 
   private async imdbIdOf(ref: StreamRef): Promise<string | null> {
@@ -2048,6 +2075,8 @@ export interface DirectStreamWiring {
   outside?: () => OutsideSubtitles | null;
   /** The streaming sites, the last resort of a play with no source named (src/streaming/fallback.ts); null or unset: none. */
   siteFallback?: SiteFallback | null;
+  /** Cloudflare WARP's switch (src/streaming/warp.ts), for a torrent play on the office network; used only with NOTESD_STREAM_WARP on. */
+  warp?: WarpSwitch | null;
 }
 
 /** Test seams. */
@@ -2089,6 +2118,7 @@ export function buildDirectStreamService(
     siteFallback: wiring.siteFallback ?? null,
     ahead: ds.ahead === true,
     firstProvider: ds.firstProvider ?? null,
+    warp: ds.warp === true && wiring.warp != null ? { switch: wiring.warp, auto: TORRENT_WARP_AUTO } : null,
     fetch: overrides.fetch,
     now: overrides.now,
     log: overrides.log,

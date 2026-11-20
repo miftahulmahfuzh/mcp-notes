@@ -80,6 +80,9 @@ export const STREAMING_TOOL_NAMES = ['streaming_find', 'streaming_play'] as cons
 
 export type StreamingToolName = (typeof STREAMING_TOOL_NAMES)[number];
 
+/** Cloudflare WARP's switch (src/mcp/warpTool.ts): status, on, off, with the Wi-Fi network's name. */
+export const WARP_TOOL_NAME = 'warp';
+
 /**
  * The direct-streaming tools (src/mcp/directStreamTools.ts): direct_stream_find looks a title up
  * and says whether this machine has a fresh verified stream of it; direct_stream_play resolves
@@ -170,6 +173,7 @@ export function allowedChatTools(): string[] {
     ...ADVERSARY_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...MOVIE_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...STREAMING_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
+    `${MCP_PREFIX}${WARP_TOOL_NAME}`,
     ...DIRECT_STREAM_TOOL_NAMES.filter((name) => !CLAUDE_CODE_ONLY_TOOL_NAMES.includes(name)).map((name) => `${MCP_PREFIX}${name}`),
     // dword's six tool names (dword_schema, dword_sql, and DWORD_TOOL_NAMES above) arrive here
     // already, because CONNECTOR_SYSTEMS includes 'dword' (DWORD_CONNECTOR_PLAN phase 1).

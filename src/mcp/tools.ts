@@ -13,6 +13,7 @@ import type { SessionResumer } from '../sessions/resume.js';
 import type { AdversaryService } from '../adversary/service.js';
 import type { MovieToolDeps } from './movieTools.js';
 import type { StreamingRunner } from '../streaming/service.js';
+import type { WarpSwitch } from '../streaming/warp.js';
 import type { DirectStreamToolDeps } from './directStreamTools.js';
 import type { SubtitleCheckToolDeps } from './subtitleCheckTools.js';
 import type { StreamCacheToolDeps } from './streamCacheTools.js';
@@ -43,6 +44,8 @@ export interface ToolDeps {
   movies?: MovieToolDeps | null;
   /** Runs the streaming sites' script for streaming_find / streaming_play. Omitted or null: both answer streaming_off. */
   streaming?: StreamingRunner | null;
+  /** Cloudflare WARP's switch behind the `warp` tool. Omitted or null: it answers warp_off. */
+  warp?: WarpSwitch | null;
   /** Direct streaming behind direct_stream_find / direct_stream_play (DIRECT_STREAMING_PLAN phase 7). Omitted or null: both answer direct_stream_off. */
   directStream?: DirectStreamToolDeps | null;
   /** The stream cache behind direct_stream_cache (stream-cache phase 5). Omitted or null: it answers direct_stream_off. */

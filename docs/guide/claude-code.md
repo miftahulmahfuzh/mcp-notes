@@ -48,7 +48,7 @@ are what makes a session behave the same with or without `/n` loaded:
 | Related, Dates | `related(id)`; `YYYY-MM-DD` means a whole day in the daemon's time zone |
 | Comparisons | Comparing and summarising is Claude's job: call `list` or `search` once per side |
 | Images, Attaching, Files, Similar images | How to view, save, attach, remove and compare pictures; files are visible but not readable |
-| Connectors, Movies, Adversary, Sessions | The other tool families and their id and link rules |
+| Connectors, Movies, Streaming, Direct streaming, Codenames, WARP, Adversary, Sessions | The other tool families and their id and link rules; WARP: the `warp` switch for the office network |
 
 The wall URL in the Links paragraph is built from `NOTESD_PORT`, so a daemon on another port needs
 no edit to the skill.
@@ -340,7 +340,7 @@ The session side of these hooks (parent links, their sources, the graph) is expl
 1. Registers the `notes` MCP server at user scope (it removes and re-adds it, so a port change is
    picked up).
 2. Symlinks each skill folder in `claude/skills/` into `~/.claude/skills/`: `n`, `migrate`, `v`,
-   `j`, `redo`, `check-seer-adversarial-nightly`, `trace-vlc-bug`, `pahe`, `idlix`, `lk21`, `flicksy`, `dramacool`, `create-streaming-skill`, `direct-stream`, `update-cloud-source`, `report-stream-bug` and `sync-subtitle`. It refuses to replace a real directory.
+   `j`, `redo`, `check-seer-adversarial-nightly`, `trace-vlc-bug`, `pahe`, `idlix`, `lk21`, `flicksy`, `dramacool`, `create-streaming-skill`, `direct-stream`, `update-cloud-source`, `report-stream-bug`, `sync-subtitle` and `warp`. It refuses to replace a real directory.
 3. Runs `scripts/claude-hooks.mjs install`, which merges the six hook entries into
    `~/.claude/settings.json`.
 4. Runs `scripts/claude-hooks.mjs retention`, which raises `cleanupPeriodDays` to 3650 when it is

@@ -8,6 +8,7 @@ import { buildInstructions } from './instructions.js';
 import { registerSessionTools } from './sessionTools.js';
 import { registerSimilarTools } from './similarTools.js';
 import { registerStreamingTools } from './streamingTools.js';
+import { registerWarpTool } from './warpTool.js';
 import { registerDirectStreamTools } from './directStreamTools.js';
 import { registerStreamCacheTool } from './streamCacheTools.js';
 import { registerSubtitleCheckTools } from './subtitleCheckTools.js';
@@ -34,6 +35,8 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   registerMovieTools(server, deps);
   // Streaming sites (idlix, lk21, flicksy, dramacool). Answer streaming_off when deps.streaming is unset.
   registerStreamingTools(server, deps);
+  // Cloudflare WARP's switch. Answers warp_off when deps.warp is unset.
+  registerWarpTool(server, deps);
   // Direct streaming (DIRECT_STREAMING_PLAN phase 7). Answer direct_stream_off when deps.directStream is unset.
   registerDirectStreamTools(server, deps);
   // The stream cache (stream-cache phase 5). Answers direct_stream_off when deps.streamCache is unset.

@@ -325,6 +325,8 @@ so "what did I watch" still answers after the file is gone.
   file on this machine, say so and offer a stream; do not start one unasked. A stream asked for
   without a codename goes to direct streaming first; the streaming sites (idlix, lk21, flicksy,
   dramacool) are only its last resort, when no cloud provider and no torrent has it.
+- "warp on", "warp off", "is warp on?" → the `warp` tool (`action` on, off or status; see the
+  `/warp` skill). It answers WARP's state and the Wi-Fi network (`ssid`). Never switch it unasked.
 - "Play something", "I am eating dinner, play a random movie", "I am eating lunch, play smth",
   "let's watch something" (no title named) → `movies_continue` with `random: true` and nothing
   else, at once: no listing, no questions, no choosing a title yourself. The server picks one film

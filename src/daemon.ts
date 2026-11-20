@@ -64,6 +64,7 @@ import { StreamReporter } from './directStream/report.js';
 import { defaultClaudeWindowDeps } from './sessions/resume.js';
 import { siteFallback } from './streaming/fallback.js';
 import { scriptRunner } from './streaming/service.js';
+import { scriptWarp } from './streaming/warp.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
 
@@ -227,6 +228,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   let boundPort: number | null = null;
   // Builds nothing and runs nothing until a streaming tool is called.
   const streaming = config.streaming?.enabled ? scriptRunner({ port: () => boundPort }) : null;
+  // Cloudflare WARP on the Windows side (claude/streaming/warp.mjs): the owner's switch (the `warp` tool) and, with
+  // NOTESD_STREAM_WARP on, the torrent play on the office network. Runs nothing until asked.
+  const warp = scriptWarp();
   // Direct streaming: null with NOTESD_DIRECT_STREAM=off or NOTESD_MOVIES=off. The provider seed is
   // loaded into the shared registry here; the resolver and Chrome run only when a play or a tool asks.
   // null with NOTESD_ANIME_MAP_URL=off: no lookup is made and an anime resolves like any series.
@@ -398,6 +402,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       movieStreams === null || streaming === null
         ? null
         : siteFallback({ runner: streaming, remembered: (ref) => movieStreams.channel(ref), title: (ref) => movieStreams.titleNames(ref), streams: movieStreams }),
+    warp,
     hooks:
       movieStreams === null
         ? undefined
@@ -507,6 +512,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     moviesHealth,
     sessionEvents,
     streaming,
+    warp,
     directStream,
     streamCache,
     torrents,

@@ -200,6 +200,13 @@ export interface DirectStreamConfig {
    */
   ahead?: boolean
   /**
+   * `NOTESD_STREAM_WARP`, default on: a torrent play that found no peer at all on the office network
+   * (SSID Employee) with Cloudflare WARP off says WARP may help, or switches it on and asks again
+   * (src/directStream/torrentWarp.ts); the streaming command's site retry reads the same variable.
+   * `off` or unset in a literal: the daemon never reads or switches WARP for a play.
+   */
+  warp?: boolean
+  /**
    * DEFAULT_STREAM_FIRST_PROVIDER: the cloud provider every resolve tries before the others, while it
    * keeps working (claude/streaming/direct/order.mjs). Null or unset in a literal: none, the providers
    * are ordered by what was measured.
@@ -948,6 +955,7 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
         : parseModel('NOTESD_STREAM_PICTURE_MODEL', env.NOTESD_STREAM_PICTURE_MODEL, DEFAULT_STREAM_PICTURE_MODEL),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
     ahead: env.NOTESD_STREAM_AHEAD?.trim().toLowerCase() !== 'off',
+    warp: env.NOTESD_STREAM_WARP?.trim().toLowerCase() !== 'off',
     firstProvider: DEFAULT_STREAM_FIRST_PROVIDER,
     audioCheck: parseSwitch('NOTESD_STREAM_AUDIO_CHECK', env.NOTESD_STREAM_AUDIO_CHECK),
     canary: parseSwitch('NOTESD_STREAM_CANARY', env.NOTESD_STREAM_CANARY),

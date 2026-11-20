@@ -26,6 +26,8 @@ import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick, Torr
 
 /** The provider every torrent session carries (movie_plays, the stream on screen, the player). */
 export const TORRENT_PROVIDER = 'Torrent';
+/** How a torrent attempt whose swarm sent no file list in time begins (no peer answered): torrentWarp.ts reads it. */
+export const NO_FILE_LIST = 'no file list from the swarm in time';
 /** Torrents opened per play (and per shuffle) before the answer is no_source: two rounds of TORRENT_RACE_WIDTH. */
 export const MAX_TORRENT_TRIES = 6;
 /** A torrent whose swarm did not deliver is left out of the next plays of the title for this long: swarms wake up. */
@@ -500,6 +502,14 @@ export class TorrentSource {
     const entries = this.failed.get(key) ?? new Map<string, { until: number; lasting: boolean }>();
     entries.set(infoHash.toLowerCase(), { until: this.now() + (lasting ? FILE_FAILURE_KEEP_MS : SWARM_FAILURE_KEEP_MS), lasting });
     this.failed.set(key, entries);
+  }
+
+  /**
+   * Forgets the torrents of this film or episode whose swarm did not deliver, so the next `resolve` tries them again:
+   * the torrent play on the office network asks again through WARP (torrentWarp.ts), where the same swarms may answer.
+   */
+  forgetNoPeers(ref: StreamRef): void {
+    this.forgetSwarmFailures(refKey(ref));
   }
 
   /** Forgets the torrents of `key` whose swarm did not deliver (a file's failure stays); true when any was forgotten. */
@@ -1099,7 +1109,7 @@ export class TorrentSource {
       } catch (err) {
         // Released too: an open that gave up may still have left the torrent in the swarm.
         state.opened = true;
-        return fail('no_stream', `no file list from the swarm in time (${messageOf(err)})`);
+        return fail('no_stream', `${NO_FILE_LIST} (${messageOf(err)})`);
       }
       state.opened = true;
       if (state.cancelled) return left();

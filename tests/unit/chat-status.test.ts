@@ -17,7 +17,7 @@ import {
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 7 movie tools, the 2 streaming tools, the direct-streaming tools, the 22 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 7 movie tools, the 2 streaming tools, the warp switch, the direct-streaming tools, the 22 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(SESSION_TOOL_NAMES).toHaveLength(5);
@@ -26,7 +26,7 @@ describe('allowedChatTools', () => {
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(22);
     expect(STREAMING_TOOL_NAMES).toHaveLength(2);
     expect(DIRECT_STREAM_TOOL_NAMES).toEqual(['direct_stream_find', 'direct_stream_play', 'direct_stream_sources', 'direct_stream_update_source', 'direct_stream_discover']);
-    expect(tools).toHaveLength(19 + 5 + 3 + 7 + 2 + (DIRECT_STREAM_TOOL_NAMES.length - CLAUDE_CODE_ONLY_TOOL_NAMES.length) + 22 + 2);
+    expect(tools).toHaveLength(19 + 5 + 3 + 7 + 2 + 1 + (DIRECT_STREAM_TOOL_NAMES.length - CLAUDE_CODE_ONLY_TOOL_NAMES.length) + 22 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');

@@ -287,7 +287,8 @@ describe('buildInstructions: Movies', () => {
     expect(order.indexOf('Streaming')).toBe(order.indexOf('Movies') + 1);
     expect(order.indexOf('Direct streaming')).toBe(order.indexOf('Streaming') + 1);
     expect(order.indexOf('Codenames')).toBe(order.indexOf('Direct streaming') + 1);
-    expect(order.indexOf('Adversary')).toBe(order.indexOf('Codenames') + 1);
+    expect(order.indexOf('WARP')).toBe(order.indexOf('Codenames') + 1);
+    expect(order.indexOf('Adversary')).toBe(order.indexOf('WARP') + 1);
     expect(order.at(-1)).toBe('Sessions');
   });
 });
