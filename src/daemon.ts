@@ -257,7 +257,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             ffmpegFrameGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
             hlsSegmentFrameGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
           ),
-          // No frame: a stream whose host still hands out a segment plays; only one it does not is passed over.
+          // No frame: the attempt says whether the stream's host still hands out a segment. Either way the stream plays.
           reach: hlsStreamReach(),
           judge: pictureJudge,
         });

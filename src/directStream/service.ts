@@ -34,6 +34,7 @@ import {
   type ResolveOutcome,
   type ResolveOutput,
   type ResolvedOutput,
+  type ResolvedSource,
   type SourceAudio,
   type StreamRef,
   type EpisodeNeighbors,
@@ -282,9 +283,20 @@ export interface DirectStreamServiceOptions {
   ahead?: boolean;
   /** The provider every resolve tries before the others while it keeps working (order.mjs `first`). Unset or null: none. */
   firstProvider?: string | null;
+  /** How long a play waits for the stream checks before it opens; default CHECK_HEAD_MS (a test's seam). */
+  checkHeadMs?: number;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** `work`'s answer when it comes within `ms`, else null; `work` goes on either way. */
+async function withinMs<T>(work: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), Math.max(0, ms));
+  });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
 
 /** A pasted magnet as a play's key reads it: its info hash, or the text itself when it names none (the play then fails by itself). */
 function magnetKey(magnet: string): string {
@@ -312,6 +324,13 @@ function isHealthOutcome(outcome: ResolveOutcome): outcome is StreamHealthOutcom
 
 /** How many streams of one title may be rejected for their picture in one play before the first one found plays anyway. */
 export const PICTURE_MAX_REJECTIONS = 3;
+/**
+ * How long a play waits for the stream checks (picture.ts, audioLang.ts) of the stream it is about to open. A kept
+ * verdict answers at once; a look that takes longer finishes behind the play and keeps its verdict for the next one.
+ */
+export const CHECK_HEAD_MS = 4_000;
+/** What a resolved attempt's detail says while its checks still run behind the play; the verdicts take its place once they are in. */
+export const CHECKS_PENDING = 'checks: running behind the play';
 
 /** A provider nothing has resolved yet, for a delivery verdict that outlived its health row. */
 /** The one attempt of a play refused because the title is not out yet. */
@@ -466,20 +485,28 @@ export class DirectStreamService {
    * has run before this returns or throws. Always resolves: a cache is `play`'s business, and
    * `subtitleText` needs a resolved source.
    */
-  async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number; only?: string; vet?: boolean; skip?: readonly string[] } = {}): Promise<StreamSession> {
+  async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number; only?: string; vet?: boolean; waiting?: boolean; skip?: readonly string[] } = {}): Promise<StreamSession> {
     const ref = toStreamRef(input);
     const left = options.skip ?? [];
     // Something is about to be watched or kept: not of a title that is not out yet.
     if (options.vet === true) await this.refuseUnreleased(ref);
-    // `vet`: something is about to be watched or kept (a play, a cache), so the picture is looked at
-    // (picture.ts). Not for a provider the owner named, and not for a resolve that only reads a subtitle.
-    const out =
-      options.vet === true && options.only === undefined
-        ? await this.vetted(ref, left, (skip, later) => (later ? this.resolveQuietly(ref, skip) : this.resolveSource(ref, options.deadlineS, skip)))
-        : await this.resolveSource(ref, options.deadlineS, left, options.only);
+    // `vet`: something is about to be watched or kept (a play, a cache), so the stream is looked at (picture.ts,
+    // audioLang.ts). Not for a provider the owner named, and not for a resolve that only reads a subtitle.
+    // `waiting`: somebody waits for the player page, so the checks get CHECK_HEAD_MS and finish behind the play.
+    const vet = options.vet === true && options.only === undefined;
+    const headMs = options.waiting === true ? (this.opts.checkHeadMs ?? CHECK_HEAD_MS) : null;
+    const { out, late } = vet
+      ? await this.vetted(ref, left, (skip, later) => (later ? this.resolveQuietly(ref, skip) : this.resolveSource(ref, options.deadlineS, skip)), headMs)
+      : { out: await this.resolveSource(ref, options.deadlineS, left, options.only), late: null };
     const resumeS = await this.startAt(ref, options.resumeS ?? null);
     const session = this.sessions.create(ref, out.source, out.attempts, resumeS, await this.audioLang(ref));
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
+    // Checks that outlasted the head: what they said takes the place of `checks: running behind the play` in the session's attempts.
+    if (late !== null) {
+      void late.then((said) => {
+        session.attempts = session.attempts.map((a) => (a.detail.includes(CHECKS_PENDING) ? { ...a, detail: a.detail.replace(CHECKS_PENDING, said) } : a));
+      });
+    }
     return session;
   }
 
@@ -701,7 +728,7 @@ export class DirectStreamService {
   }
 
   /** `resolve`, with the play's stage said first: the cloud resolver answers its attempts only at its end. */
-  private cloudSession(ref: StreamRef, options: { resumeS?: number | null; only?: string; vet?: boolean; skip?: readonly string[] }, track: PlayTrack | null): Promise<StreamSession> {
+  private cloudSession(ref: StreamRef, options: { resumeS?: number | null; only?: string; vet?: boolean; waiting?: boolean; skip?: readonly string[] }, track: PlayTrack | null): Promise<StreamSession> {
     if (track !== null) track.stage = options.only === undefined ? 'asking the cloud providers' : `asking ${options.only}`;
     return this.resolve(ref, options);
   }
@@ -795,10 +822,13 @@ export class DirectStreamService {
     }
   }
 
-  /** Every cloud provider but `skip`, with the picture looked at (picture.ts). When none has the title, that is kept (`channelFailed`). */
+  /**
+   * Every cloud provider but `skip`, for a play: the stream is looked at (picture.ts, audioLang.ts) for CHECK_HEAD_MS
+   * at most before the page opens. When none has the title, that is kept (`channelFailed`).
+   */
   private async everyCloud(ref: StreamRef, resumeS: number | null, track: PlayTrack | null, skip: readonly string[] = []): Promise<StreamSession> {
     try {
-      return await this.cloudSession(ref, { resumeS, vet: true, skip }, track);
+      return await this.cloudSession(ref, { resumeS, vet: true, waiting: true, skip }, track);
     } catch (err) {
       if (err instanceof DirectStreamError && err.code === 'no_source') await this.failed(ref, 'cloud');
       throw err;
@@ -1195,7 +1225,7 @@ export class DirectStreamService {
     let out: ResolvedOutput;
     try {
       // The next provider's picture is looked at too: the owner leaves a cinema recording for a proper copy, not for the next recording.
-      out = await this.vetted(session.ref, [...session.avoid, from], (skip) => this.resolveQuietly(session.ref, skip));
+      out = (await this.vetted(session.ref, [...session.avoid, from], (skip) => this.resolveQuietly(session.ref, skip), null)).out;
     } catch (err) {
       this.log(`[notesd] direct stream: ${refLabel(session.ref)} leaves ${from} and no other provider answered (${err instanceof DirectStreamError ? (err.reason ?? err.code) : messageOf(err)})`);
       return { switched: false, reason: 'no_other_source', from, session: await this.sessionInfo(session) };
@@ -1506,15 +1536,27 @@ export class DirectStreamService {
    * none. Each round's attempts are kept, and the looked-at provider's says `picture: <verdict>` and, when
    * the audio was heard, `audio: <verdict>`.
    *
+   * `headMs` is how long the caller waits for the two checks of one stream (a play: somebody waits for the
+   * page); null waits for them whole (a cache, the shuffle button, which runs while the film plays on). Checks
+   * that outlast it finish behind the play: the stream is answered with `checks: running behind the play`, the
+   * verdict is kept as always, so the next play passes a rejected provider over from the start, and `late`
+   * resolves with what they said. Only a verdict rejects: a stream no frame or no audio could be read from,
+   * and one nobody could judge, plays, and never costs another round.
+   *
    * The audio check is only run on this cloud path, and only when the title's original language is known
    * and is not English (there is no dub into English of an English film to hear).
    */
-  private async vetted(ref: StreamRef, skip: readonly string[], one: (skip: readonly string[], later: boolean) => Promise<ResolvedOutput>): Promise<ResolvedOutput> {
+  private async vetted(
+    ref: StreamRef,
+    skip: readonly string[],
+    one: (skip: readonly string[], later: boolean) => Promise<ResolvedOutput>,
+    headMs: number | null,
+  ): Promise<{ out: ResolvedOutput; late: Promise<string> | null }> {
     const picture = this.opts.picture ?? null;
     const audio = this.opts.audioCheck ?? null;
     const original = audio === null ? null : await this.audioLang(ref);
-    const hearAudio = audio !== null && original !== null && normalizeAudioLang(original) !== 'en';
-    if (picture === null && !hearAudio) return one(skip, false);
+    const heard = audio !== null && original !== null && normalizeAudioLang(original) !== 'en' ? { audio, original } : null;
+    if (picture === null && heard === null) return { out: await one(skip, false), late: null };
     const rejected = await this.rejectedProviders(ref, skip);
     const titleHook = this.opts.hooks?.titleLabel;
     const title = (titleHook === undefined ? null : await this.hookValue('titleLabel', () => titleHook(ref))) ?? refLabel(ref);
@@ -1529,34 +1571,54 @@ export class DirectStreamService {
         if (rejected.length === 0 || !(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
         // Only providers rejected on an earlier play are left: one of them plays.
         this.log(`[notesd] direct stream: ${refLabel(ref)} has no provider left but ${rejected.join(', ')}, rejected before (a poor picture or a dub)`);
-        return one(skip, true);
+        return { out: await one(skip, true), late: null };
       }
-      // Both checks run so the attempt detail says both, but a bad picture or a dub either one passes the provider over.
-      const findings: string[] = [];
-      let bad = false;
-      if (picture !== null) {
-        const finding = await picture.check(ref, out.source, title);
-        findings.push(`picture: ${finding.verdict}${finding.reason === '' ? '' : ` (${finding.reason})`}`);
-        if (passesOver(finding)) bad = true;
-      }
-      if (hearAudio && original !== null) {
-        const look = await audio!.check(ref, out.source, original);
-        findings.push(`audio: ${look.verdict}${look.reason === '' ? '' : ` (${look.reason})`}`);
-        if (passesOverAudio(look)) bad = true;
-      }
-      const said = findings.join('; ');
+      const provider = out.source.provider;
+      const looking = this.lookAt(ref, out.source, title, picture, heard);
+      const look = headMs === null ? await looking : await withinMs(looking, headMs);
+      const said = look === null ? CHECKS_PENDING : look.said;
       const attempts = out.attempts
         .filter((a) => round === 0 || !a.outcome.startsWith('skipped_'))
-        .map((a) => (a.provider === out.source.provider && a.outcome === 'resolved' ? { ...a, detail: a.detail === '' ? said : `${a.detail}; ${said}` } : a));
+        .map((a) => (a.provider === provider && a.outcome === 'resolved' ? { ...a, detail: a.detail === '' ? said : `${a.detail}; ${said}` } : a));
       seen = [...seen, ...attempts];
       out = { ...out, attempts: seen };
-      if (!bad) return out;
+      if (look === null) {
+        this.log(`[notesd] direct stream: ${refLabel(ref)} plays from ${provider} while its stream is still being checked`);
+        const late = looking.then((done) => {
+          this.log(`[notesd] direct stream: ${refLabel(ref)} from ${provider}, checked behind the play: ${done.said}${done.bad ? '; the next play passes this provider over' : ''}`);
+          return done.said;
+        });
+        return { out, late };
+      }
+      if (!look.bad) return { out, late: null };
       first ??= out;
-      rejected.push(out.source.provider);
+      rejected.push(provider);
     }
     if (first === null) throw new DirectStreamError('no_source', `No provider could stream ${refLabel(ref)}.`, { attempts: seen });
     this.log(`[notesd] direct stream: no provider passed the stream checks for ${refLabel(ref)}; playing ${first.source.provider}`);
-    return { ...first, attempts: seen };
+    return { out: { ...first, attempts: seen }, late: null };
+  }
+
+  /**
+   * Both checks of one stream, side by side: what each said (`picture: clean; audio: original`) and whether either
+   * rejects it. Never rejects: a check that throws is `unsure`.
+   */
+  private async lookAt(
+    ref: StreamRef,
+    source: ResolvedSource,
+    title: string,
+    picture: PictureCheck | null,
+    heard: { audio: AudioLangCheck; original: string } | null,
+  ): Promise<{ said: string; bad: boolean }> {
+    type Said = { said: string; bad: boolean };
+    const line = (what: string, look: { verdict: string; reason: string }): string => `${what}: ${look.verdict}${look.reason === '' ? '' : ` (${look.reason})`}`;
+    const failed = (what: string) => (err: unknown): Said => ({ said: `${what}: unsure (${messageOf(err).slice(0, 200)})`, bad: false });
+    const [seen, sound] = await Promise.all([
+      picture === null ? null : picture.check(ref, source, title).then((look): Said => ({ said: line('picture', look), bad: passesOver(look) }), failed('picture')),
+      heard === null ? null : heard.audio.check(ref, source, heard.original).then((look): Said => ({ said: line('audio', look), bad: passesOverAudio(look) }), failed('audio')),
+    ]);
+    const both = [seen, sound].filter((l): l is Said => l !== null);
+    return { said: both.map((l) => l.said).join('; '), bad: both.some((l) => l.bad) };
   }
 
   /** One resolve for a title that is already playing or already has a stream in hand: the recordResolve hook runs only when a source was found, so a round that finds none does not mark the title stale. Throws `no_source` / `resolve_failed`. */

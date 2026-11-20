@@ -528,7 +528,7 @@ describe('the picture check in a play', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('passes over a stream no frame can be read from while another provider answers, and never keeps that', async () => {
+  it('plays a stream no frame can be read from: no other provider is asked, and nothing is kept', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'picture-int-'));
     const picture = new PictureCheck({
       verdicts: new PictureVerdicts(path.join(dir, 'stream-pictures.json'), () => clock),
@@ -539,11 +539,12 @@ describe('the picture check in a play', () => {
     const svc = service('host-a', {}, null, picture);
     await svc.syncSeed();
     const first = await played(appFor(svc));
-    expect(first.session.provider).toBe('Alpha');
-    expect(details(first.attempts)).toEqual(['Bravo: picture: unsure (no frame could be read from the stream)', 'Alpha: picture: clean']);
-    // Remembered in memory for a while, never written down: the next play leaves Bravo out, a restart forgets it.
-    expect(await picture.badFor({ kind: 'movie', tmdbId: 550 })).toEqual(['Bravo']);
-    await expect(readFile(path.join(dir, 'stream-pictures.json'), 'utf8')).resolves.not.toContain('|bravo');
+    expect(first.session.provider).toBe('Bravo');
+    expect(details(first.attempts)).toEqual(['Bravo: picture: unsure (no frame could be read from the stream)']);
+    expect(await resolves()).toEqual(['']);
+    // Not a verdict: the next play asks Bravo again, and nothing was written down.
+    expect(await picture.badFor({ kind: 'movie', tmdbId: 550 })).toEqual([]);
+    await expect(readFile(path.join(dir, 'stream-pictures.json'), 'utf8')).rejects.toThrow();
     await rm(dir, { recursive: true, force: true });
   });
 
