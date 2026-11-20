@@ -673,6 +673,9 @@ recording or a dub; and a torrent that kept stalling. Now the play moves, with n
 next good source of the same title, under the same session id and at the position the film reached
 (`autoSwitch` in `src/directStream/service.ts`).
 
+- **A torrent heard as a dub.** A torrent whose file tags no audio language is heard behind the play
+  ([A torrent whose file tags no language](#a-torrent-whose-file-tags-no-language)); a dub moves the play the
+  same way, to the next torrent, and is never tried again for the title. A pasted torrent stays.
 - **A check behind the play.** The verdict is kept as always; the session remembers the move and
   makes it at the page's next position report of the film playing, never while it is paused. Another
   cloud provider first, each stream looked at whole, the rejected providers passed over; the move is
@@ -782,9 +785,9 @@ there moves the play by itself to a provider serving the original
    rejected picture is. The provider's attempt reads `audio: dubbed (the audio is spoken en, not the
    original zh)`.
 
-- It runs **only for a cloud play** (torrents enforce the language on their real tracks instead), and
-  **only when the title's original language is known and is not English** — there is no dub into
-  English of an English film to hear.
+- On the cloud side it runs **only when the title's original language is known and is not English** — there
+  is no dub into English of an English film to hear. A torrent whose tags say its language is checked on its
+  real tracks instead; one whose tags say nothing is heard as below.
 - The verdict is kept per title (per episode) and provider in
   `<data dir>/movies/stream-audio.json` on this machine, heard again after 60 days. `unsure` is never
   kept, and nothing here fails a play: audio that cannot be read or a language not heard clearly is
@@ -793,6 +796,34 @@ there moves the play by itself to a provider serving the original
 - It needs Whisper installed (the same Python as the torrent tier) and the picture check on:
   without Whisper, or with `NOTESD_STREAM_PICTURE_MODEL=off`, the check is off and cloud plays are
   unchanged. `NOTESD_STREAM_AUDIO_CHECK=off` turns it off by itself.
+
+#### A torrent whose file tags no language
+
+A torrent's file is refused when its audio tags name only other languages than the original
+([Playing from a torrent](#playing-from-a-torrent)), but a file whose tags name nothing (or only `und`) passed:
+`Eternally.Yours.S01E07.1080p.ColdFilm.mkv` is a Russian voice-over of an English series, and it played, then
+became the title's remembered torrent. So such a torrent is heard too, behind the play
+(`hearTorrent` in `service.ts`, `TorrentSource.hearAudio`):
+
+1. ~30 s of the file is cut from the daemon's own file route, 5 minutes after where the play starts (those
+   pieces are fetched for the play soon anyway; never past the middle of a film whose length is known), and
+   passed through the same Whisper `detect` as a cloud stream (`AudioLangCheck.hear`).
+2. It runs for **any title whose original language is known, English included**: a voice-over into Russian of
+   an English series is the case it is for. A first hearing never holds the page: the torrent's attempt gets
+   `audio heard: dubbed (the audio is spoken ru, not the original en)` once it is in.
+3. What was heard is kept on the torrent, per info hash, in `stream_torrent_marks` (a dub is a dub for every
+   title; `unsure` is not kept). A torrent heard speaking another language than a title's original is never
+   tried again for that title: not by the finder's round, the shuffle button, the next episode fetched ahead,
+   a play from disk or the remembered torrent.
+4. A dub moves the play by itself, at the page's next report of the film playing, to the next torrent (or,
+   for a play with no source named, a cloud provider): [A play that moves by itself](#a-play-that-moves-by-itself),
+   with `dubbed audio (heard ru)` over the picture.
+5. **A pasted magnet still plays what was pasted**: the dub is said in its attempt and the log, and kept on
+   the torrent, and the play stays.
+
+It needs the shared Whisper worker; `NOTESD_STREAM_AUDIO_CHECK=off` turns it off with the cloud check (the
+picture check is not needed for it). Each probed file's tag languages are kept in the same row, for the
+candidates list.
 
 ### Sessions and the pass-through
 
@@ -2687,6 +2718,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - A new site follows `claude/skills/create-streaming-skill`, and is added to `sites/index.mjs` and `STREAMING_SITES` together (a test compares them). Tests use a fake runner; `deps.streaming` unset answers `streaming_off`.
 - **Direct streaming** (`src/directStream/*`, resolver in `claude/streaming/direct/*`) plays a title in its original language only. The daily canary (`canary.ts`, `NOTESD_STREAM_CANARY`) asks every cloud provider for one known film through `runResolve --only`, for its health only.
   - Every resolve carries the title's `original_language` (`--audio-lang`); a stream that names other languages only is `dubbed` and skipped, never played. `dubbed` is not provider health.
+  - A torrent whose file tags no audio language is heard behind the play (`hearTorrent` in `service.ts`, `TorrentSource.hearAudio`, the same `AudioLangCheck.hear`), for any known original language, English too; the language heard is kept per info hash in `stream_torrent_marks` (`TorrentMarksRepo`, `torrent/marks.ts`, its only writer), and a torrent heard speaking another language than a title's original is left out of every later ask of that title (`leftOutByMarks`: `resolve`, `next`, `fromDisk`, the remembered torrent). A dub sets `pendingMove`, so the play moves by itself; a torrent the owner pasted (`session.pastedTorrent`) stays, the dub said in its attempt.
   - A cloud `.mp4` often has no audio-language tags, so a dub passes the resolver's check. The cloud audio-language check (`src/directStream/audioLang.ts`, run in `vetted`) passes ~30 s of a cloud stream's audio through Whisper's `detect` to hear the spoken language, and a provider heard dubbing a foreign film is passed over for one serving the original. Cloud-only, only when the original language is known and not English; verdict kept per title+provider; `unsure` plays; a dub still plays when nothing else does. `NOTESD_STREAM_AUDIO_CHECK=off`. A play waits `CHECK_HEAD_MS` (4 s) for this check and the picture check, never longer: a kept verdict passes a provider over before the play, a first look finishes behind it and is kept for the next play. Only a verdict rejects (`passesOver`, `passesOverAudio`): a stream no frame or no audio can be read from plays, and never costs another resolve round.
   - The stream on screen (`src/movies/streamLive.ts`, `GET /api/movies/player` `stream`) is in memory and fed only by the player page's position reports; a paused page's `beat` must not write to the database.
   - A subtitle from outside the stream (a torrent's `service` / `borrow` file; a cloud stream with no English track gets one per title, `src/directStream/outsideSubtitles.ts`) is re-timed behind the play by Wyzie Synced (`torrent/subtitles/synced.ts`), never in the play's way. Whoever replaces a session's subtitle bumps its `subtitleRev`; the page reloads on the number in the position answer. The Wyzie key and a download `tok` are never logged, thrown or kept; tests inject the fetch, the cutter and the speech detector.
@@ -2744,6 +2776,7 @@ rule it states; the few that must never change are also in the repository's `CLA
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/ahead.ts` | The next episode, fetched while one plays: when, from where, and how it gives way to the episode on screen |
 | `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes, waiting `CHECK_HEAD_MS` for a look when a page is waited for |
+| `src/directStream/torrent/marks.ts` | `stream_torrent_marks`: per info hash, the file's tag languages, the language heard, the owner's blacklist (`TorrentMarksRepo`, its only writer) |
 | `src/directStream/audioLang.ts` | The cloud audio-language check: ~30 s of audio through ffmpeg and Whisper's `detect`, a dub told from the original, the kept verdicts; run in the same `vetted` loop |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |

@@ -200,27 +200,11 @@ export class AudioLangCheck {
    * kept, so the next play hears again.
    */
   async check(ref: StreamRef, source: ResolvedSource, audioLang: string): Promise<AudioLook> {
-    let wav: string | null = null;
     try {
       const kept = await this.opts.verdicts.get(ref, source.provider);
       if (kept !== null) return { verdict: kept.verdict, detected: kept.detected, probability: kept.probability, reason: kept.reason, kept: true };
-      wav = await this.opts.grab(source, this.opts.frameAtS ?? AUDIO_SAMPLE_AT_S);
-      if (wav === null) return { verdict: 'unsure', detected: null, probability: null, reason: 'no audio could be read from the stream', kept: false };
-      const heard = await this.opts.detector.detect(wav, AbortSignal.timeout(AUDIO_CLIP_TIMEOUT_MS));
-      if (heard === null || heard.probability < AUDIO_MIN_PROBABILITY) {
-        const reason = heard === null ? 'no language could be heard in the audio' : `the language was not heard clearly enough (${heard.language} ${heard.probability})`;
-        return { verdict: 'unsure', detected: heard?.language ?? null, probability: heard?.probability ?? null, reason, kept: false };
-      }
-      const spoken = normalizeAudioLang(heard.language);
-      const original = normalizeAudioLang(audioLang);
-      if (spoken === null || original === null) {
-        // Whisper named no real language, or the title's original is one this machine cannot normalize: nothing to say.
-        return { verdict: 'unsure', detected: heard.language, probability: heard.probability, reason: `the heard language ${heard.language} could not be compared`, kept: false };
-      }
-      const finding: AudioFinding =
-        spoken === original
-          ? { verdict: 'original', detected: spoken, probability: heard.probability, reason: `the audio is spoken ${spoken}, the original` }
-          : { verdict: 'dubbed', detected: spoken, probability: heard.probability, reason: `the audio is spoken ${spoken}, not the original ${original}` };
+      const finding = await this.hear(source, audioLang, this.opts.frameAtS ?? AUDIO_SAMPLE_AT_S);
+      if (finding.verdict === 'unsure') return { ...finding, kept: false };
       this.log(`[notesd] direct stream: audio of ${refLabel(ref)} from ${source.provider}: ${finding.verdict} (${finding.reason})`);
       await this.opts.verdicts.set(ref, source.provider, finding, this.model);
       return { ...finding, kept: false };
@@ -228,6 +212,33 @@ export class AudioLangCheck {
       const reason = err instanceof Error ? err.message : String(err);
       this.log(`[notesd] direct stream: the audio of ${refLabel(ref)} from ${source.provider} could not be heard: ${reason}`);
       return { verdict: 'unsure', detected: null, probability: null, reason: reason.slice(0, 200), kept: false };
+    }
+  }
+
+  /**
+   * One hearing, kept nowhere: ~30 s of `source` from `atS` through Whisper's `detect`, compared with `audioLang`
+   * (the title's original). The cloud check keeps what this says per title and provider; a torrent keeps it per info
+   * hash (torrent/marks.ts). Throws only when the detector does.
+   */
+  async hear(source: ResolvedSource, audioLang: string, atS: number): Promise<AudioFinding> {
+    let wav: string | null = null;
+    try {
+      wav = await this.opts.grab(source, atS);
+      if (wav === null) return { verdict: 'unsure', detected: null, probability: null, reason: 'no audio could be read from the stream' };
+      const heard = await this.opts.detector.detect(wav, AbortSignal.timeout(AUDIO_CLIP_TIMEOUT_MS));
+      if (heard === null || heard.probability < AUDIO_MIN_PROBABILITY) {
+        const reason = heard === null ? 'no language could be heard in the audio' : `the language was not heard clearly enough (${heard.language} ${heard.probability})`;
+        return { verdict: 'unsure', detected: heard?.language ?? null, probability: heard?.probability ?? null, reason };
+      }
+      const spoken = normalizeAudioLang(heard.language);
+      const original = normalizeAudioLang(audioLang);
+      if (spoken === null || original === null) {
+        // Whisper named no real language, or the title's original is one this machine cannot normalize: nothing to say.
+        return { verdict: 'unsure', detected: heard.language, probability: heard.probability, reason: `the heard language ${heard.language} could not be compared` };
+      }
+      return spoken === original
+        ? { verdict: 'original', detected: spoken, probability: heard.probability, reason: `the audio is spoken ${spoken}, the original` }
+        : { verdict: 'dubbed', detected: spoken, probability: heard.probability, reason: `the audio is spoken ${spoken}, not the original ${original}` };
     } finally {
       if (wav !== null) await rm(path.dirname(wav), { recursive: true, force: true }).catch(() => undefined);
     }

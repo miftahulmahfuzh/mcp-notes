@@ -844,6 +844,8 @@ export class DirectStreamService {
     else session = await this.cloudSession(ref, { resumeS, only }, track);
     // Where an automatic move may take the play: nowhere for a provider named, within the kind for a codename or a magnet.
     session.lock = magnet !== null || (only !== null && namesTorrent(only)) ? 'torrent' : only === null ? null : namesCloud(only) ? 'cloud' : 'provider';
+    // The owner's own torrent: a dub heard in it is reported, and the play stays on it.
+    if (magnet !== null) session.pastedTorrent = session.torrent?.infoHash ?? null;
     track.stage = 'opening the player page';
     track.attempts = session.attempts;
     return this.openPage(session);
@@ -865,6 +867,11 @@ export class DirectStreamService {
    */
   private async lastTorrentOrIndexes(ref: StreamRef, resumeS: number | null, last: Pick<RememberedChannel, 'infoHash' | 'season' | 'episode'> | null, track: PlayTrack | null): Promise<StreamSession> {
     if (last === null || last.infoHash === null || !sameSlot(ref, last)) return this.torrentSession(ref, resumeS, null, track);
+    // Blacklisted since, or heard as a dub of this title: never opened again; the indexes are asked.
+    if ((await this.torrentSource()?.leftOutByMarks(await this.audioLang(ref)))?.has(last.infoHash.toLowerCase()) === true) {
+      this.log(`[notesd] direct stream: the torrent that played ${refLabel(ref)} last time is blacklisted or was heard as a dub; asking the indexes`);
+      return this.torrentSession(ref, resumeS, null, track);
+    }
     // 1080p by default: a remembered torrent of a lower height (720p) goes after the indexes' search, not before it.
     const height = (await this.torrentSource()?.releaseHeight(last.infoHash)) ?? null;
     if (height !== null && height !== PREFERRED_TORRENT_HEIGHT) {
@@ -1072,7 +1079,7 @@ export class DirectStreamService {
       throw new DirectStreamError('no_source', `No provider or torrent could stream ${refLabel(ref)}.`, { attempts });
     }
     const session = this.sessions.createTorrent(ref, out.source, attempts, startS, audioLang, out.torrent);
-    this.followSubtitles(session);
+    this.followTorrent(session);
     this.watchTorrents();
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
     return session;
@@ -1104,7 +1111,7 @@ export class DirectStreamService {
     const out = await this.throughWarp(ref, await ask(), ask);
     if (!out.ok) throw new DirectStreamError('no_source', `The pasted torrent could not stream ${refLabel(ref)}.`, { attempts: out.attempts });
     const session = this.sessions.createTorrent(ref, out.source, out.attempts, startS, audioLang, out.torrent);
-    this.followSubtitles(session);
+    this.followTorrent(session);
     this.watchTorrents();
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
     return session;
@@ -1120,7 +1127,7 @@ export class DirectStreamService {
     if (disk === null) return null;
     // A replay's attempts are only its subtitle tiers' (`Subtitles: <tier>`): no index, no torrent was tried.
     const session = this.sessions.createTorrent(ref, disk.source, disk.attempts, startS, audioLang, disk.torrent);
-    this.followSubtitles(session);
+    this.followTorrent(session);
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
     return session;
   }
@@ -1129,6 +1136,39 @@ export class DirectStreamService {
    * A torrent session answered while its subtitle chain still runs (`Subtitles: pending`): once the chain ends its
    * attempts take that one's place in the session's, so a snapshot of the session says what the subtitles cost.
    */
+  private followTorrent(session: StreamSession): void {
+    this.hearTorrent(session);
+    this.followSubtitles(session);
+  }
+
+  /**
+   * The torrent audio check, behind the play: a session's torrent whose file tags no audio language (or only `und`)
+   * is heard through Whisper (TorrentSource.hearAudio), for any title whose original language is known (English too:
+   * a Russian voice-over of an English series is the case it is for). What was heard goes into the torrent's attempt
+   * and its marks. A dub moves the play by itself at the page's next report of the film playing (autoSwitch), and the
+   * torrent is not chosen again for the title; a torrent the owner pasted stays, the dub said in its attempt.
+   */
+  private hearTorrent(session: StreamSession): void {
+    const torrent = session.torrent;
+    const source = this.torrentSource();
+    const audioLang = session.audioLang;
+    if (torrent === null || source === null || audioLang === null || !source.hears) return;
+    if ((session.source.audio?.languages.length ?? 0) > 0) return;
+    const label = `${TORRENT_PROVIDER}: ${torrent.name}`;
+    void source.hearAudio(torrent, audioLang, session.resumeS ?? null).then((heard) => {
+      if (heard === null || session.torrent !== torrent) return;
+      const said = `audio heard: ${heard.verdict} (${heard.reason})`;
+      session.attempts = session.attempts.map((a) => (a.provider === label && a.outcome === 'resolved' ? { ...a, detail: a.detail === '' ? said : `${a.detail}; ${said}` } : a));
+      if (heard.verdict !== 'dubbed') return;
+      source.noteDubbed(session.ref, torrent.infoHash);
+      if (session.pastedTorrent === torrent.infoHash) {
+        this.log(`[notesd] direct stream: ${refLabel(session.ref)} keeps the pasted torrent ${torrent.name}, though it was heard as a dub (${heard.reason})`);
+        return;
+      }
+      session.pendingMove = `dubbed audio (heard ${heard.detected ?? 'another language'})`;
+    });
+  }
+
   private followSubtitles(session: StreamSession): void {
     const torrent = session.torrent;
     const pending = torrent?.subtitlesPending ?? null;
@@ -1551,7 +1591,7 @@ export class DirectStreamService {
     if (!out.ok) return false;
     session.avoid.push(from);
     this.sessions.replaceTorrent(session, out.source, out.torrent, out.attempts);
-    this.followSubtitles(session);
+    this.followTorrent(session);
     this.watchTorrents();
     return true;
   }
@@ -1571,7 +1611,7 @@ export class DirectStreamService {
       if (out.ok) {
         this.letGoTorrent(session);
         this.sessions.replaceTorrent(session, out.source, out.torrent, out.attempts);
-        this.followSubtitles(session);
+        this.followTorrent(session);
         this.watchTorrents();
         return true;
       }
@@ -1618,7 +1658,7 @@ export class DirectStreamService {
     }
     this.letGoTorrent(session);
     this.sessions.replaceTorrent(session, out.source, out.torrent, out.attempts);
-    this.followSubtitles(session);
+    this.followTorrent(session);
     this.watchTorrents();
     safeRecord(this.evidence, sessionRecord(session, 'switched', null));
     this.log(`[notesd] direct stream: ${refLabel(session.ref)} moved from the torrent ${torrent.name} to ${out.torrent.name}`);

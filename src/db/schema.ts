@@ -1750,6 +1750,37 @@ export const streamTorrents = pgTable(
   ],
 )
 
+/**
+ * What this machine knows of one torrent whatever title it was opened for (migration 0042): a dub is a dub for every
+ * title. Written only by TorrentMarksRepo (src/directStream/torrent/marks.ts). `tag_languages` are the audio languages
+ * the chosen file's own tags named when it was last probed (empty: none, or only `und`); `heard_language` is what
+ * Whisper heard in it when the tags named none (torrent audio check), a 2-letter code, with how sure it was;
+ * `blacklisted_at` is set while the owner keeps it out of every play (the torrent candidates list, the
+ * `direct_stream_torrents` tool). Neon never held it, so it is not in SHARED_IMPORT_TABLES.
+ */
+export const streamTorrentMarks = pgTable(
+  'stream_torrent_marks',
+  {
+    infoHash: text('info_hash').primaryKey(),
+    /** The release or torrent name last seen for it; null when only its hash is known. */
+    name: text('name'),
+    tagLanguages: jsonb('tag_languages').$type<string[]>(),
+    heardLanguage: text('heard_language'),
+    heardProbability: real('heard_probability'),
+    heardAt: timestamp('heard_at', { withTimezone: true, mode: 'date' }),
+    blacklistedAt: timestamp('blacklisted_at', { withTimezone: true, mode: 'date' }),
+    blacklistReason: text('blacklist_reason'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('stream_torrent_marks_info_hash_check', sql`${t.infoHash} ~ '^[0-9a-f]{40}$'`),
+    check('stream_torrent_marks_heard_check', sql`(${t.heardLanguage} is null) = (${t.heardAt} is null)`),
+    check('stream_torrent_marks_reason_check', sql`${t.blacklistedAt} is not null or ${t.blacklistReason} is null`),
+  ],
+)
+
+export type StreamTorrentMarkRow = typeof streamTorrentMarks.$inferSelect
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect

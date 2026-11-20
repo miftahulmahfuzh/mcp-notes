@@ -37,6 +37,7 @@ import { buildDirectStreamService } from './directStream/service.js';
 import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
 import { buildTorrentRemux } from './directStream/torrent/remux.js';
 import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
+import { TorrentMarksRepo } from './directStream/torrent/marks.js';
 import { buildTrackerLists } from './directStream/torrent/trackerLists.js';
 import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
 import { EmbeddedSubtitles } from './directStream/torrent/subtitles/embedded.js';
@@ -348,6 +349,19 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           sync: subtitleSync,
           imdbId: (ref) => movieStreams.imdbId(ref),
         });
+  // What this machine knows of each torrent whatever the title (stream_torrent_marks): the owner's blacklist and the
+  // language heard in a file that tags none.
+  const torrentMarks = new TorrentMarksRepo(db);
+  // The torrent audio check: a torrent whose file tags no audio language is heard behind the play through the shared
+  // Whisper worker, for any title whose original language is known. Off with NOTESD_STREAM_AUDIO_CHECK=off or no Whisper.
+  const torrentHearer =
+    sharedWhisper === null || config.directStream?.enabled !== true || config.directStream.audioCheck === false
+      ? null
+      : new AudioLangCheck({
+          verdicts: new AudioVerdicts(join(config.dataDir, MOVIES_SUBDIR, AUDIO_VERDICTS_FILE)),
+          grab: streamAudioGrabber({ ffmpegBin: config.directStream.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
+          detector: sharedWhisper,
+        });
   let torrentSource: TorrentSource | null = null;
   const torrentSourceOf = (): TorrentSource | null => {
     const torrents = deps.torrents ?? null;
@@ -378,6 +392,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         fallback: torrentSiteFallback,
         // The public tracker lists' store, filled by startBackground's daily refresh; null when it is off.
         lists: trackerLists.lists,
+        marks: torrentMarks,
+        hear: torrentHearer,
         sync:
           subtitleSync === null
             ? null

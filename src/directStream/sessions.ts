@@ -122,6 +122,11 @@ export interface StreamSession {
   pendingMove: string | null;
   /** True while an automatic move runs: one at a time. */
   moving: boolean;
+  /**
+   * The info hash the owner pasted for this play (a magnet, or Play this one in the torrent candidates list); null
+   * otherwise. A heard dub of that very torrent is reported and kept on it, and the play stays.
+   */
+  pastedTorrent: string | null;
   lastUsedAt: Date;
 }
 
@@ -194,6 +199,7 @@ export class SessionStore {
       sourceNote: null,
       pendingMove: null,
       moving: false,
+      pastedTorrent: null,
       lastUsedAt: at,
     };
     this.sessions.set(session.id, session);

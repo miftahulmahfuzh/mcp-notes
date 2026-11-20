@@ -12,6 +12,8 @@ import { runSubtitleChain, type SubtitleContext, type SubtitleTier } from './sub
 import { rankOf } from './subtitles/disk.js';
 import { hasEnglishSubtitleFile } from './subtitles/files.js';
 import type { TorrentSyncRequest } from './subtitles/synced.js';
+import type { AudioFinding } from '../audioLang.js';
+import type { TorrentMarks } from './marks.js';
 import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick, TorrentStats } from './types.js';
 
 /**
@@ -26,6 +28,8 @@ import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick, Torr
 
 /** The provider every torrent session carries (movie_plays, the stream on screen, the player). */
 export const TORRENT_PROVIDER = 'Torrent';
+/** Seconds after where a play starts that a torrent's audio is heard (torrent audio check): its pieces are fetched soon anyway. */
+export const TORRENT_HEAR_AFTER_S = 300;
 /** How a torrent attempt whose swarm sent no file list in time begins (no peer answered): torrentWarp.ts reads it. */
 export const NO_FILE_LIST = 'no file list from the swarm in time';
 /** Torrents opened per play (and per shuffle) before the answer is no_source: two rounds of TORRENT_RACE_WIDTH. */
@@ -143,6 +147,13 @@ export interface TorrentSourceOptions {
   lists?: Pick<TrackerLists, 'list'> | null;
   /** The torrent sites' addresses by name (TorrentSitesConfig.origins; null: off), for what learnMagnet says of an index. */
   sites?: Readonly<Record<string, string | null>>;
+  /** What this machine knows of each torrent whatever the title (marks.ts): blacklisted ones and heard dubs are never tried. Null or unset: none. */
+  marks?: TorrentMarks | null;
+  /**
+   * Hears ~30 s of a torrent's file when its tags name no audio language (AudioLangCheck.hear over the shared Whisper
+   * worker). Null or unset: never.
+   */
+  hear?: TorrentHearer | null;
   /** Default TORRENT_SETTLE_MS. */
   settleMs?: number;
   /** Default SUBTITLE_HEAD_MS. */
@@ -154,6 +165,14 @@ export interface TorrentSourceOptions {
   now?: () => number;
   log?: (line: string) => void;
 }
+
+/** One hearing of a stream's audio, kept nowhere (AudioLangCheck.hear fits). */
+export interface TorrentHearer {
+  hear(source: ResolvedSource, audioLang: string, atS: number): Promise<AudioFinding>;
+}
+
+/** What a torrent's audio was heard as: a kept hearing (`kept`) answers without listening again. */
+export type TorrentHearing = AudioFinding & { kept: boolean };
 
 /** Where a torrent play stands while it is being started: what is being done now, and every attempt finished so far. */
 export interface TorrentProgress {
@@ -284,6 +303,16 @@ interface Delivery {
 }
 
 const mbps = (kbps: number): string => (kbps / 1000).toFixed(1);
+
+/**
+ * Where a torrent's audio is heard: TORRENT_HEAR_AFTER_S after where the play starts (those pieces are fetched for the
+ * play soon anyway), but never past the middle of a film whose length is known.
+ */
+export function hearAt(durationS: number | null, startS: number | null): number {
+  const at = Math.max(0, startS ?? 0) + TORRENT_HEAR_AFTER_S;
+  if (durationS === null || durationS <= 0) return at;
+  return Math.max(0, Math.min(at, durationS / 2));
+}
 
 /** A file's bitrate in kbit/s: its bytes over its length; null when either is unknown. */
 function filmKbpsOf(length: number | null, durationS: number | null): number | null {
@@ -441,17 +470,19 @@ export class TorrentSource {
     // No IMDb id (TMDB lists none, or could not be asked): the indexes asked by title and the fallback sites still are.
     const query = queryOf(ref, options.imdbId, options.names ?? null, options.audioLang);
     options.progress?.({ stage: 'asking the torrent indexes', attempts: [] });
+    // Blacklisted by the owner, or heard speaking another language than this title's: never tried.
+    const marked = await this.leftOutByMarks(options.audioLang);
     let found: FindAnswer;
     try {
       // What earlier asks for this title already failed on: with nothing new among the JSON indexes' candidates, the finder asks its fallback sites.
-      const before = new Set([...(options.skip ?? []).map((h) => h.toLowerCase()), ...this.remembered(refKey(ref)).keys()]);
+      const before = new Set([...(options.skip ?? []).map((h) => h.toLowerCase()), ...this.remembered(refKey(ref)).keys(), ...marked]);
       found = await this.opts.find(query, AbortSignal.timeout(TORRENT_DEADLINE_MS), { tried: before });
     } catch (err) {
       return { ok: false, error: 'no_source', attempts: [{ provider: 'Index: all', outcome: 'error', took_s: seconds(started, this.now()), detail: messageOf(err) }] };
     }
     const key = refKey(ref);
     const asked = (options.skip ?? []).map((h) => h.toLowerCase());
-    const leftOut = (): Set<string> => new Set([...asked, ...this.remembered(key).keys()]);
+    const leftOut = (): Set<string> => new Set([...asked, ...this.remembered(key).keys(), ...marked]);
     const pick = (skip: ReadonlySet<string>): { candidates: TorrentCandidate[]; dubs: TorrentCandidate[] } => {
       const proper = found.candidates.filter((c) => !skip.has(c.infoHash.toLowerCase()));
       // Releases the name read as a dub: many are dual-audio and still carry the original track (the probe decides).
@@ -520,7 +551,11 @@ export class TorrentSource {
 
   private remember(key: string, infoHash: string, lasting: boolean): void {
     const entries = this.failed.get(key) ?? new Map<string, { until: number; lasting: boolean }>();
-    entries.set(infoHash.toLowerCase(), { until: this.now() + (lasting ? FILE_FAILURE_KEEP_MS : SWARM_FAILURE_KEEP_MS), lasting });
+    const hash = infoHash.toLowerCase();
+    // A file's failure (a dub) is never shortened to a swarm's by a later stall of the same torrent.
+    const before = entries.get(hash);
+    if (before !== undefined && before.lasting && !lasting && before.until > this.now()) return;
+    entries.set(hash, { until: this.now() + (lasting ? FILE_FAILURE_KEEP_MS : SWARM_FAILURE_KEEP_MS), lasting });
     this.failed.set(key, entries);
   }
 
@@ -703,7 +738,8 @@ export class TorrentSource {
   async next(ref: StreamRef, torrent: SessionTorrent, audioLang: string | null): Promise<TorrentResolve> {
     const key = refKey(ref);
     const failed = this.remembered(key);
-    const candidates = torrent.candidates.filter((c) => !failed.has(c.infoHash.toLowerCase()));
+    const marked = await this.leftOutByMarks(audioLang);
+    const candidates = torrent.candidates.filter((c) => !failed.has(c.infoHash.toLowerCase()) && !marked.has(c.infoHash.toLowerCase()));
     if (torrent.query === null || candidates.length === 0) return { ok: false, error: 'no_source', attempts: [] };
     const play: PlayFacts = { audioLang, imdbId: torrent.imdbId, resumeS: null, cloudTried: false };
     // A torrent the shuffle tried and could not play is left out of the title's next plays too.
@@ -716,6 +752,81 @@ export class TorrentSource {
    */
   noteStalled(ref: StreamRef, infoHash: string): void {
     this.remember(refKey(ref), infoHash, false);
+  }
+
+  /** A torrent heard as a dub of this title: left out of its asks like a file that will not change (it is kept in the marks too). */
+  noteDubbed(ref: StreamRef, infoHash: string): void {
+    this.remember(refKey(ref), infoHash, true);
+  }
+
+  /** The info hashes the marks keep out of a play of a title whose original is `audioLang`; empty when the marks cannot be read. */
+  async leftOutByMarks(audioLang: string | null): Promise<Set<string>> {
+    const marks = this.opts.marks ?? null;
+    if (marks === null) return new Set();
+    try {
+      return await marks.leftOut(audioLang);
+    } catch (err) {
+      this.log(`[notesd] torrent: the torrent marks could not be read: ${messageOf(err)}`);
+      return new Set();
+    }
+  }
+
+  /** True when a hearing can run at all (a hearer is wired). */
+  get hears(): boolean {
+    return (this.opts.hear ?? null) !== null;
+  }
+
+  /**
+   * The torrent audio check: a session's torrent whose file tags no audio language is heard (~30 s through Whisper,
+   * TORRENT_HEAR_AFTER_S after where the play starts, from the daemon's own file route) and the language heard is
+   * kept on the torrent (marks.ts), whatever the verdict but `unsure`. A torrent heard before answers from the marks.
+   * Null when no hearer is wired. Never throws: a failure is `unsure`.
+   */
+  async hearAudio(torrent: Pick<SessionTorrent, 'infoHash' | 'fileIndex' | 'name' | 'durationS'>, audioLang: string, startS: number | null): Promise<TorrentHearing | null> {
+    const hear = this.opts.hear ?? null;
+    if (hear === null) return null;
+    const original = normalizeAudioLang(audioLang);
+    try {
+      const mark = (await this.opts.marks?.get(torrent.infoHash)) ?? null;
+      if (mark?.heardLanguage != null && original !== null) {
+        const dub = mark.heardLanguage !== original;
+        return {
+          verdict: dub ? 'dubbed' : 'original',
+          detected: mark.heardLanguage,
+          probability: mark.heardProbability,
+          reason: dub ? `heard before: the audio is spoken ${mark.heardLanguage}, not the original ${original}` : `heard before: the audio is spoken ${mark.heardLanguage}, the original`,
+          kept: true,
+        };
+      }
+      const url = `${this.opts.localBase()}${this.opts.swarm.localUrl(torrent.infoHash, torrent.fileIndex)}`;
+      const source: ResolvedSource = {
+        provider: TORRENT_PROVIDER,
+        embed_url: '',
+        manifest_url: url,
+        manifest_kind: 'mp4',
+        headers: { referer: null, origin: null, user_agent: null },
+        subtitles: [],
+        best_height: null,
+        en_subtitle: false,
+        took_s: null,
+      };
+      const finding = await hear.hear(source, audioLang, hearAt(torrent.durationS ?? null, startS));
+      if (finding.verdict !== 'unsure' && finding.detected !== null && finding.probability !== null) {
+        await this.opts.marks?.noteHeard(torrent.infoHash, torrent.name, finding.detected, finding.probability);
+      }
+      this.log(`[notesd] torrent: audio of ${torrent.name} (${torrent.infoHash.slice(0, 8)}), whose file tags no language: ${finding.verdict} (${finding.reason})`);
+      return { ...finding, kept: false };
+    } catch (err) {
+      this.log(`[notesd] torrent: the audio of ${torrent.name} (${torrent.infoHash.slice(0, 8)}) could not be heard: ${messageOf(err)}`);
+      return { verdict: 'unsure', detected: null, probability: null, reason: messageOf(err).slice(0, 200), kept: false };
+    }
+  }
+
+  /** Keeps the audio languages a probed file's tags name (marks.ts), behind the play. */
+  private noteTags(infoHash: string, name: string, languages: readonly string[]): void {
+    const marks = this.opts.marks ?? null;
+    if (marks === null) return;
+    void marks.noteTags(infoHash, name, languages).catch((err: unknown) => this.log(`[notesd] torrent: the tags of ${infoHash.slice(0, 8)} could not be kept: ${messageOf(err)}`));
   }
 
   /**
@@ -745,6 +856,10 @@ export class TorrentSource {
       if ((await this.opts.swarm.filePath(download.infoHash, download.fileIndex)) === null) return null;
     } catch (err) {
       this.log(`[notesd] torrent: could not read this machine's downloads of ${refLabel(ref)}: ${messageOf(err)}`);
+      return null;
+    }
+    if ((await this.leftOutByMarks(options.audioLang)).has(download.infoHash.toLowerCase())) {
+      this.log(`[notesd] torrent: the download ${download.infoHash} of ${refLabel(ref)} is not played again: it is blacklisted, or was heard as a dub`);
       return null;
     }
     const manifestUrl = this.opts.swarm.localUrl(download.infoHash, download.fileIndex);
@@ -1186,6 +1301,7 @@ export class TorrentSource {
         if (state.cancelled) return left();
         if (!probed.ok) return fail(probed.outcome, probed.detail);
         probe = probed.probe;
+        this.noteTags(c.infoHash, c.name, audioLanguages(probe));
         if (state.cancelled) return left();
         const refusal = refusalOf(probe, play.audioLang, this.opts.remux ?? null);
         if (refusal !== null) return fail(refusal.outcome, refusal.detail, true);
@@ -1296,6 +1412,10 @@ export function buildTorrentSource(
     sync?: { start(request: TorrentSyncRequest): unknown } | null;
     /** The public tracker lists (buildTrackerLists in src/daemon.ts, which reads the switches); null or unset: none. */
     lists?: Pick<TrackerLists, 'list'> | null;
+    /** The torrent marks (marks.ts): the blacklist and heard languages; null or unset: none. */
+    marks?: TorrentMarks | null;
+    /** The torrent audio check's hearer (AudioLangCheck over the shared Whisper worker); null or unset: off. */
+    hear?: TorrentHearer | null;
   },
 ): TorrentSource | null {
   if (config.torrent?.enabled !== true || torrents === null) return null;
@@ -1324,6 +1444,8 @@ export function buildTorrentSource(
     scrape: config.torrent.discovery ? udpScraper() : null,
     book: new TrackerBook(join(config.torrent.dir, TRACKER_BOOK_FILE)),
     lists: wiring.lists ?? null,
+    marks: wiring.marks ?? null,
+    hear: wiring.hear ?? null,
     ...(config.torrent.sites === undefined ? {} : { sites: config.torrent.sites.origins }),
     localBase: wiring.localBase,
     ...(config.torrent.subtitleWaitMs === undefined ? {} : { subtitleHeadMs: config.torrent.subtitleWaitMs }),
