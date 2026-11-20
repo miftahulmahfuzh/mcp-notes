@@ -60,7 +60,7 @@ describe('the copy of the old shared database', () => {
     await run(local, `drop schema if exists ${STAGE_SCHEMA} cascade`)
     for (const db of [shared, local]) {
       await truncateAll(db)
-      await db.execute(sql`truncate table movie_stream_sources, stream_probe_titles, stream_trending, cc_pending_spawns`)
+      await db.execute(sql`truncate table movie_stream_sources, stream_trending, cc_pending_spawns`)
       await db.execute(sql`alter sequence movie_id_seq restart`)
     }
   })

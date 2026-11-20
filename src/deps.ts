@@ -21,7 +21,7 @@ import type { TitleSubtitleShelf } from './directStream/titleSubtitles.js';
 import type { SubtitleSync } from './directStream/torrent/subtitles/synced.js';
 import type { WhisperTier, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
 import type { StreamLive } from './movies/streamLive.js';
-import type { StreamProberHandle } from './directStream/prober.js';
+import type { CanaryHandle } from './directStream/canary.js';
 import type { TrendingHandle } from './directStream/trending/job.js';
 import type { TrackerListsHandle } from './directStream/torrent/trackerLists.js';
 import type { StreamEvidence } from './directStream/evidence.js';
@@ -119,11 +119,11 @@ export interface AppDeps {
   /** The stream on screen in the player page (src/movies/streamLive.ts); null or absent with the movie library off. */
   streamLive?: StreamLive | null;
   /**
-   * The direct-streaming prober (phase 10). The daemon always sets it: a DisabledProber unless
-   * NOTESD_STREAM_PROBER=on and everything it needs is there. Absent (tests), GET /api/stream/prober
-   * reports it off. Started and closed by startBackground.
+   * The daily stream canary (src/directStream/canary.ts): every cloud provider asked for one known film, for
+   * its health. The daemon always sets it (a DisabledCanary with NOTESD_STREAM_CANARY=off or direct streaming
+   * off); absent in tests. Started and closed by startBackground.
    */
-  streamProber?: StreamProberHandle | null;
+  streamCanary?: CanaryHandle | null;
   /**
    * The Stream side's daily trending list (src/directStream/trending/job.ts). The daemon always sets it: a
    * DisabledTrending unless NOTESD_TRENDING is on and movies, direct streaming, torrents and TMDB are there.

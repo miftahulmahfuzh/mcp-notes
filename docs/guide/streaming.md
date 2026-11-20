@@ -1743,60 +1743,24 @@ player, the daemon downloads the one after it (`src/directStream/ahead.ts`).
 - `NOTESD_STREAM_AHEAD=off` fetches nothing ahead. The daemon's log says what it does:
   `stream ahead: caching TMDB tv 37854 S18E789 while TMDB tv 37854 S18E788 plays`.
 
-### The prober
+### The daily canary
 
-The Stream side of `/movies` lists the titles verified on this machine within the freshness window,
-beside those last played from a torrent or a site and those marked interested. The prober fills
-and refreshes the verified ones without being asked. It is **off** unless
-`NOTESD_STREAM_PROBER=on`, because it widens the rule that a film starts only when asked: it opens
-embed pages in the streaming Chrome by itself. Resolving is not playing. Each probe is the same
-resolve `/direct-stream` runs: a tab out of sight, closed when the stream address is caught. No
-window comes to the front, nothing makes a sound, nothing is played, and no play is recorded.
+The Stream side of `/movies` lists the titles that really played on this machine within the
+freshness window (a cloud source verified by a play, a torrent or a site last played through) and
+those marked interested. Nothing fills it in the background.
 
-When it may probe: only while Windows has had no keyboard or mouse input for
-`NOTESD_STREAM_IDLE_SECONDS` (one `powershell.exe` call to `GetLastInputInfo`, made again before
-every probe), and only while nothing plays (no VLC that notesd follows, no open play the player page
-reported in the last 15 minutes). The moment either changes, the pass stops after the probe in
-flight. An idle time that cannot be read counts as "not idle". Outside WSL, or without
-`powershell.exe`, the prober stays off and `GET /api/stream/prober` says why.
-
-What it probes, each pass (one every `NOTESD_STREAM_PROBE_MS`):
-
-1. Once a day, the candidate list is rebuilt from TMDB: TMDB's recommendations for up to 20 titles
-   you finished (rated 4 or 5 first, then unrated ones; a finished title you rated 3 or lower is
-   left out), discover lists for the three genres those titles share most, and this week's
-   trending and popular titles. Unreleased titles are dropped. This step only talks to TMDB, so it
-   runs whether or not the laptop is idle.
-2. Re-checks: verified sources at least 70% through the freshness window, the oldest first, so a
-   title is checked again before it would leave the grid.
-3. New candidates, until `NOTESD_STREAM_CATALOG_SIZE` titles are fresh. Films lead, with a series
-   in every fourth slot; a series is verified by its first episode. A title already fresh is
-   never probed again. A title that fails waits 1 day, then 2, 4 and so on up to 30 days.
-
-A pass stops at `NOTESD_STREAM_PROBE_BUDGET` probes or half of `NOTESD_STREAM_PROBE_MS`, whichever
-comes first. The budget's default follows from the resolve campaign's timings
-(`docs/plans/2026-11-15-direct-streaming-findings.md`): a title costs the median failing providers
-tried before the one that works, at the median seconds of a failure, plus the median seconds of a
-resolve. Each resolve is given the seconds left in the pass, so one title that no provider carries
-cannot overrun it; a resolve cut short, or one that cannot reach Chrome, ends the pass without
-blaming the title.
-
-**A pass you ask for.** The refresh button on the Stream side (`POST /api/stream/prober/pass`)
-starts one pass at once. It rebuilds the candidate list whatever its age and does not wait for the
-laptop to be idle, because you are at it and asked. The rest holds: the same budget, tabs out of
-sight and without sound, and nothing is probed while something plays. With the prober off the
-button says how to turn it on.
-
-**What counts toward the catalog.** A title you marked "not interested", or finished by hand, no
-longer counts toward `NOTESD_STREAM_CATALOG_SIZE`, so its place goes to another title. A "not
-interested" title is also never re-checked and never proposed again; taking the mark back makes it
-due for a re-check.
-
-Every verified or stale mark is the one a play would write (see [movies.md](movies.md)); the
-prober's own state is `stream_probe_titles`: per host, the listing, each title's last outcome and
-its backoff. Each pass logs one line (`[notesd] stream prober: pass ...`); a pass that did nothing
-logs only when its reason changed. `GET /api/stream/prober` shows the settings, the catalog count
-and the last pass.
+What runs in the background is a canary for the providers: a few minutes after the daemon starts,
+and once a day after that, every cloud provider in the registry is asked for one known film
+(Fight Club, the first film of `claude/streaming/direct/known-titles.json`) with
+`resolve --only <provider>`, in a tab out of sight with no sound. Only the provider's health on
+this machine is written, so the order a play tries providers in, and a provider's rest, follow
+what the providers do now rather than what they did when last played. No title, source or play is
+written, and a failure marks nothing stale. A provider keyed by AniList id (anime only) or one that
+plays only in a browser is not asked. Nothing is asked while something plays or is being started:
+the pass stops between providers and tries again an hour later. Each ask has 60 s at most, so a
+play that starts meanwhile waits behind at most one. The log has one line per pass
+(`[notesd] stream canary: 7 of 13 providers resolved; done`). `NOTESD_STREAM_CANARY=off` asks
+nothing.
 
 ### Reporting a stream bug: `/report-stream-bug`
 

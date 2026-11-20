@@ -36,7 +36,7 @@ three ways, plus background jobs.
 | `src/main.ts` | Entry point: `loadConfig()`, `startDaemon()`, and a shutdown on `SIGINT` / `SIGTERM` that is forced after 10 s. |
 | `src/config.ts` | Builds `Config` from `.env.local` under the process environment (the environment wins). Every bad value throws `ConfigError` here, so nothing downstream re-validates. The `DEFAULT_*_CONFIG` literals have sessions, the adversary, movies and direct streaming off, so a test that builds a `Config` by hand starts none of them. |
 | `src/daemon.ts` | `startDaemon`: data dirs, embedders, `createDb`, `NotesService`, `ChatService`, the adversary, movies, player and health monitor, direct streaming (each null when off; direct streaming loads the provider seed), `createApp`, listen on loopback, then `startBackground`. Returns `stop()`, which closes them in the reverse order. |
-| `src/deps.ts` | `AppDeps`: what `startDaemon` hands to every router and job (`config`, `db`, `events`, `service`, `embedder`, `imageEmbedder`, `chat`, `adversary`, `movies`, `moviesPlayer`, `moviesHealth`, `sessionEvents`, `directStream`, `streamProber`). A subsystem that is off is `null` there, and its routes answer 503. |
+| `src/deps.ts` | `AppDeps`: what `startDaemon` hands to every router and job (`config`, `db`, `events`, `service`, `embedder`, `imageEmbedder`, `chat`, `adversary`, `movies`, `moviesPlayer`, `moviesHealth`, `sessionEvents`, `directStream`, `streamCanary`). A subsystem that is off is `null` there, and its routes answer 503. |
 | `src/http/app.ts` | `createApp(deps, options)`: mounts `/health`, `/mcp` and each router. `options` are the test seams (chat backend, reveal, sessions, resumer, Seer source). `mcpToolDeps` builds what the MCP tools get from the same `deps`. |
 | `src/background.ts` | `startBackground(deps)`: starts the jobs below and returns one stop function. |
 
@@ -69,7 +69,6 @@ The other stores follow the same pattern, one writer each:
 | `movie_*` | `MoviesRepo` (`src/movies/repo.ts`); a review is a normal note written through `NotesService` |
 | `stream_providers`, `stream_provider_health`, `stream_caches` | `DirectStreamRepo` (`src/directStream/repo.ts`) |
 | `stream_torrents` | `TorrentsRepo` (`src/directStream/torrent/repo.ts`) |
-| `stream_probe_titles` | `ProbeRepo` (`src/directStream/repo.ts`) |
 | `adversary_reviews` | `src/adversary/reviewsRepo.ts` |
 | Seer's own database | `src/adversary/seerWriter.ts`, behind a table allow-list. The connector guard stays read-only |
 | daily-words | `src/dword/writer.ts`, additions only |
@@ -93,7 +92,7 @@ next start (`npm run db:migrate` applies it by hand).
 | Sessions | `cc_sessions`, `cc_subagent_transcripts`, `cc_session_prompts`, `cc_session_prompt_images`, `cc_session_replies`, `cc_session_reply_embeddings`, `cc_session_embeddings`, `cc_pending_spawns`, `note_session_links` | What ingest read from Claude Code's transcripts and hooks: byte offsets, tokens, commits, prompts, redacted replies, summaries, fork and context evidence, and the links between notes and sessions. |
 | Seer Adversarial | `adversary_reviews` | The attempt and usage log. Verdicts, `paused` marks and leases live in Seer's database. |
 | Movies | `movie_titles`, `movie_episodes`, `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits`, `movie_files`, `movie_plays`, `movie_ids`, `movie_stream_sources` | Titles are shared and never deleted with their files; files are per host and soft-deleted; play events are never deleted (a stream play names its title instead of a file). Stream sources are per host: what each machine verified or found stale. Watch state is derived at read time, never stored. |
-| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_probe_titles`, `stream_caches`, `stream_torrents` | The provider registry is loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. The prober's candidates, last outcome and backoff, per host. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. A torrent download is one per host and info hash: the title it was opened for, its chosen files, its state; the files only on that host. |
+| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_caches`, `stream_torrents` | The provider registry is loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. A torrent download is one per host and info hash: the title it was opened for, its chosen files, its state; the files only on that host. |
 | Settings | `app_settings` | Key and JSON value: the selected project, the adversary toggle, the nightly dispatch state. |
 
 Dropping the session tables loses summaries already paid for and the rows of transcripts Claude
@@ -283,7 +282,7 @@ it is on.
 | Adversary reviewer | `NOTESD_ADVERSARY` on and `claude` found | Polls Seer's candidates, writes verdicts, starts Seer's nightly. | `src/adversary/service.ts`, `dispatch.ts` |
 | Movies sync | `NOTESD_MOVIES` on | Polls the roots, probes, matches against TMDB, reads VLC's recent list. | `src/movies/service.ts` |
 | VLC play tracking and health log | Movies on | Follows the VLC notesd started; samples every `vlc.exe` into the health log. | `src/movies/player.ts`, `src/movies/vlc/` |
-| Stream prober | `NOTESD_STREAM_PROBER` on, with direct streaming, movies, a TMDB credential and WSL `powershell.exe` | Rebuilds the TMDB candidate list once a day; while Windows is idle and nothing plays, re-checks verified sources nearing the end of their window, then resolves new candidates up to the catalog size, within a budget of probes and seconds. Its tabs are out of sight and silent. | `src/directStream/prober.ts` |
+| Stream canary | `NOTESD_STREAM_CANARY` on (the default), with direct streaming | A few minutes after start and once a day, while nothing plays: every cloud provider asked for one known film out of sight, for its health only. | `src/directStream/canary.ts` |
 | Stream cache | Direct streaming on | Downloads the films and episodes asked for, one at a time; carries unfinished ones on after a restart. | `src/directStream/cache/` |
 | Egress summary | Meter on | One log line an hour. | `src/db/meter.ts` |
 

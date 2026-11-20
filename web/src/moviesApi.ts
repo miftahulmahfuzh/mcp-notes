@@ -648,23 +648,6 @@ export async function writeStory(titleId: string, season: number, episode: numbe
   return { story: j.story, cached: j.cached === true };
 }
 
-/** `GET /api/stream/prober`, the part the Stream side reads. */
-export interface ProberState {
-  enabled: boolean;
-  running: boolean;
-  last_pass: { probed: number; probe_verified: number; rechecked: number; stopped: string; busy: string | null } | null;
-  settings: { probe_budget: number; pass_seconds: number } | null;
-}
-
-export async function fetchProber(signal?: AbortSignal): Promise<ProberState> {
-  return getJson<ProberState>('/api/stream/prober', signal);
-}
-
-/** Asks the prober for one pass now (the Stream side's refresh). Throws `prober_off` when the prober is off. */
-export async function askProberPass(): Promise<ProberState | null> {
-  return postJson<ProberState>('/api/stream/prober/pass', {});
-}
-
 export async function setFileWatched(fileId: number, watched: boolean): Promise<void> {
   await postJson<FileChangeResponse>(`/api/movies/files/${fileId}/watched`, { watched });
 }

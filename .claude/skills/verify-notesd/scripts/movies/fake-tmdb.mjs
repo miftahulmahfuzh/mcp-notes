@@ -1,5 +1,5 @@
 // fake-tmdb.mjs: a TMDB v3 stand-in for `verify.sh up --movies`. Serves tmdb.json (search, details
-// with credits and videos, seasons, people, the prober's lists) and generated PNG posters on 127.0.0.1, on any free port.
+// with credits and videos, seasons, people, lists) and generated PNG posters on 127.0.0.1, on any free port.
 //   node fake-tmdb.mjs --data tmdb.json --port-file FILE --log FILE [--extra tmdb-discovery.json]
 // --extra adds the titles, people, companies and streaming services of `verify.sh up --discovery`
 // (a compact file, expanded by expandExtra below), and with them company search, the watch-provider
@@ -205,8 +205,7 @@ function route(url) {
     ])]
   }
   if (p === '/search/person') return [200, page(search(people, s.get('query'), ['name'], null, null).map(personSummary))]
-  // The stream prober's lists: trending and popular are every title of the kind by popularity,
-  // discover keeps one genre, recommendations are the kind's other titles.
+  // Lists: trending and popular are every title of the kind by popularity, discover keeps one genre.
   if ((m = p.match(/^\/trending\/(movie|tv)\/(?:day|week)$/))) return [200, page(firstPageOnly(s, listOf(m[1])))]
   if ((m = p.match(/^\/(movie|tv)\/popular$/))) return [200, page(firstPageOnly(s, listOf(m[1])))]
   if ((m = p.match(/^\/genre\/(movie|tv)\/list$/))) return [200, { genres: genresOf(m[1]) }]

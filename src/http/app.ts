@@ -29,7 +29,6 @@ import { sessionHookRoutes } from './sessionHooks.js';
 import { defaultSessionResumer, sessionResumeRoutes } from './sessionResume.js';
 import { debugApiRoutes } from './debugApi.js';
 import { directStreamRoutes } from './directStreamApi.js';
-import { streamProberRoutes } from './streamProberApi.js';
 import { streamEvidenceRoutes } from './streamEvidenceApi.js';
 import { streamCacheRoutes } from './streamCacheApi.js';
 import { streamCachePlayRoutes } from './streamCachePlayApi.js';
@@ -117,7 +116,7 @@ export function mcpToolDeps(
  * Adversarial read model, toggle and review-now), moviesApiRoutes and moviesPlayRoutes
  * (movies-library phases 4 and 5: library, user state, sync, playback), directStreamRoutes
  * (direct-streaming phase 3: play, the player's session, the pass-through, refresh),
- * streamProberRoutes (direct-streaming phase 10: the prober's status), streamEvidenceRoutes (stream bug reporting: the evidence log, page lines, snapshots), streamCacheRoutes (stream-cache phase 5: the stream cache), streamTorrentRoutes (torrent-stream-source phase 1: torrent downloads and their file route), staticRoutes
+ * streamEvidenceRoutes (stream bug reporting: the evidence log, page lines, snapshots), streamCacheRoutes (stream-cache phase 5: the stream cache), streamTorrentRoutes (torrent-stream-source phase 1: torrent downloads and their file route), staticRoutes
  * (P6, last: it owns the SPA fallback; it reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
@@ -151,7 +150,6 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', moviesPlayRoutes(deps));
   app.route('/', sitePlayRoutes(deps));
   app.route('/', directStreamRoutes(deps));
-  app.route('/', streamProberRoutes(deps));
   app.route('/', streamEvidenceRoutes(deps));
   app.route('/', streamCacheRoutes(deps));
   app.route('/', streamCachePlayRoutes(deps));

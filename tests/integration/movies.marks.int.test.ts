@@ -2,7 +2,6 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/db/client.js';
 import { movieEpisodes } from '../../src/db/schema.js';
-import { ProbeRepo } from '../../src/directStream/repo.js';
 import { getTitle, listStreamTitles, listTitles } from '../../src/movies/read.js';
 import { MoviesRepo } from '../../src/movies/repo.js';
 import { seedTitle, truncateMovies } from './helpers/moviesPlaySeed.js';
@@ -16,7 +15,6 @@ const ago = (days: number): Date => new Date(NOW.getTime() - days * DAY);
 
 let db: Db;
 let movies: MoviesRepo;
-let probes: ProbeRepo;
 
 async function source(titleId: string, verifiedAt: Date, season = 0, episode = 0): Promise<void> {
   await db.execute(sql`
@@ -27,7 +25,6 @@ async function source(titleId: string, verifiedAt: Date, season = 0, episode = 0
 beforeAll(() => {
   db = openTestDb();
   movies = new MoviesRepo(db);
-  probes = new ProbeRepo(db);
 });
 
 afterAll(async () => {
@@ -35,7 +32,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.execute(sql`truncate table stream_probe_titles, movie_stream_sources`);
+  await db.execute(sql`truncate table movie_stream_sources`);
   await truncateMovies(db);
   await seedTitle(db, { id: 'movie-1', kind: 'movie', tmdbId: 1, title: 'Kept' });
   await seedTitle(db, { id: 'movie-2', kind: 'movie', tmdbId: 2, title: 'Dropped' });
@@ -139,23 +136,5 @@ describe('not interested: the title leaves the grid and its place goes to anothe
     // Another machine's torrent play lists nothing here.
     await movies.recordChannel({ titleId: 'movie-3', host: 'marks-host-b', channel: 'torrent', infoHash: 'b'.repeat(40), season: 0, episode: 0, at: ago(0) });
     expect((await listStreamTitles(db, {}, CTX, ago(7))).map((t) => t.id)).toEqual(['tv-9']);
-  });
-
-  it('the prober does not count, re-check or propose it; a title finished by hand is not counted either', async () => {
-    await source('movie-1', ago(6));
-    await source('movie-2', ago(6));
-    await source('movie-3', ago(6));
-    expect(await probes.freshCount(HERE, ago(7))).toBe(3);
-    await movies.setTitleUser('movie-2', { notInterested: true });
-    await movies.setTitleUser('movie-3', { watched: true });
-    expect(await probes.freshCount(HERE, ago(7))).toBe(1);
-    // A finished title is still re-checked (it stays playable); a not-interested one is not.
-    expect((await probes.dueRechecks(HERE, ago(5), 10)).map((t) => t.tmdbId)).toEqual([1, 3]);
-    // Aged out and listed again as a candidate: still never proposed.
-    await db.execute(sql`update movie_stream_sources set verified_at = ${ago(30)} where title_id = 'movie-2'`);
-    await probes.replaceListing(HERE, [{ kind: 'movie', tmdbId: 2, source: 'popular', rank: 1 }], NOW);
-    expect(await probes.eligible(HERE, 'movie', NOW, ago(7), 10)).toEqual([]);
-    await movies.setTitleUser('movie-2', { notInterested: false });
-    expect((await probes.eligible(HERE, 'movie', NOW, ago(7), 10)).map((t) => t.tmdbId)).toEqual([2]);
   });
 });

@@ -19,8 +19,6 @@ let playAnswer: { status: number; body: Record<string, unknown> };
 let dropOnFailure: string | null;
 /** What GET /api/movies/player answers. */
 let player: PlayerState;
-/** What GET /api/stream/prober answers. */
-let prober: { enabled: boolean; running: boolean; last_pass: { probed: number; probe_verified: number; rechecked: number; stopped: string; busy: string | null } | null; settings: { probe_budget: number; pass_seconds: number } | null };
 
 /** The stream the player page reports: Fight Club, or (with season and episode) an episode of MobLand. */
 const streaming = (over: Partial<StreamLiveSnapshot> = {}): PlayerState => ({
@@ -36,7 +34,6 @@ beforeEach(() => {
   playAnswer = { status: 200, body: { ok: true } };
   dropOnFailure = null;
   player = PLAYER_IDLE;
-  prober = { enabled: true, running: false, last_pass: null, settings: { probe_budget: 14, pass_seconds: 600 } };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -52,12 +49,6 @@ beforeEach(() => {
           streamList = { ...streamList, titles: streamList.titles.filter((t) => t.id !== gone) };
         }
         return json(playAnswer.body, playAnswer.status);
-      }
-      if (url === '/api/stream/prober') return json(prober);
-      if (method === 'POST' && url === '/api/stream/prober/pass') {
-        if (!prober.enabled) return json({ error: 'prober_off' }, 409);
-        prober = { ...prober, running: true };
-        return json(prober, 202);
       }
       if (method === 'POST' && url.endsWith('/episodes/watched')) {
         const body = JSON.parse(String(init?.body)) as { watched: boolean; season?: number; episodes?: { season: number; episode: number }[] };
@@ -219,27 +210,12 @@ describe('App: the Stream side of /movies', () => {
     expect(s01e02.getByRole('button', { name: 'Stream S01E02 (VidFast · 1080p · English subtitle)' })).toBeTruthy();
   });
 
-  it('the refresh button asks the prober for a pass now, turns while it runs, and says so when the prober is off', async () => {
+  it('the Stream side has no button that asks for more titles: the grid fills from real plays', async () => {
     at('/movies?side=stream');
-    const first = render(<App />);
-    await waitFor(() => expect(tileIds()).toEqual(['M-23T4', 'M-FC55']));
-    const refresh = screen.getByRole('button', { name: 'Find more titles to stream' });
-    // It sits in the one row of controls, like the Library's Rescan.
-    expect(refresh.closest('.mv-filter')).not.toBeNull();
-    fireEvent.click(refresh);
-    await waitFor(() => expect(posts.some((p) => p.url === '/api/stream/prober/pass')).toBe(true));
-    const turning = await screen.findByRole('button', { name: 'Looking for more titles to stream' });
-    expect((turning as HTMLButtonElement).disabled).toBe(true);
-    expect(await screen.findByText('looking for more titles: up to 14, out of sight')).toBeTruthy();
-    first.unmount();
-
-    prober = { ...prober, enabled: false, running: false };
-    posts = [];
     render(<App />);
     await waitFor(() => expect(tileIds()).toEqual(['M-23T4', 'M-FC55']));
-    fireEvent.click(screen.getByRole('button', { name: 'Find more titles to stream' }));
-    await waitFor(() => expect(posts.map((p) => p.url)).toEqual(['/api/stream/prober/pass']));
-    await waitFor(() => expect(document.querySelector('.mv-note')?.textContent).toBe('the prober is off: set NOTESD_STREAM_PROBER=on and restart notesd'));
+    expect(screen.queryByRole('button', { name: 'Find more titles to stream' })).toBeNull();
+    expect(calls.some((c) => c.includes('/api/stream/prober'))).toBe(false);
   });
 
   it('not interested: a title page toggle, with an undo; the grid shows such a title only under its own filter', async () => {

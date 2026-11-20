@@ -190,7 +190,7 @@ export interface RecentsObservation {
 /** The owner's state on a title. Absent keys are left as they are. */
 export interface TitleUserPatch {
   watched?: boolean;
-  /** The "not interested" mark (the Stream side hides the title and the prober's catalog stops counting it). */
+  /** The "not interested" mark (the Stream side hides the title). */
   notInterested?: boolean;
   /** The "interested" mark (the Stream side's watch list). Setting it clears "not interested", and the other way round. */
   interested?: boolean;

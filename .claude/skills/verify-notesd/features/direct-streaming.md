@@ -69,12 +69,9 @@
   `npm run test:int -- tests/integration/directStream.updateSource.int.test.ts`; the tools and
   the chat bar's exclusion by `tests/unit/mcp.directStreamSourceTools.test.ts` and
   `tests/unit/chat-status.test.ts`.
-- The prober (off unless `NOTESD_STREAM_PROBER=on`): TMDB candidates become verified titles up to the
-  catalog size, verified sources are re-checked before they go stale, and nothing is probed while the
-  laptop is in use or something plays. Proven by `npx vitest run tests/unit/directStream` (fake clock,
-  idle, TMDB and resolver), `npm run test:int -- tests/integration/streamProber.int.test.ts` (the SQL),
-  and `GET /api/stream/prober` on `verify.sh up --direct-stream --prober` (candidates listed from the
-  fake TMDB, the pass stopped at `not_idle`, nothing probed).
+- The daily canary (`NOTESD_STREAM_CANARY`, pinned off in every verify run): every cloud provider is
+  asked for one known film a few minutes after start and once a day, while nothing plays, and only its
+  health is written. Proven by `npx vitest run tests/unit/directStream/canary.test.ts`.
 - The player page on a torrent (torrent-stream-source phase 4): beside the title a magnet with the
   peers and the download speed (`GET /api/stream/torrent/<hash>` every 2 s while it downloads and the
   tab shows; a drive once the file is on disk), the timeline's grey bar fed by
@@ -102,11 +99,6 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Every run without `--direct-stream` pins `NOTESD_DIRECT_STREAM=off`, so `$V up --movies` alone shows the
   off answer: `$V api RUN POST /api/stream/play '{"kind":"movie","tmdb_id":550}'` answers 503.
 - `down` copies `upstream.jsonl` and `calls.jsonl` into the evidence folder.
-- Prober off: `$V up --direct-stream --prober=off`, then `$V api RUN GET /api/stream/prober` answers
-  `enabled: false`, `off_reason: "setting_off"`; `stream_probe_titles` stays empty.
-- Prober on: `$V up --direct-stream --prober`; after about 10 s `GET /api/stream/prober` has a `last_pass`
-  with `stopped: "not_idle"` and `probed: 0`, and `stream_probe_titles` holds the fake TMDB's 5 films
-  and 1 series as listed candidates. Never raise `<run>/movies/idle_ms` (see SKILL.md's gotcha).
 - The player, without Windows Chrome or a provider: build the fixture once, then drive the real
   page in a throwaway daemon with the session routes faked by Playwright:
   `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-hls-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture")`,
@@ -216,8 +208,8 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   the skill names for each of the ten requests of
   `docs/plans/2026-11-16-direct-stream-discovery-brief.md`, picks from the answers, and ends with
   `discovery: PASS (10 requests)`; every call's output is in the evidence folder. Plays go to the
-  fake resolver. Add a title to `tmdb-discovery.json`, not to `tmdb.json`: the prober checks and
-  the guide pictures count the titles of `tmdb.json`.
+  fake resolver. Add a title to `tmdb-discovery.json`, not to `tmdb.json`: the guide pictures
+  count the titles of `tmdb.json`.
 - Live, read-only (plays nothing): `direct_stream_discover` against the installed daemon reads the
   real TMDB. A real play is the owner's to run.
 

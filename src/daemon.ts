@@ -57,7 +57,8 @@ import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
 import { StreamEvidence } from './directStream/evidence.js';
-import { buildStreamProber } from './directStream/prober.js';
+import { DisabledCanary, StreamCanary } from './directStream/canary.js';
+import { loadKnownTitles } from './directStream/updateSource.js';
 import { buildTrending } from './directStream/trending/job.js';
 import { StreamReporter } from './directStream/report.js';
 import { defaultClaudeWindowDeps } from './sessions/resume.js';
@@ -516,17 +517,23 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     streamLive,
     streamEvidence,
   };
-  // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
-  // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
-  deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
-  // The daily trending list of the Stream side: a DisabledTrending unless NOTESD_TRENDING is on; probes no swarm while a play exists.
-  deps.trending = buildTrending({
-    config,
-    db,
-    movies,
-    torrents: deps.torrents ?? null,
-    busy: () => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0,
-  });
+  // True while a VLC play, a stream on screen or a stream being started exists.
+  const playing = (): boolean => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0;
+  // The daily stream canary: each cloud provider asked for one known film, for its health only; nothing while a play exists.
+  const canaryService = deps.directStream ?? null;
+  deps.streamCanary =
+    config.directStream?.canary !== true
+      ? new DisabledCanary('setting_off')
+      : canaryService === null
+        ? new DisabledCanary('direct_stream_off')
+        : new StreamCanary({
+            providers: async () => (await canaryService.providers()).map((p) => ({ name: p.name, idKind: p.id_kind, browserOnly: p.browser_only })),
+            knownTitles: () => loadKnownTitles(),
+            resolve: (ref, options) => canaryService.runResolve(ref, options),
+            busy: playing,
+          });
+  // The daily trending list of the Stream side: a DisabledTrending unless NOTESD_TRENDING is on.
+  deps.trending = buildTrending({ config, db, movies, torrents: deps.torrents ?? null, busy: playing });
   // Started and closed by startBackground; never in a play's path.
   deps.trackerLists = trackerLists.job;
   // Torrent phase 8: closed by startBackground's stop, which ends a running Whisper worker.

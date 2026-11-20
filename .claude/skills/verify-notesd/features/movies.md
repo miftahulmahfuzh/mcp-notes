@@ -13,14 +13,13 @@
   (direct streaming on, phase 3's fake resolver), seed `movie_stream_sources` with `$V exec` (the
   daemon writes it only after a resolve) and stub `POST /api/stream/play` with Playwright
   `page.route` to choose its answer. Never give a throwaway run the real resolver.
-- Stream grid upkeep: the refresh icon asks the prober for one pass now (`POST
-  /api/stream/prober/pass`: the listing is rebuilt, idle is not waited for, a play still stops it);
+- Stream grid upkeep: the grid fills from real plays only (no refresh icon);
   the bookmark icon marks a title "interested" (`interested: true` on `POST /api/movies/:id/user`;
   the Stream side's `interested` pill lists it with no verified source too, as `interested_only`, and
   it clears "not interested"; proof: `npm run test:int -- tests/integration/movies.marks.int.test.ts`,
   which also proves a title last played from a torrent is on `GET /api/movies/stream`);
   a title page's "not interested" icon takes a title off the grid (it shows only under that
-  filter, and the prober's catalog stops counting and re-checking it); a poster under the
+  filter); a poster under the
   pointer shows the watched flag (a series: every season) and, on the Stream side, "not
   interested", one click each with an undo and no confirmation (`.mv-tile-acts` is at opacity 0
   until `.mv-cell` is hovered; hover a poster with Playwright on an `up --web --movies` run, click
@@ -35,8 +34,7 @@
   `npm run test:int -- tests/integration/movies.api.int.test.ts` ("the story of an episode"). A
   throwaway daemon never writes one (`NOTESD_MOVIES_STORY_MODEL=off` is pinned): seed a dialogue row
   with a story through `$V exec` and open it on the page. Proof:
-  `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`,
-  `tests/unit/directStream/prober.test.ts` ("an asked pass").
+  `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`.
 - Names and the play menu (a title's page). A person, a studio or a genre clicked opens a pop-up
   (`EntityModal`): `GET /api/movies/people/:id` and `/companies/:id` read TMDB at each request;
   `GET|POST /api/movies/:id/genres/:genre` reads or collates the guide of that genre for that title

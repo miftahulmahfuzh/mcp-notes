@@ -50,7 +50,6 @@ const MOVIE_FILL_TABLES = [
   'movie_stream_sources',
   'stream_providers',
   'stream_provider_health',
-  'stream_probe_titles',
   'stream_trending',
   'stream_torrents',
   'stream_caches',

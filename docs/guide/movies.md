@@ -540,14 +540,8 @@ verified and over how many days.
 ![The Stream side: the titles verified to stream on this machine, with the same filters as the library](img/movies/stream.png)
 
 Titles get onto it by being streamed: `/direct-stream <title>` from Claude Code (see
-[streaming.md](streaming.md)), a play from this page, or the background prober when
-`NOTESD_STREAM_PROBER=on`. An empty Stream side says so, and with direct streaming off it says how
-to turn it on.
-
-**Refresh.** The refresh icon at the right of the controls asks the prober for one pass now: it
-rebuilds its candidates and tries them out of sight, without waiting for the laptop to be idle
-(see [streaming.md](streaming.md)). The icon turns while the pass runs, and a notice says how many
-titles it found.
+[streaming.md](streaming.md)) or a play from this page. Nothing fills it in the background. An
+empty Stream side says so, and with direct streaming off it says how to turn it on.
 
 **Interested.** The bookmark icon, on a Stream poster under the pointer or on a title opened from
 Stream, puts the title on your watch list: the `interested` filter. That filter shows every title
@@ -560,9 +554,8 @@ finish, or flag watched, leaves the filter; the same icon takes it off by hand. 
 **Not interested.** On a Stream poster under the pointer, or on a title opened from Stream, the
 crossed-eye icon marks it "not interested".
 The title leaves the grid and shows only under the `not interested` filter, where the same icon
-puts it back; the notice offers an undo. Its place in the prober's catalog goes to another title.
-A title you finish by hand (the check icon) shows under `finished` only and frees its place in the
-catalog too.
+puts it back; the notice offers an undo.
+A title you finish by hand (the check icon) shows under `finished` only.
 
 A poster opens the title's page at `/movies/<id>?side=stream`, the same page as from the library
 (poster, facts, people, trailer, review), with one more line under the facts naming the stream

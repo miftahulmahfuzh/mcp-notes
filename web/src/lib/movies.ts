@@ -59,7 +59,7 @@ export function detailSide(side: MoviesSide, d: Pick<TitleDetail, 'file_count' |
 
 /** The Stream side's empty grid: why it is empty and how a title gets onto it. */
 export function streamEmptyText(freshDays: number): string {
-  return `Nothing is verified to stream on this machine yet. A title shows here once a provider returned a playable stream for it on this machine in the last ${plural(freshDays, 'day')}: play one with /direct-stream <title> in Claude Code, or turn on the background prober (NOTESD_STREAM_PROBER=on) to fill this grid.`;
+  return `Nothing is verified to stream on this machine yet. A title shows here once a provider returned a playable stream for it on this machine in the last ${plural(freshDays, 'day')}: play one with /direct-stream <title> in Claude Code to fill this grid.`;
 }
 export const PLAYER_OFF_LABEL = 'VLC is not available on this machine';
 /** Producers beyond this are counted ("and 12 more"): TMDB lists every executive producer. */
@@ -271,7 +271,7 @@ function rank(t: TitleListItem, side: MoviesSide): number {
 /**
  * Library: in progress first (what to continue), then unwatched (what to start), then finished,
  * then gone; newest play, newest year, title. Stream: the title played last is first, whatever its
- * state, and a title never played (verified by the prober) comes after, newest first.
+ * state, and a title never played comes after, newest first.
  */
 export function sortTitles(titles: TitleListItem[], side: MoviesSide = 'library'): TitleListItem[] {
   if (side === 'stream') {

@@ -93,26 +93,13 @@ export interface TmdbGenre {
   name: string;
 }
 
-/** The ready-made TMDB lists `TmdbCatalog.list` reads. */
-export type TmdbListName = 'trending' | 'popular';
-
-/** Discover keeps titles with at least this many votes, so obscure titles that no provider carries stay out. */
-export const DISCOVER_MIN_VOTES = 100;
-
 /**
- * Lists of titles for the direct-streaming prober's candidates (src/directStream/candidates.ts).
- * Each call reads one page (TMDB pages hold 20 titles). Kept apart from TmdbClient, so the
+ * TMDB's genre list, for the discover tool (src/mcp/directStreamTools.ts). Kept apart from TmdbClient, so the
  * library's fakes of TmdbClient stay valid; createTmdbClient returns both.
  */
 export interface TmdbCatalog {
-  /** `trending`: this week's trending titles of `kind`; `popular`: TMDB's popular list. */
-  list(name: TmdbListName, kind: TitleKind, page?: number): Promise<TmdbSearchHit[]>;
   /** TMDB's genres for `kind`. */
   genres(kind: TitleKind): Promise<TmdbGenre[]>;
-  /** The most popular titles of one genre with at least DISCOVER_MIN_VOTES votes. */
-  discoverByGenre(kind: TitleKind, genreId: number, page?: number): Promise<TmdbSearchHit[]>;
-  /** TMDB's recommendations for one title. A title TMDB does not know (404) answers []. */
-  recommendations(kind: TitleKind, tmdbId: number, page?: number): Promise<TmdbSearchHit[]>;
 }
 
 /**
@@ -1001,30 +988,9 @@ export function createTmdbClient(
       };
     },
 
-    async list(name, kind, page = 1) {
-      const path = name === 'trending' ? `/trending/${kind}/week` : `/${kind}/popular`;
-      return hitsOf(kind, await get(path, { page }), `${kind} ${name} list`);
-    },
-
     async genres(kind) {
       const raw = decode(GenreListSchema, await get(`/genre/${kind}/list`, {}), `${kind} genre list`);
       return (raw.genres ?? []).map((g) => ({ id: g.id, name: g.name }));
-    },
-
-    async discoverByGenre(kind, genreId, page = 1) {
-      const json = await get(`/discover/${kind}`, {
-        with_genres: genreId,
-        sort_by: 'popularity.desc',
-        'vote_count.gte': DISCOVER_MIN_VOTES,
-        include_adult: false,
-        page,
-      });
-      return hitsOf(kind, json, `${kind} discover genre ${genreId}`);
-    },
-
-    async recommendations(kind, tmdbId, page = 1) {
-      const json = await getOrNull(`/${kind}/${tmdbId}/recommendations`, { page });
-      return json === null ? [] : hitsOf(kind, json, `${kind} ${tmdbId} recommendations`);
     },
 
     async alternativeTitles(kind, tmdbId) {
