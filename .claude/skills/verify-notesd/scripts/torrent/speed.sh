@@ -5,6 +5,12 @@
 #              with provider "torrent" starts from the live one in well under the 20 s the dead one's file list is
 #              waited for: the dead one's attempt is `skipped` ("still opening when ... was chosen"), the played
 #              one's names the peers connected and the rate, and a moment later the daemon holds no torrent but it.
+#              The daemon's log names why the dead one lost ("lost: still opening (...) when <live> was chosen"), the
+#              dead one has no stream_torrents row (it never sent a file list), and the live one's row has no played_at
+#              until the page's first position report, which sets it.
+#   heights    two live swarms: a 720p listed first (900 seeds) and a 1080p after it (5 seeds). The 1080p plays, and the
+#              720p's attempt and log line say why it lost. (Both come from the one loopback seeder; when only the 720p
+#              delivers, 720p playing is right and the stage says so instead of failing.)
 #   subtitles  the subtitle service answers each request 4 s late (8 s for a file). The play answers before that with `Subtitles: pending`, no
 #              subtitle and subtitle_rev 0; then the session gets "English (Wyzie)", subtitle_rev 1, and the answer
 #              to a position report (what the open page reads) carries subtitle_rev 1.
@@ -12,7 +18,7 @@
 #              GET /api/movies/player lists it in `starting` with `busy: true` and no `stream`, and install.sh's
 #              check (check_idle, pointed at this run) exits 75 and names it. direct_stream_play over MCP answers
 #              after about 45 s with `pending: true`, the stage and the attempts so far; the same call again joins
-#              the play and answers no_source with all seven attempts; the daemon's log holds every attempt of the
+#              the play and answers no_source with all eight attempts (the last "Torrents: not tried yet"); the daemon's log holds every attempt of the
 #              play that started nothing; afterwards `starting` is empty and check_idle exits 0.
 #   index      the index fails three plays in a row (one timeout, two HTTP 500): each answers `Index: torrentio`
 #              error. The fourth play does not ask it (no new request in the fake index's log): its attempt is
@@ -27,7 +33,7 @@ VERIFY_HOME="${VERIFY_HOME:-$HOME/.local/state/notesd-verify}"
 RUN=${1:?usage: speed.sh RUN [race|subtitles|pending|index ...]}
 shift
 WANTED=("$@")
-if [ ${#WANTED[@]} -eq 0 ]; then WANTED=(race subtitles pending index); fi
+if [ ${#WANTED[@]} -eq 0 ]; then WANTED=(race heights subtitles pending index); fi
 DIR="$VERIFY_HOME/$RUN"
 TOR="$DIR/torrent"
 SUBS="$TOR/subs"
@@ -66,6 +72,12 @@ seed() { # seed NAME: prints the info hash of a fixture torrent the loopback see
   [ -s "$TOR/seeded/$1.json" ] || fail "the loopback seeder did not seed $1"
   jq -r .info_hash "$TOR/seeded/$1.json"
 }
+# q SQL: one read-only query against the run's database, tuples only.
+q() {
+  printf 'begin read only;\n%s;\nrollback;\n' "$1" \
+    | docker exec -i mcp-notes-pg-verify psql -X -q -tA -v ON_ERROR_STOP=1 -U postgres -d "$(cat "$DIR/db")" \
+    | sed '/^BEGIN$/d;/^ROLLBACK$/d'
+}
 dead() { printf 'dead%036d' "$1"; } # an info hash nobody seeds
 index_asks() { if [ -f "$TOR/index.jsonl" ]; then grep -c '"path":"/stream/' "$TOR/index.jsonl" || true; else echo 0; fi; }
 torrent_attempts() { jq -c '[.attempts[] | select(.provider | startswith("Torrent: ")) | [.outcome, .detail]]' <<<"$1"; }
@@ -101,6 +113,43 @@ stage_race() {
   api GET /api/stream/torrent
   [ "$(jq -c '[.swarm[].info_hash]' <<<"$BODY")" = "[\"$live\"]" ] || fail "the daemon holds $(jq -c '[.swarm[] | [.info_hash, .users]]' <<<"$BODY"), not the played torrent alone"
   ok "a dead swarm listed first (900 seeds) and a live one (5): the live one played after $took ms, the dead one skipped while still opening, and only the played torrent is in the swarm"
+  grep -E "1080p\.WEB\.x264-DEAD \($(dead 1 | cut -c1-8)\) lost: still opening \(.*\) when [^ ]*1080p\.WEB\.x264-LIVE was chosen" "$DIR/daemon.log" >"$EV/speed-race-lost.log" \
+    || fail "the daemon's log does not say why the dead swarm lost"
+  ok "the daemon's log names why the dead one lost: $(head -1 "$EV/speed-race-lost.log" | sed 's/^.*lost: /lost: /')"
+  [ "$(q "select count(*) from stream_torrents where info_hash = '$(dead 1)'")" = 0 ] || fail "the dead swarm, which never sent a file list, has a stream_torrents row"
+  [ "$(q "select coalesce(played_at::text, 'null') from stream_torrents where info_hash = '$live'")" = null ] || fail "the live torrent's row is missing or already played before any position report: $(q "select info_hash, played_at from stream_torrents")"
+  api POST "/api/stream/sessions/$(jq -r .session.session_id <<<"$body")/position" '{"position_s":1,"duration_s":60}'
+  [ "$CODE" = 200 ] || fail "the position report answered $CODE: $BODY"
+  [ "$(q "select played_at is not null from stream_torrents where info_hash = '$live'")" = t ] || fail "the first position report did not set played_at"
+  q "select info_hash, name, state, played_at from stream_torrents" >"$EV/speed-race-rows.txt"
+  ok "no stream_torrents row for the dead swarm; the live one's played_at was null until the page's first position report set it"
+  api POST "/api/stream/sessions/$(jq -r .session.session_id <<<"$body")/position" '{"position_s":1,"closed":true}'
+}
+
+stage_heights() {
+  stage heights
+  local h720 h1080 body played
+  h720="$(seed bare-quiet)"
+  h1080="$(seed bare-hi)"
+  jq -nc --arg a "$h720" --arg b "$h1080" \
+    '[{info_hash: $a, name: "720p.WEB.x264-LOW", seeds: 900, size_bytes: 1500000}, {info_hash: $b, name: "1080p.WEB.x264-HIGH", seeds: 5, size_bytes: 1500000}]' >"$TOR/candidates.json"
+  echo ok >"$TOR/index-mode"
+  api POST /api/stream/play '{"kind":"movie","tmdb_id":990004,"provider":"torrent"}'
+  [ "$CODE" = 200 ] || fail "the play answered $CODE: $BODY"
+  body="$BODY"
+  printf '%s\n' "$body" >"$EV/speed-heights-play.json"
+  played="$(jq -r .session.torrent.info_hash <<<"$body")"
+  grep -E "x264-(LOW|HIGH) \([0-9a-f]{8}\) lost: |preferred height" "$DIR/daemon.log" >"$EV/speed-heights-lost.log" || true
+  if [ "$played" = "$h1080" ]; then
+    jq -e '[.attempts[] | select(.provider | endswith("-LOW"))][0] | .outcome == "skipped" and (.detail | test("was chosen"))' <<<"$body" >/dev/null \
+      || fail "the 720p's attempt does not say it lost to the 1080p: $(torrent_attempts "$body")"
+    grep -q "x264-LOW (${h720:0:8}) lost: .*1080p.WEB.x264-HIGH was chosen" "$EV/speed-heights-lost.log" || fail "the daemon's log does not say why the 720p lost"
+    ok "720p listed first with 900 seeds, 1080p with 5: the 1080p played; $(grep -o 'lost: .*' "$EV/speed-heights-lost.log" | head -1)"
+  elif [ "$played" = "$h720" ]; then
+    ok "INCONCLUSIVE: only the 720p's swarm delivered from the loopback seeder, so it played (a swarm that delivers comes before height): $(torrent_attempts "$body")"
+  else
+    fail "the session plays $(jq -c .session.torrent <<<"$body")"
+  fi
   api POST "/api/stream/sessions/$(jq -r .session.session_id <<<"$body")/position" '{"position_s":1,"closed":true}'
 }
 
@@ -175,12 +224,12 @@ stage_pending() {
   resolves="$(index_asks)"
   mcp direct_stream_play '{"title":"movie-990002","provider":"torrent"}'
   printf '%s\n' "$BODY" >"$EV/speed-pending-second.json"
-  [ "$(jq -c '[.error, .started, (.attempts | length), ([.attempts[] | select(.outcome == "no_stream")] | length)]' <<<"$BODY")" = '["no_source",false,7,6]' ] || fail "the second call answered $BODY"
+  [ "$(jq -c '[.error, .started, (.attempts | length), ([.attempts[] | select(.outcome == "no_stream")] | length), .attempts[-1].provider]' <<<"$BODY")" = '["no_source",false,8,6,"Torrents: not tried yet"]' ] || fail "the second call answered $BODY"
   [ "$(index_asks)" = "$resolves" ] || fail "the second call asked the index again: it started a second play"
-  grep -q 'play of TMDB movie 990002 (torrent) started nothing after .* s: no_source, 7 attempt(s)' "$DIR/daemon.log" || fail "the daemon's log does not hold the failed play"
+  grep -q 'play of TMDB movie 990002 (torrent) started nothing after .* s: no_source, 8 attempt(s)' "$DIR/daemon.log" || fail "the daemon's log does not hold the failed play"
   [ "$(grep -c 'direct stream:   attempt Torrent: .*-DEAD[1-6]: no_stream' "$DIR/daemon.log")" = 6 ] || fail "the daemon's log does not hold the six torrent attempts"
   grep 'started nothing\|direct stream:   attempt' "$DIR/daemon.log" >"$EV/speed-pending-daemon-log.txt"
-  ok "the same call again joined the play (no new index request) and answered no_source with all 7 attempts, which the daemon's log holds too"
+  ok "the same call again joined the play (no new index request) and answered no_source with all 8 attempts (the last Torrents: not tried yet), which the daemon's log holds too"
   BODY="$(curl -sS "$URL/api/movies/player")"
   [ "$(jq -c '[.busy, (.starting | length)]' <<<"$BODY")" = "[false,0]" ] || fail "after the play the player route says $BODY"
   check_idle
@@ -223,6 +272,7 @@ stage_index() {
 for s in "${WANTED[@]}"; do
   case "$s" in
     race) stage_race ;;
+    heights) stage_heights ;;
     subtitles) stage_subtitles ;;
     pending) stage_pending ;;
     index) stage_index ;;

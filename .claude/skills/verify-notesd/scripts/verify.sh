@@ -35,6 +35,7 @@
 #   verify.sh note RUN "TEXT"           append a line to the run's evidence log (what you proved)
 #   verify.sh vlc RUN args|status|commands|at SECONDS|quit
 #                                       drive a --movies run's fake VLC; saved as evidence
+#   verify.sh restart RUN [--gap S]    stop the daemon, wait S seconds, start it again on the same port
 #   verify.sh down RUN|--all            stop what `up` started, drop its DB; evidence stays
 #   verify.sh ls                        runs with state, pid and evidence count
 set -euo pipefail
@@ -384,6 +385,8 @@ EOF
 
   # setsid leads its own process group (so `down` kills exactly this tree), and every fd is
   # redirected so no caller's pipe stays open behind the daemon.
+  # `restart` starts the daemon again with exactly this environment, on the same port.
+  declare -p env >"$dir/env.sh"
   cd "$root"
   setsid env "${env[@]}" node_modules/.bin/tsx src/main.ts </dev/null >"$dir/daemon.log" 2>&1 &
   echo $! >"$dir/pid"
@@ -594,6 +597,43 @@ stop_run() {
   echo "verify: stopped $(basename "$dir"); evidence kept in $dir/evidence ($(find "$dir/evidence" -type f | wc -l) files)"
 }
 
+# restart RUN [--gap SECONDS]: stop the run's daemon (its process group only; the fixture host, seeder,
+# fake index and fake TMDB stay up), wait SECONDS (default 0) with nothing listening, and start it again
+# from the same checkout with the same environment on the same port, as a restart of the live daemon
+# does. Its log is appended to. Proves what must survive a restart (an open player page, a play).
+cmd_restart() {
+  local dir pid port root gap=0
+  dir="$(run_dir "${1:-}")"
+  shift
+  [ "${1:-}" = --gap ] && { gap=${2:?--gap SECONDS}; shift 2; }
+  [ -f "$dir/env.sh" ] || die "restart: $dir has no env.sh (started before restart existed: down and up again)"
+  pid="$(cat "$dir/pid")"
+  port="$(cat "$dir/port")"
+  root="$(sed -n 's/^repo=//p' "$dir/meta")"
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
+    kill -KILL -- "-$pid" 2>/dev/null || true
+  fi
+  echo "$(date -Is) restart: stopped pid $pid" >>"$dir/evidence/LOG.md"
+  sleep "$gap"
+  local -a env
+  # shellcheck disable=SC1091
+  source "$dir/env.sh"
+  echo "--- verify.sh restart $(date -Is) ---" >>"$dir/daemon.log"
+  cd "$root"
+  setsid env "${env[@]}" NOTESD_PORT="$port" node_modules/.bin/tsx src/main.ts </dev/null >>"$dir/daemon.log" 2>&1 &
+  echo $! >"$dir/pid"
+  for _ in $(seq 1 120); do
+    curl -fsS -m 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1 && break
+    kill -0 "$(cat "$dir/pid")" 2>/dev/null || { tail -20 "$dir/daemon.log" >&2; die "restart: the daemon exited during startup"; }
+    sleep 0.5
+  done
+  curl -fsS -m 2 "http://127.0.0.1:$port/health" >/dev/null || die "restart: no /health on $port after 60 s"
+  echo "$(date -Is) restart: pid $(cat "$dir/pid") answers on $port again (gap ${gap}s)" >>"$dir/evidence/LOG.md"
+  echo "RESTARTED pid=$(cat "$dir/pid") URL=http://127.0.0.1:$port"
+}
+
 cmd_down() {
   if [ "${1:-}" = --all ]; then
     for d in "$VERIFY_HOME"/*/; do [ -f "$d/pid" ] && stop_run "${d%/}"; done
@@ -624,6 +664,7 @@ case "$sub" in
   exec) cmd_exec "$@" ;;
   note) cmd_note "$@" ;;
   vlc) cmd_vlc "$@" ;;
+  restart) cmd_restart "$@" ;;
   down) cmd_down "$@" ;;
   ls) cmd_ls ;;
   *) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;

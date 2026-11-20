@@ -68,6 +68,9 @@
   `npm run test:int -- tests/integration/directStream.updateSource.int.test.ts`; the tools and
   the chat bar's exclusion by `tests/unit/mcp.directStreamSourceTools.test.ts` and
   `tests/unit/chat-status.test.ts`.
+- The seed is synced at every start: a provider row from the seed (`origin_site` null) that the seed no longer
+  names is deleted, one learned from a site stays. `$V exec RUN "insert into stream_providers ..."` both kinds,
+  `$V restart RUN`, then the daemon log says `..., <name> removed` and `$V sql` shows only the learned row.
 - The daily canary (`NOTESD_STREAM_CANARY`, pinned off in every verify run): every cloud provider is
   asked for one known film a few minutes after start and once a day, while nothing plays, and only its
   health is written. Proven by `npx vitest run tests/unit/directStream/canary.test.ts`.
@@ -312,9 +315,15 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   position ("Reconnecting to notesd…"; the ended message only after 3 minutes); a cached play that
   keeps stalling leaves the cache (`/source` with `leave_cache: true`). Proven by
   `npx vitest run tests/unit/directStream/continueSession.test.ts web/src/stream/controller.test.tsx web/src/stream/StreamApp.test.tsx`.
-  On `verify.sh up --direct-stream`: play a title, open its page with Playwright, restart the
-  throwaway daemon, and check the page's address moves to a new session id and `window.notesdStream.stage`
-  returns to `ready` at about the same position.
+  On its own `verify.sh up --direct-stream` run (about three minutes):
+  `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-hls-film.sh "$HOME/.local/state/notesd-verify/.stream-fixture-hls-film")`,
+  `DIRECT=<that path> HLS_FILM="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/restart.steps.mjs`.
+  It restarts the daemon with `$V restart RUN --gap S` (same port and database, sessions gone). The transcript has
+  `RESTART PASS` ("Reconnecting to notesd…" on the page while the daemon is down, `POST /api/stream/continue`
+  naming the old session and the position, a new session id in the address, playing on from where it was),
+  `RELOAD PASS` (the tab left the page, the daemon restarted, the old address opened again carries the play on
+  from the tab's memory) and `CACHE LEAVE PASS` (on its pause cache with the cache's segments held, three
+  stalls, `/source` with `leave_cache: true`, back on the pass-through at the same place).
 
 ## The next episode, fetched ahead
 - While an episode plays, the daemon caches the next one (cloud) or fetches it from a torrent
@@ -491,9 +500,13 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   for 30 minutes of this daemon and gets no request. Never for a `bot_check`.
 - Logic: `npx vitest run tests/unit/directStream/torrentSource.test.ts tests/unit/directStream/playInFlight.test.ts tests/unit/directStream/torrent/find/indexHealth.test.ts tests/unit/scripts/installGuard.test.ts tests/unit/mcp.directStreamTools.test.ts tests/unit/config.torrent.test.ts`.
 - Throwaway daemon: `NOTESD_TORRENT_SUBTITLE_WAIT_MS=1500 $V up --torrent` (the daemon's own subtitle wait), then
-  `.claude/skills/verify-notesd/scripts/torrent/speed.sh RUN` (stages `race subtitles pending index`, about two
-  minutes; `index` last, since it leaves the fake index out for the rest of the run). It ends with
-  `speed: PASS (race subtitles pending index)`. A dead swarm is a `candidates.json` entry whose info hash nobody
+  `.claude/skills/verify-notesd/scripts/torrent/speed.sh RUN` (stages `race heights subtitles pending index`, about
+  three minutes; `index` last, since it leaves the fake index out for the rest of the run). It ends with
+  `speed: PASS (race heights subtitles pending index)`. `race` also checks the daemon's `lost: still opening (...)
+  when ... was chosen` line, no `stream_torrents` row for the swarm that never sent a file list, and `played_at`
+  set only by the first position report; `heights` races a live 720p listed first against a live 1080p and wants
+  the 1080p (when the loopback seeder's rate lets only the 720p deliver, it says `INCONCLUSIVE`: a swarm that
+  delivers comes before height). A dead swarm is a `candidates.json` entry whose info hash nobody
   seeds; `<run>/torrent/index-mode` also takes `hang` (never answers) and `slow:<ms>`; `$SUBS/delay-ms` holds every
   answer of the fake subtitle service back. The stage `pending` asks `scripts/install.sh`'s own `check_idle`
   (sourced, pointed at the run, never at 7317) while the play is in flight (`evidence/speed-check-idle.txt`).
@@ -693,6 +706,11 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `tests/fixtures/torrent/fake-whisper.mjs` (`NOTESD_TORRENT_WHISPER_PYTHON=<it>`,
   `NOTESD_TORRENT_WHISPER_STRETCH_S=5`; `FAKE_WHISPER_DELAY_MS`, `FAKE_WHISPER_LOG`, `FAKE_WHISPER_MODE`);
   the real model by J3 (`npx tsx scripts/whisper-sample.ts`, scratch install, never the live data dir).
+- One shared worker: on `FAKE_WHISPER_LOG=<file> NOTESD_TORRENT_WYZIE_SYNC=off NOTESD_TORRENT_WHISPER_STRETCH_S=5
+  NOTESD_TORRENT_WHISPER_PYTHON=$PWD/tests/fixtures/torrent/fake-whisper.mjs $V up --torrent`, a cloud play in mode
+  `hls_film` with `<run>/direct/no_subtitle` (cloud transcript) and a torrent play with the subtitle service `empty`
+  and a fixture without a subtitle file (`bare-byid`; torrent tier) both transcribe through one `fake-whisper.mjs`
+  process in the daemon's process group (`ps -o pid,args -g <pid>`), which exits about 3 minutes after its last request.
 - Gotcha: a run's Whisper folder is `<run>/data/whisper`, which has no venv, so the tier is off on a
   throwaway daemon unless `NOTESD_TORRENT_WHISPER_PYTHON` is set in the caller's shell (verify.sh passes
   it through). Never point it at `~/mcp-notes-data/whisper`.

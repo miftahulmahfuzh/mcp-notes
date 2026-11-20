@@ -91,6 +91,7 @@ any drive that surprised you. `code WARN HEAD moved` means the instance serves o
 | State | `$V sql RUN "select ..."` | Read-only transaction against the run's DB. Use it to prove side effects. |
 | Seed | `$V exec RUN [--seer] "SQL"` | WRITES to the run's throwaway notes DB, or with `--seer` its Seer DB (`--adversary` runs). For seeding only; prove state with `sql`. |
 | Log | `$V note RUN "what this proved"` | Appends to `evidence/LOG.md`, the human-readable summary. |
+| Restart | `$V restart RUN [--gap S]` | Stops only the daemon, waits S seconds with nothing listening, starts it again on the same port with the same env and database (fixture host, seeder and fakes stay up). Proves what survives a restart. |
 | Fake VLC | `$V vlc RUN args\|status\|commands\|at SECONDS\|quit` | `--movies` runs only: what VLC was started with, where it is, jump to a second, make it exit (the daemon then closes the play). |
 
 A `steps.mjs` file (write it in the scratchpad, not the repo):
