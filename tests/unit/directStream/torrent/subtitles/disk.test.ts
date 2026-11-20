@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SUBTITLE_RANK, SubtitleShelf, keptTier, subtitleRank, vttFromBytes } from '../../../../../src/directStream/torrent/subtitles/disk.js';
+import { SUBTITLE_RANK, SubtitleShelf, keptTier, subtitleRank, vttFromBytes, repairMojibake } from '../../../../../src/directStream/torrent/subtitles/disk.js';
 
 const HASH = 'a'.repeat(40);
 const VTT = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello.\n';
@@ -69,5 +69,27 @@ describe('vttFromBytes', () => {
     expect(vttFromBytes(Buffer.from('1\r\n00:00:01,000 --> 00:00:02,000\r\nHi.\r\n'))).toContain('00:00:01.000 --> 00:00:02.000');
     expect(vttFromBytes(Buffer.from([0x31, 0x0a, ...Buffer.from('00:00:01,000 --> 00:00:02,000\n'), 0x43, 0x61, 0x66, 0xe9, 0x0a]))).toContain('Café');
     expect(vttFromBytes(Buffer.from('not a subtitle'))).toBeNull();
+  });
+});
+
+describe('repairMojibake: UTF-8 that was read as Windows-1252', () => {
+  it('reads Blue Skies\' double-encoded non-breaking spaces and the usual quotes back', () => {
+    expect(repairMojibake('Â\u00a0(dealersÂ\u00a0chattingÂ\u00a0indistinctly)Â\u00a0')).toBe(' (dealers chatting indistinctly) ');
+    expect(repairMojibake('itâ€™s a cafÃ© â€” â™ª')).toBe('it’s a café — ♪');
+  });
+
+  it('leaves right text alone, line by line', () => {
+    const right = 'Ça va, café à la crème.\nÂge: 30';
+    expect(repairMojibake(right)).toBe(right);
+    expect(repairMojibake('itâ€™s\nÇa va à la plage')).toBe('it’s\nÇa va à la plage');
+  });
+
+  it('undoes a UTF-8 file that fell back to Windows-1252 for one bad byte', () => {
+    const cues = Array.from({ length: 12 }, (_, i) => `${i + 1}\n00:00:${String(i * 2).padStart(2, '0')},000 --> 00:00:${String(i * 2 + 1).padStart(2, '0')},000\n(dealers chatting)\n`).join('\n');
+    const bytes = Buffer.concat([Buffer.from(cues, 'utf8'), Buffer.from([0xff])]);
+    const vtt = vttFromBytes(bytes);
+    expect(vtt).not.toBeNull();
+    expect(vtt).toContain('(dealers chatting)');
+    expect(vtt).not.toContain('Â');
   });
 });

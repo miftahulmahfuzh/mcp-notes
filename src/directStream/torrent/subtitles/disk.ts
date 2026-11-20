@@ -68,9 +68,47 @@ export async function isFile(file: string): Promise<boolean> {
   }
 }
 
-/** WebVTT from a subtitle's text (SubRip converted, WebVTT kept), or null when it holds no cue. */
+/** Each Windows-1252 character, by the byte it stands for: the way back from a UTF-8 text read as Windows-1252. */
+const CP1252_BYTE: ReadonlyMap<string, number> = (() => {
+  const map = new Map<string, number>();
+  const decoded = new TextDecoder('windows-1252').decode(Uint8Array.from({ length: 256 }, (_, i) => i));
+  [...decoded].forEach((ch, i) => {
+    if (!map.has(ch)) map.set(ch, i);
+  });
+  return map;
+})();
+
+/** A UTF-8 sequence read as Windows-1252: a lead byte (Â-ô) then one to three continuation characters ("Â ", "â€™", "Ã©"). */
+const MOJIBAKE = /[\u00c2-\u00f4][\u0080-\u00bf\u0152\u0153\u0160\u0161\u0178\u017d\u017e\u0192\u02c6\u02dc\u2013\u2014\u2018-\u201e\u2020-\u2022\u2026\u2030\u2039\u203a\u20ac\u2122]/;
+
+/** One line read back to its UTF-8, when every character is Windows-1252 and the bytes are valid UTF-8; else as it is. */
+function repairLine(line: string): string {
+  if (!MOJIBAKE.test(line)) return line;
+  const bytes: number[] = [];
+  for (const ch of line) {
+    const b = CP1252_BYTE.get(ch);
+    if (b === undefined) return line;
+    bytes.push(b);
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bytes));
+  } catch {
+    return line;
+  }
+}
+
+/**
+ * A subtitle's text with its mojibake undone, line by line: UTF-8 that was read as Windows-1252 somewhere ("Â (dealersÂ
+ * chattingÂ indistinctly)", "itâ€™s"). A subtitle service's file often comes double-encoded so, and a UTF-8 file with one
+ * bad byte falls back to Windows-1252 whole in vttFromBytes. A line that does not read back as UTF-8 is kept as it is.
+ */
+export function repairMojibake(text: string): string {
+  return MOJIBAKE.test(text) ? text.split('\n').map(repairLine).join('\n') : text;
+}
+
+/** WebVTT from a subtitle's text (SubRip converted, WebVTT kept, mojibake undone), or null when it holds no cue. */
 export function vttFromText(text: string): string | null {
-  const vtt = srtToVtt(text);
+  const vtt = srtToVtt(repairMojibake(text));
   return parseCues(vtt).length >= DIALOGUE_MIN_CUES ? vtt : null;
 }
 

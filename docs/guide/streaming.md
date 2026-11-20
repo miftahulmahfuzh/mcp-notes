@@ -2519,6 +2519,13 @@ of the torrent, the text track inside its video) is in step by construction and 
 from outside it (a subtitle service's file, a borrowed one, Wyzie Synced's re-timing of one, a
 Whisper transcript); only a file `/sync-subtitle` checked against the audio outranks the release's.
 
+Every subtitle file read from bytes (the torrent's, a service's, Wyzie's) is read as UTF-8 when it is valid UTF-8,
+else as Windows-1252, and then each line that shows UTF-8 read as Windows-1252 (`Â` before a non-breaking space,
+`â€™` for an apostrophe, `Ã©` for `é`) is read back to its UTF-8 (`repairMojibake` in
+`src/directStream/torrent/subtitles/disk.ts`). A subtitle service's file often comes double-encoded so; Blue Skies'
+showed `Â (dealersÂ chattingÂ indistinctly)`. A line that does not read back is kept as it is, so right text is never
+touched.
+
 1. **Kept.** What an earlier play of the same torrent chose, from
    `<NOTESD_TORRENT_DIR>/<info hash>/.notesd-subs/`. A kept file of the release, or a checked one,
    ends the search: a replay from disk asks nothing else. A kept file from outside the release is
