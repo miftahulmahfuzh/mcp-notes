@@ -965,7 +965,8 @@ A play is in flight from the moment it is asked for until its player page report
   `{started: false, pending: true, since, waited_s, stage, attempts}` with the attempts finished
   so far. The play goes on in the daemon and opens the player by itself. The same call again joins
   it, or answers its outcome (kept 10 minutes for that, the newest 50): `started: true`, or the error with every
-  attempt. `POST /api/stream/play` (the Movies page) waits for the play as before.
+  attempt. An outcome is answered once, and a session's only while that session lives and its page has not said
+  it closed or ended: an ask after the play ended plays the title again. `POST /api/stream/play` (the Movies page) waits for the play as before.
 - **A play that started nothing is in the daemon's log**, whoever waited:
   `direct stream: play of TMDB movie 818647 (torrent) started nothing after 96.2 s: no_source, 8 attempt(s)`,
   then one line per attempt (`direct stream:   attempt Torrent: <release>: no_stream after 20 s (...)`).
@@ -1067,7 +1068,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   minutes does it say the stream has ended. The daemon picks the source as a replay would: this
   machine's finished download of a torrent, else that very torrent again with no index asked; this
   machine's stream cache of the title, else the provider it streamed from, alone; and when that
-  has nothing now, what a play with no source named finds. The page then plays the new session
+  has nothing now, what a play with no source named finds. While it does (a torrent can take 90 s),
+  `GET /api/movies/player` lists it under `starting` (`carrying on after a restart`) and says `busy`, so
+  a second restart does not end it. The page then plays the new session
   at the position the film reached (paused if it was), its address changes to the new session,
   and the position reports go to it. The first of those opens a new `movie_plays` row; the old
   session's row was closed at the daemon's start at its last position. A reload of the tab after a

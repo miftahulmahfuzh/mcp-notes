@@ -128,6 +128,23 @@ describe('a play that is being started counts as busy', () => {
     expect(t.svc.starting()).toEqual([]);
   });
 
+  it('a page carrying on after a restart is starting until its new session exists', async () => {
+    const held = gate();
+    const t = setup({ hold: held.wait });
+    const going = t.svc.continueSession(FILM, { was: 'lost-session', provider: 'Alpha', positionS: 600 });
+    await t.tick();
+    expect(t.svc.starting().map((s) => [s.title, s.provider, s.stage])).toEqual([['Through My Window (2022)', 'Alpha', 'carrying on after a restart']]);
+    held.open();
+    expect((await going).continued).toBe(true);
+    expect(t.svc.starting()).toEqual([]);
+  });
+
+  it('a continue that failed is not starting any more', async () => {
+    const t = setup({ resolve: NO_SOURCE, failOpen: true });
+    await expect(t.svc.continueSession(FILM, { was: 'lost-session', provider: 'Alpha' })).rejects.toMatchObject({ code: 'no_source' });
+    expect(t.svc.starting()).toEqual([]);
+  });
+
   it('a play that failed is not starting any more', async () => {
     const t = setup({ failOpen: true });
     await expect(t.svc.play(FILM, { provider: 'torrent' })).rejects.toMatchObject({ code: 'no_source' });
@@ -272,6 +289,22 @@ describe('the outcomes kept for plays answered pending', () => {
     // The oldest was dropped: asked again, the title is played anew.
     expect((await t.svc.playWithin(film(0), { provider: 'cloud' }, 5_000)).pending).toBe(false);
     expect(resolves()).toBe(many + 1);
+  });
+
+  it('hands a kept outcome to no ask after its play ended: the page said it closed, so the title plays anew', async () => {
+    const held = gate();
+    const t = setup({ hold: held.wait });
+    expect((await t.svc.playWithin(film(2), { provider: 'cloud' }, 0)).pending).toBe(true);
+    held.open();
+    await settle(t, 1);
+    await t.tick();
+    // The page that play opened, as its position reports name it.
+    const kept = (t.svc as unknown as { outcomes: Map<string, { result: PlayResult }> }).outcomes;
+    const id = [...kept.values()][0]!.result.session.session_id;
+    t.svc.letGo(id);
+    const again = await t.svc.playWithin(film(2), { provider: 'cloud' }, 5_000);
+    expect(!again.pending && (again.result as PlayResult).session.session_id).not.toBe(id);
+    expect(t.runs.filter((r) => r === 'open')).toHaveLength(2);
   });
 
   it('forgets an outcome nobody asked for again within PLAY_OUTCOME_KEEP_MS', async () => {

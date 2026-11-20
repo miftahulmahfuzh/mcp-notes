@@ -628,9 +628,11 @@ export class DirectStreamService {
     this.sweepOutcomes();
     const kept = this.outcomes.get(key);
     if (kept !== undefined && !this.inFlightNow(key)) {
+      // Read once. A session's outcome only while that session lives: an ask after its play ended starts a new play.
       this.outcomes.delete(key);
-      if (kept.result === null) throw kept.error;
-      return { pending: false, result: kept.result };
+      const result = kept.result;
+      if (result === null) throw kept.error;
+      if (isSitePlay(result) || this.sessions.get(result.session.session_id) !== null) return { pending: false, result };
     }
     const entry = this.begin(ref, options);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1164,6 +1166,8 @@ export class DirectStreamService {
   letGo(id: string): void {
     // A page that says it closed has reported: its play is not being started any more.
     for (const [key, e] of this.inFlight) if (e.opened?.sessionId === id) this.inFlight.delete(key);
+    // Nor is its kept outcome an answer any more: the next ask of that play starts it again.
+    for (const [key, kept] of this.outcomes) if (kept.result !== null && !isSitePlay(kept.result) && kept.result.session.session_id === id) this.outcomes.delete(key);
     const session = this.sessions.peek(id);
     if (session !== null) this.letGoTorrent(session);
   }
@@ -1652,7 +1656,28 @@ export class DirectStreamService {
     const key = was ?? playKey(ref, null);
     let run = this.continuing.get(key);
     if (run === undefined) {
-      run = this.sessionAgain(ref, from).finally(() => this.continuing.delete(key));
+      // A play being started all the while (a torrent can take 90 s): `starting()` lists it, so the player route says
+      // busy and no restart ends it. Cleared once the new session exists or the continue failed.
+      const flightKey = `continue|${key}`;
+      const entry: PlayInFlight = {
+        ref,
+        provider: from.provider ?? null,
+        title: refLabel(ref),
+        since: this.now(),
+        stage: 'carrying on after a restart',
+        attempts: [],
+        promise: Promise.resolve(null as unknown as PlayAnswer),
+        waited: false,
+        opened: null,
+        failed: false,
+        naming: false,
+      };
+      this.nameIt(entry);
+      this.inFlight.set(flightKey, entry);
+      run = this.sessionAgain(ref, from).finally(() => {
+        this.continuing.delete(key);
+        if (this.inFlight.get(flightKey) === entry) this.inFlight.delete(flightKey);
+      });
       this.continuing.set(key, run);
     }
     const session = await run;
