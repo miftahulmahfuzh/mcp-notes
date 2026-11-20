@@ -297,8 +297,8 @@ export class WorkerTranscriber implements Transcriber {
 
   transcribe(request: WhisperRequest, signal: AbortSignal): Promise<WhisperCue[]> {
     // One request at a time, so each one's timeout counts only its own run.
-    return this.inTurn(false, () =>
-      this.ask({ wav: request.wav, task: request.task, language: request.language }, signal, (message) => {
+    return this.inTurn(false, (free) =>
+      this.ask({ wav: request.wav, task: request.task, language: request.language }, signal, free, (message) => {
         if (Array.isArray(message.cues)) return parseCues(message.cues);
         throw new Error(message.error ?? 'the Whisper worker answered nothing');
       }),
@@ -307,8 +307,8 @@ export class WorkerTranscriber implements Transcriber {
 
   /** The clip's spoken language, through the same shared worker as transcribe, ahead of it. Null on any failure: it never fails a play. */
   detect(wav: string, signal: AbortSignal): Promise<DetectedLanguage | null> {
-    return this.inTurn(true, () =>
-      this.ask({ wav, task: 'detect' }, signal, (message) => {
+    return this.inTurn(true, (free) =>
+      this.ask({ wav, task: 'detect' }, signal, free, (message) => {
         const language = typeof message.language === 'string' && message.language.trim() !== '' ? message.language.trim() : null;
         const probability = typeof message.probability === 'number' && Number.isFinite(message.probability) ? message.probability : null;
         if (language === null || probability === null) throw new Error(message.error ?? 'the Whisper worker detected no language');
@@ -320,18 +320,24 @@ export class WorkerTranscriber implements Transcriber {
     );
   }
 
-  /** Runs `work` when its turn comes: an urgent one before every queued one that is not. */
-  private inTurn<T>(urgent: boolean, work: () => Promise<T>): Promise<T> {
+  /**
+   * Runs `work` when its turn comes: an urgent one before every queued one that is not. The turn ends when `work`
+   * calls `free` (the worker answered, failed or was ended), not when its caller was answered: a dropped request
+   * still runs in the worker, and the next one is never written beside it.
+   */
+  private inTurn<T>(urgent: boolean, work: (free: () => void) => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const item = {
         urgent,
         start: () => {
-          void work()
-            .then(resolve, reject)
-            .finally(() => {
-              this.busy = false;
-              this.next();
-            });
+          let freed = false;
+          const free = (): void => {
+            if (freed) return;
+            freed = true;
+            this.busy = false;
+            this.next();
+          };
+          void work(free).then(resolve, reject);
         },
       };
       const at = urgent ? this.queue.findIndex((q) => !q.urgent) : -1;
@@ -385,44 +391,59 @@ export class WorkerTranscriber implements Transcriber {
   }
 
   /** One request to the worker, one answer line interpreted by `read`. Shared by transcribe (cues) and detect (a language). */
-  private async ask<T>(payload: Record<string, unknown>, signal: AbortSignal, read: (message: WorkerLine) => T): Promise<T> {
-    signal.throwIfAborted();
-    await this.start();
-    signal.throwIfAborted();
-    const child = this.child;
-    if (child === null || child.stdin === null) throw new Error('the Whisper worker is not running');
+  private async ask<T>(payload: Record<string, unknown>, signal: AbortSignal, free: () => void, read: (message: WorkerLine) => T): Promise<T> {
+    let child: ChildProcess | null;
+    try {
+      signal.throwIfAborted();
+      await this.start();
+      signal.throwIfAborted();
+      child = this.child;
+      if (child === null || child.stdin === null) throw new Error('the Whisper worker is not running');
+    } catch (err) {
+      free();
+      throw err;
+    }
     const id = String(this.nextId++);
     const timeoutMs = this.opts.stretchTimeoutMs ?? WHISPER_STRETCH_TIMEOUT_MS;
     return await new Promise<T>((resolve, reject) => {
-      const done = (): void => {
-        clearTimeout(timer);
+      let answered = false;
+      /** The caller's answer, once. */
+      const answer = (give: () => void): void => {
+        if (answered) return;
+        answered = true;
         signal.removeEventListener('abort', onAbort);
+        give();
+      };
+      /** The worker is done with this request (answered, failed, or ended): the turn passes on. */
+      const finished = (): void => {
+        clearTimeout(timer);
         this.waiting.delete(id);
+        free();
       };
       const timer = setTimeout(() => {
-        done();
-        reject(new Error(`the Whisper worker gave no answer in ${Math.round(timeoutMs / 1000)} s`));
+        finished();
+        answer(() => reject(new Error(`the Whisper worker gave no answer in ${Math.round(timeoutMs / 1000)} s`)));
         void this.stop();
       }, timeoutMs);
       timer.unref();
-      // The worker finishes the request anyway; its answer then finds no one waiting and is dropped.
-      const onAbort = (): void => {
-        done();
-        reject(signal.reason instanceof Error ? signal.reason : new Error('the request was dropped'));
-      };
+      // The caller is answered at once, but the worker finishes the request anyway: the turn stays taken until its
+      // answer comes (dropped, no one waits) or the timeout ends the worker.
+      const onAbort = (): void => answer(() => reject(signal.reason instanceof Error ? signal.reason : new Error('the request was dropped')));
       signal.addEventListener('abort', onAbort, { once: true });
       this.waiting.set(id, {
         handle: (message) => {
-          done();
-          try {
-            resolve(read(message));
-          } catch (err) {
-            reject(err instanceof Error ? err : new Error(String(err)));
-          }
+          finished();
+          answer(() => {
+            try {
+              resolve(read(message));
+            } catch (err) {
+              reject(err instanceof Error ? err : new Error(String(err)));
+            }
+          });
         },
         reject: (err) => {
-          done();
-          reject(err);
+          finished();
+          answer(() => reject(err));
         },
       });
       child.stdin?.write(`${JSON.stringify({ id, ...payload })}\n`);

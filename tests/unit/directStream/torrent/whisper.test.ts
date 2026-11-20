@@ -445,6 +445,27 @@ describe('WorkerTranscriber (against the fake worker)', () => {
     await transcriber.stop();
   });
 
+  it('a dropped request answers its caller at once, but the next one waits until the worker answered the dropped one', async () => {
+    const received = path.join(workDir, 'received.jsonl');
+    const transcriber = worker({ FAKE_WHISPER_DELAY_MS: '400', FAKE_WHISPER_RECEIVED_LOG: received });
+    try {
+      const controller = new AbortController();
+      const clip = await wav(2);
+      const dropped = transcriber.transcribe({ wav: clip, task: 'transcribe', language: 'en' }, controller.signal);
+      await until(() => existsSync(received), 5000);
+      controller.abort();
+      await expect(dropped).rejects.toThrow();
+      const next = transcriber.detect(clip, new AbortController().signal);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Still one request in the worker: the dropped one runs on, and the next is not written beside it.
+      expect((await readFile(received, 'utf8')).trim().split('\n')).toHaveLength(1);
+      expect(await next).toEqual({ language: 'en', probability: 0.98 });
+      expect((await readFile(received, 'utf8')).trim().split('\n')).toHaveLength(2);
+    } finally {
+      await transcriber.stop();
+    }
+  });
+
   it('a dropped stretch rejects at once, and stop rejects what still waits', async () => {
     const log = path.join(workDir, 'requests.jsonl');
     const transcriber = worker({ FAKE_WHISPER_DELAY_MS: '5000', FAKE_WHISPER_LOG: log });
@@ -454,9 +475,12 @@ describe('WorkerTranscriber (against the fake worker)', () => {
     await until(() => existsSync(log), 5000);
     controller.abort();
     await expect(dropped).rejects.toThrow();
-    const waiting = transcriber.transcribe({ wav: await wav(2), task: 'transcribe', language: 'en' }, new AbortController().signal);
-    await new Promise((resolve) => setTimeout(resolve, 100));
     await transcriber.stop();
+    const log2 = path.join(workDir, 'requests-2.jsonl');
+    const second = worker({ FAKE_WHISPER_DELAY_MS: '5000', FAKE_WHISPER_LOG: log2 });
+    const waiting = second.transcribe({ wav: await wav(2), task: 'transcribe', language: 'en' }, new AbortController().signal);
+    await until(() => existsSync(log2), 5000);
+    await second.stop();
     await expect(waiting).rejects.toThrow(/stopped/);
     expect((await readFile(log, 'utf8')).trim().split('\n').length).toBeGreaterThanOrEqual(1);
   });

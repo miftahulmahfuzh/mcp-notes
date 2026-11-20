@@ -6,6 +6,7 @@
 //   FAKE_WHISPER_MODE      ok (default) | not_ready (fails to load) | error (every request fails)
 //   FAKE_WHISPER_DELAY_MS  wait this long before each answer (default 0)
 //   FAKE_WHISPER_LOG       append each request, as JSON with its time, to this file
+//   FAKE_WHISPER_RECEIVED_LOG  append each request the moment its line arrives (before its turn), to this file
 //   FAKE_WHISPER_DETECT_LANG  language a "detect" request answers (default "en")
 //   FAKE_WHISPER_DETECT_PROB  probability a "detect" request answers (default "0.98")
 import { appendFileSync, closeSync, openSync, readSync } from 'node:fs';
@@ -14,6 +15,7 @@ import { createInterface } from 'node:readline';
 const mode = process.env.FAKE_WHISPER_MODE ?? 'ok';
 const delayMs = Number(process.env.FAKE_WHISPER_DELAY_MS ?? '0');
 const logFile = process.env.FAKE_WHISPER_LOG ?? '';
+const receivedFile = process.env.FAKE_WHISPER_RECEIVED_LOG ?? '';
 const detectLang = process.env.FAKE_WHISPER_DETECT_LANG ?? 'en';
 const detectProb = Number(process.env.FAKE_WHISPER_DETECT_PROB ?? '0.98');
 
@@ -42,6 +44,7 @@ function main() {
   let chain = Promise.resolve();
   const lines = createInterface({ input: process.stdin });
   lines.on('line', (line) => {
+    if (receivedFile !== '' && line.trim() !== '') appendFileSync(receivedFile, `${line.trim()}\n`);
     chain = chain.then(async () => {
       if (line.trim() === '') return;
       const req = JSON.parse(line);

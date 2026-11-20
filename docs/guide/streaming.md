@@ -2476,8 +2476,9 @@ The stretch the play starts in comes first, then each one after it, then those b
 are ahead of the picture soon after the start. On the owner's laptop (22 cores, 8 threads) five
 minutes of Sintel took 2.5 s and a minute of steady dialogue 2.2 s: the voice filter skips music and
 silence. The worker holds about 850 MB while it runs. The daemon runs one, shared by the torrent and
-cloud transcripts, the cloud audio-language check and `/sync-subtitle`, one request at a time; it
-exits after three minutes with nothing asked, and the next request loads it again (about 1.3 s).
+cloud transcripts, the cloud audio-language check and `/sync-subtitle`, one request at a time (a request
+whose caller stopped waiting is answered at once, but the next one is sent only when the worker has
+finished it or its timeout ended the worker); it exits after three minutes with nothing asked, and the next request loads it again (about 1.3 s).
 
 With the film's length known, only its last stretch may come back short: a shorter cut before it
 (a host that stopped answering) is a failed stretch, left for a replay, and never read as the
