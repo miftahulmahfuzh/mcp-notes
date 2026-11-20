@@ -190,7 +190,7 @@ grow sheet by sheet with what is on disk, a finished sheet is never made again, 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 | Preview core: builder, store, routes, the cloud-cache source | R1, R2 | `src/directStream/previews`, `src/http` | 33 | — | HARD | `.workflows/plan/seek-preview-thumbnails/phase-1.md` | P1-NOTES-A139 | — |
-| 2 | Torrent previews: file, remux, partial download | R1, R2 | `src/directStream/torrent`, `src/directStream/previews` | 7 | 1 | HARD | `.workflows/plan/seek-preview-thumbnails/phase-2.md` | — | — |
+| 2 | Torrent previews: file, remux, partial download | R1, R2 | `src/directStream/torrent`, `src/directStream/previews` | 7 | 1 | HARD | `.workflows/plan/seek-preview-thumbnails/phase-2.md` | P1-NOTES-A140 | — |
 | 3 | A provider's own preview track | R1, R2 | `claude/streaming/direct`, `src/directStream` | 20 | 1 | NORMAL | `.workflows/plan/seek-preview-thumbnails/phase-3.md` | — | — |
 | 4 | The hover box on the player page | R1, R2 | `web/src/stream` | 9 | — | NORMAL | `.workflows/plan/seek-preview-thumbnails/phase-4.md` | — | — |
 | 5 | Guide, pictures, feature map and the end-to-end proof | R1 | `docs`, `scripts/docs`, `.claude/skills/verify-notesd` | 10 | 1, 2, 3, 4 | NORMAL | `.workflows/plan/seek-preview-thumbnails/phase-5.md` | — | — |

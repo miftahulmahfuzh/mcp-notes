@@ -44,22 +44,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "de38a06110d891c2e0fd210948d74bda4ff0b28f",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": null,
+      "note": "provider seek-preview track: resolver thumbnails, providerSource first in PREVIEW_SOURCES, img=1 pass-through, evidence kind image; journeys used TMDB 467905; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/evidence-seek-preview-thumbnails-p3",
       "package": "claude/streaming/direct`, `src/directStream",
       "plan": ".workflows/plan/seek-preview-thumbnails/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-20T20:56:30+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SP03",
       "title": "A provider's own preview track"
     },
     {
@@ -106,6 +106,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/seek-preview-thumbnails/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seek-preview-thumbnails",
-  "updated": "2026-11-20T20:50:14+07:00",
+  "updated": "2026-11-20T20:56:30+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seek-preview-thumbnails"
 }
