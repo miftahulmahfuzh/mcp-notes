@@ -1,5 +1,6 @@
 import { vi, type Mock } from 'vitest';
 import type { CreateEngine, EngineRequest, PlayerEngine } from '../stream/engine';
+import type { SheetSize } from '../stream/previews';
 
 export interface FakeEngine extends PlayerEngine {
   req: EngineRequest;
@@ -105,4 +106,41 @@ export function streamSessionJson(over: Record<string, unknown> = {}): Record<st
 /** One subtitle track of a SessionInfo: a separate file (`source: "request"`) unless said otherwise. */
 export function sessionTrack(url: string, lang: string | null, label: string, over: Record<string, unknown> = {}): Record<string, unknown> {
   return { url, lang, label, format: 'vtt', source: 'request', english: lang === 'en', ...over };
+}
+
+/** GET /api/stream/sessions/:id/previews as the plan set's interface contract answers it. */
+export function previewsJson(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return { state: 'partial', rev: 0, source: 'local', cues: [], ...over };
+}
+
+/** One cue of that answer: frame `index` of a sheet of 6 × 6 frames of 240 × 135 px, standing for the 10 s from `startS`. */
+export function previewCueJson(url: string, startS: number, index: number): Record<string, unknown> {
+  return { start_s: startS, end_s: startS + 10, url, x: (index % 6) * 240, y: Math.floor(index / 6) * 135, w: 240, h: 135 };
+}
+
+export interface FakeSheets {
+  /** The page's LoadSheet: each call waits until the test answers it. */
+  load: Mock<(url: string) => Promise<SheetSize>>;
+  /** Answers the pending load of `url` with the picture's size, or as a picture that did not load (a 404, bytes that do not decode). */
+  answer: (url: string, size: SheetSize | 'fail') => void;
+}
+
+export function fakeSheets(): FakeSheets {
+  const pending = new Map<string, { resolve: (size: SheetSize) => void; reject: (err: Error) => void }>();
+  const load = vi.fn<(url: string) => Promise<SheetSize>>(
+    (url) =>
+      new Promise<SheetSize>((resolve, reject) => {
+        pending.set(url, { resolve, reject });
+      }),
+  );
+  return {
+    load,
+    answer: (url, size) => {
+      const waiting = pending.get(url);
+      if (waiting === undefined) throw new Error(`no load of ${url} is pending`);
+      pending.delete(url);
+      if (size === 'fail') waiting.reject(new Error('sheet_failed'));
+      else waiting.resolve(size);
+    },
+  };
 }

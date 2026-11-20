@@ -34,6 +34,8 @@ export interface StreamSession {
   subtitleRev: number;
   /** The daemon's count of its own moves of the session to another source (a check behind the play, a torrent that kept stalling); 0 when none. */
   sourceRev: number;
+  /** The daemon's count of changes to the session's seek-preview frames (`preview_rev`); 0 when it does not say (a daemon with no previews). */
+  previewRev: number;
   /** Why the daemon last moved the session by itself (`a burned-in watermark`); null when it never did. */
   sourceNote: string | null;
   /** The film or episode the session plays; null when the daemon did not say. A page whose session a restart ended asks to continue it by this. */
@@ -196,6 +198,7 @@ export function parseSession(json: unknown): StreamSession {
     torrent,
     subtitleRev: count(o.subtitle_rev) ?? 0,
     sourceRev: count(o.source_rev) ?? 0,
+    previewRev: count(o.preview_rev) ?? 0,
     sourceNote: text(o.source_note),
     ref: sessionRef(o),
     provider: text(o.provider),
@@ -229,6 +232,7 @@ export const torrentMapUrl = (infoHash: string): string => `${torrentUrl(infoHas
 export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
 export const eventsUrl = (id: string): string => `${sessionUrl(id)}/events`;
 export const reportUrl = (id: string): string => `${sessionUrl(id)}/report`;
+export const previewsUrl = (id: string): string => `${sessionUrl(id)}/previews`;
 export const CONTINUE_URL = '/api/stream/continue';
 
 async function errorCode(res: Response): Promise<string> {
@@ -369,6 +373,90 @@ export async function fetchTorrentStatus(infoHash: string, fetchImpl: typeof fet
   }
 }
 
+/** One frame of a session's seek previews: the stretch of the film it stands for, and where it is in which picture. */
+export interface PreviewCue {
+  /** [startS, endS): the seconds of the film the frame stands for. */
+  startS: number;
+  endS: number;
+  /** A same-origin address, used as is: a sheet of the daemon, or the pass-through with `img=1`. */
+  url: string;
+  /** The frame's rectangle inside the picture at `url`, in pixels. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * GET /api/stream/sessions/:id/previews as parsePreviews leaves it: cues sorted by start, never
+ * overlapping, maybe with gaps; `none` exactly when there is no cue, and then no source.
+ */
+export interface Previews {
+  state: 'none' | 'partial' | 'ready';
+  /** The session's `preview_rev` this list belongs to. */
+  rev: number;
+  source: 'provider' | 'local' | null;
+  cues: PreviewCue[];
+}
+
+/** No frame: before the first read, for a daemon with no previews, and in a new session. */
+export const NO_PREVIEWS: Previews = { state: 'none', rev: 0, source: null, cues: [] };
+
+/** A path on this origin: one leading slash (never `//host`), no control character. */
+const SAME_ORIGIN_PATH = /^\/(?!\/)[^\u0000-\u001f\u007f]*$/;
+/** A frame every 10 s for 55 hours: more is not a film. */
+const MAX_PREVIEW_CUES = 20_000;
+
+function finite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function previewCue(value: unknown): PreviewCue | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { start_s: startS, end_s: endS, url, x, y, w, h } = value as Record<string, unknown>;
+  if (!finite(startS) || !finite(endS) || startS < 0 || endS <= startS) return null;
+  if (typeof url !== 'string' || !SAME_ORIGIN_PATH.test(url)) return null;
+  if (!finite(x) || !finite(y) || !finite(w) || !finite(h) || x < 0 || y < 0 || w <= 0 || h <= 0) return null;
+  return { startS, endS, url, x, y, w, h };
+}
+
+/** The previews answer, checked once; null when it is not one (no `cues` list). */
+export function parsePreviews(json: unknown): Previews | null {
+  if (typeof json !== 'object' || json === null) return null;
+  const o = json as Record<string, unknown>;
+  if (!Array.isArray(o.cues)) return null;
+  const sorted = o.cues
+    .slice(0, MAX_PREVIEW_CUES)
+    .map(previewCue)
+    .filter((c): c is PreviewCue => c !== null)
+    .sort((a, b) => a.startS - b.startS);
+  // The daemon never sends overlapping cues; one that starts before the last kept one ends is dropped.
+  const cues: PreviewCue[] = [];
+  for (const cue of sorted) {
+    const last = cues.at(-1);
+    if (last === undefined || cue.startS >= last.endS) cues.push(cue);
+  }
+  const rev = count(o.rev) ?? 0;
+  if (cues.length === 0) return { state: 'none', rev, source: null, cues };
+  return {
+    state: o.state === 'ready' ? 'ready' : 'partial',
+    rev,
+    source: o.source === 'provider' || o.source === 'local' ? o.source : null,
+    cues,
+  };
+}
+
+/** The session's seek-preview frames; null when the daemon cannot say (a 404 from a daemon with none, a network failure, a body that is not the answer). Never throws. */
+export async function fetchPreviews(id: string, fetchImpl: typeof fetch): Promise<Previews | null> {
+  try {
+    const res = await fetchImpl(previewsUrl(id), { headers: { accept: 'application/json' } });
+    if (!res.ok) return null;
+    return parsePreviews(await res.json().catch(() => null));
+  } catch {
+    return null;
+  }
+}
+
 /** POST /api/stream/sessions/:id/source: the session as it is now, and whether it moved to another provider. */
 export interface SourceSwitch {
   switched: boolean;
@@ -425,6 +513,8 @@ export interface PositionAnswer {
   rev: number | null;
   /** The session's `source_rev` as the daemon has it now (StreamSession.sourceRev); null when it did not say. */
   sourceRev: number | null;
+  /** The session's `preview_rev` as the daemon has it now (StreamSession.previewRev); null when it did not say (a daemon with no previews). */
+  previewRev: number | null;
   /** The daemon does not know the session (it restarted), or could not be reached: the page carries its play on. */
   gone: boolean;
 }
@@ -443,12 +533,12 @@ export async function postPosition(id: string, report: PositionReport, fetchImpl
       ...(report.closed === true ? { keepalive: true } : {}),
     });
   } catch {
-    return { rev: null, sourceRev: null, gone: report.closed !== true };
+    return { rev: null, sourceRev: null, previewRev: null, gone: report.closed !== true };
   }
-  if (report.closed === true) return { rev: null, sourceRev: null, gone: false };
-  const body = (await res.json().catch(() => null)) as { subtitle_rev?: unknown; source_rev?: unknown; error?: unknown } | null;
-  if (!res.ok) return { rev: null, sourceRev: null, gone: body?.error === 'unknown_session' || daemonDown(res.status, body) };
-  return { rev: count(body?.subtitle_rev), sourceRev: count(body?.source_rev), gone: false };
+  if (report.closed === true) return { rev: null, sourceRev: null, previewRev: null, gone: false };
+  const body = (await res.json().catch(() => null)) as { subtitle_rev?: unknown; source_rev?: unknown; preview_rev?: unknown; error?: unknown } | null;
+  if (!res.ok) return { rev: null, sourceRev: null, previewRev: null, gone: body?.error === 'unknown_session' || daemonDown(res.status, body) };
+  return { rev: count(body?.subtitle_rev), sourceRev: count(body?.source_rev), previewRev: count(body?.preview_rev), gone: false };
 }
 
 /** A 502, 503 or 504 with no error of the daemon's own: a proxy in front of a daemon that is not there (the Vite dev server). */

@@ -2,12 +2,12 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-19
-**Total Active Tasks**: 17
+**Last Updated**: 2026-11-20
+**Total Active Tasks**: 18
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 17
+- P1 High: 18
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
@@ -21,6 +21,28 @@
 ### [P0] Critical
 
 ### [P1] High
+
+- [x] **P1-NOTES-SP04** Phase 4: The hover box on the player page
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `web/src/stream/session.ts` (`previewRev` parsed from the session, `fetchPreviews`, the address in the route list) and `controller.ts` (`previews` in `StreamState`, fetched once after the session loads and again when a session or position answer carries a higher `preview_rev`; a failed fetch keeps the frames it had). `StreamApp.tsx` and `stream.css`: pointer position over `.st-seek` mapped to a time (the track's box, not the input's margins); a box above the pointer, clamped inside the stage, with the frame (a `div` with the sheet as background and the rectangle scaled to the box's width) and the timestamp under it; the timestamp alone when no cue covers the time or the picture failed to load; shown during a drag too; hidden on leave and when the controls hide; `pointer-events:none`. Sheets fetched only when hovered near them (the browser's cache does the rest), no preload of every sheet. `web/src/testing/streamFakes.ts` and the tests. Does not touch anything under `src/`, `claude/`, `docs/`, `scripts/`. Exit criteria: against faked routes that follow the contract, a hover shows the right rectangle and time, a hover over a gap shows the time alone, a higher `preview_rev` in a position answer brings the new frames, and a 404 or a broken picture never shows an error or a broken image.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/seek-preview-thumbnails/PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R1 — "user hover on the timeline and see miniscreen showing the scene of that timestamp. [...] can we build it here?"; R2 — "this so we ship a robust feature" · criteria: R1.1, R1.5, R2.1
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-SP04.md`
+  - **Completed**: 2026-11-20 20:38
+  - **Method**: /implement
+  - **Files**: web/src/stream/session.ts, web/src/stream/previews.ts, web/src/stream/controller.ts, web/src/stream/StreamApp.tsx, web/src/stream/stream.css, web/src/testing/streamFakes.ts, web/src/stream/previews.test.tsx, web/src/stream/controller.test.tsx, web/src/stream/StreamApp.test.tsx, .workflows/todos.md, .workflows/plan/P1-NOTES-SP04.md
+  - **Proof**: verified-first-pass — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/evidence-seek-preview-thumbnails-p4
+  - **Drift**:
+    - No code drift: every anchor the plan quoted matched.
+    - This swarm phase ran in its own worktree /home/miftah/.worktrees/mcp-notes/seek-preview-thumbnails-p4 on branch phase-4-seek-preview-thumbnails (base e5a1ede), not the set worktree the index names.
+    - The proof's steps file was kept as evidence (preview-hover.steps.mjs in the evidence dir), not committed: phase 5 owns .claude/skills/verify-notesd/scripts/stream/.
+  - **Decided**:
+    - Step 3 in a per-phase-worktree swarm (phase 1 booting concurrently, same todos counter) → created only phase 4's task, with the non-counter id P1-NOTES-SP04; the index's TaskID column left to the coordinator (tie-break: narrower blast radius; rung 6 convention of TS02/F902/H202)
+    - Two test expectations in the plan's Step 6 contradicted its own geometry (track starts 300 px into a 1400 px stage, so a hover at 0 s centres the box at 185.5 px and `previewPlacement(301, …)` is 181, neither clamped to 8) → kept the implementation, corrected the expected values, and still assert the 8 px clamp with a pointer really at the edge (previewPlacement(50, …) and a drag to x=20 in StreamApp.test.tsx) (rung 3: the plan's code block and the same test's first assertion 705.5 → 585.5 agree)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent, to avoid conflicts with peer phases; the coordinator's integrator reconciles them. Plan index lives in the coordinator's checkout and was not ticked from here. No successor to unblock: phase 5 mints its own task in its own worktree.
 
 - [x] **P1-NOTES-A137** Phase 2: Title-search JSON indexes: Knaben, Bitsearch, torrents-csv
   - **Difficulty**: HARD

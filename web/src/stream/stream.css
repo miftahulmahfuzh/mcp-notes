@@ -190,6 +190,44 @@
   text-align: right;
   color: #c9c8c0;
 }
+/*
+ * Seek previews: the box over the timeline while the pointer is on it. It comes right after the
+ * video in the page and nothing has a z-index, so the captions and the controls paint over it; it
+ * never takes the pointer, so it never keeps the controls from hiding.
+ */
+.st-preview {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.st-preview-frame {
+  flex: none;
+  background-color: #121211;
+  background-repeat: no-repeat;
+  border-radius: 2px;
+  outline: 1px solid rgba(236, 235, 228, 0.14);
+}
+.st-preview-time {
+  box-sizing: border-box;
+  min-width: 72px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  text-align: center;
+  color: #ecebe4;
+  text-shadow: 0 0 4px #000, 0 1px 2px #000;
+}
+/* The time alone: on the menu's dark panel, so it reads over a bright picture. */
+.st-preview[data-frame='none'] .st-preview-time {
+  background: rgba(18, 18, 17, 0.88);
+  border-radius: 2px;
+  outline: 1px solid rgba(236, 235, 228, 0.14);
+}
 .st-pop {
   position: relative;
 }
