@@ -126,14 +126,15 @@ describe('the picture check', () => {
     const none = new PictureCheck({ verdicts: verdicts(), grab: async () => null, judge, log: () => undefined });
     const unread = await none.check(FILM, source('B'), 't');
     expect(unread).toMatchObject({ verdict: 'unsure', kept: false, unreadable: true });
-    // A stream nothing can be read from is passed over like a rejected one, a stream the model could not judge is not.
-    expect(passesOver(unread)).toBe(true);
+    // Only a verdict passes a stream over: one nothing can be read from plays, like one the model could not judge.
+    expect(passesOver(unread)).toBe(false);
+    expect(await none.badFor(FILM)).toEqual([]);
     expect(passesOver({ verdict: 'unsure', reason: 'black frame', kept: false, unreadable: false })).toBe(false);
     expect(passesOver({ verdict: 'recording', reason: '', kept: true, unreadable: false })).toBe(true);
     expect(judge.calls).toHaveLength(1);
   });
 
-  it('plays a stream no frame could be decoded from when its host hands out a segment, and passes over one it does not', async () => {
+  it('says whether the host of a stream no frame could be decoded from hands out a segment, and plays it either way', async () => {
     const judge = judgeOf(() => ({ verdict: 'clean', reason: '' }));
     const reach = vi.fn(async (s: ResolvedSource, _atS: number) => s.provider === 'VidNest');
     const check = new PictureCheck({ verdicts: verdicts(), grab: async () => null, reach, judge, log: () => undefined });
@@ -141,9 +142,12 @@ describe('the picture check', () => {
     const decoded = await check.check(EPISODE, source('VidNest'), 't');
     expect(decoded).toEqual({ verdict: 'unsure', reason: 'no frame could be decoded, and the stream host delivers', kept: false, unreadable: false });
     expect(passesOver(decoded)).toBe(false);
-    expect(passesOver(await check.check(EPISODE, source('HyperLink'), 't'))).toBe(true);
+    const unreached = await check.check(EPISODE, source('HyperLink'), 't');
+    expect(unreached).toEqual({ verdict: 'unsure', reason: 'no frame could be read from the stream', kept: false, unreadable: true });
+    expect(passesOver(unreached)).toBe(false);
     expect(reach.mock.calls.map((c) => c[1])).toEqual([240, 240]);
-    expect(await check.badFor(EPISODE)).toEqual(['HyperLink']);
+    // Nothing is remembered against it: the next play asks HyperLink like any other.
+    expect(await check.badFor(EPISODE)).toEqual([]);
     expect(judge.calls).toHaveLength(0);
   });
 

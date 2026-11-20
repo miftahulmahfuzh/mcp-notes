@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { and, asc, desc, eq, gte, inArray, isNull, lt, max, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, max, notInArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import {
@@ -228,44 +228,68 @@ export class DirectStreamRepo {
 
   /**
    * Loads the seed: a missing provider is inserted (`origin_site` null); a seed row whose fields
-   * changed in the file is updated. A row a site added (`origin_site` set) is never touched, and
-   * nothing is deleted. Returns how many rows were inserted and updated.
+   * changed in the file is updated. A seed row the files no longer name is deleted, with its health
+   * rows (the foreign key cascades); what played from it (movie_stream_sources, movie_plays, the
+   * channels) names it as text and stays. A row a site added (`origin_site` set) is never touched.
+   * A seed provider whose entry changed after it was last tried on a host (a new address: Movies111
+   * and MovieVault moved, and kept the 10 failures in a row of their old hosts) has that host's
+   * failures in a row set to 0, so it is ordered and asked like a fresh one instead of resting.
+   * An empty seed changes nothing. Returns how many rows were inserted and updated, the names
+   * removed and the names whose failures in a row were reset.
    */
-  async syncSeed(entries: readonly SeedProvider[], now: Date = new Date()): Promise<{ inserted: number; updated: number }> {
-    if (entries.length === 0) return { inserted: 0, updated: 0 };
+  async syncSeed(entries: readonly SeedProvider[], now: Date = new Date()): Promise<{ inserted: number; updated: number; removed: string[]; reset: string[] }> {
+    if (entries.length === 0) return { inserted: 0, updated: 0, removed: [], reset: [] };
     const p = streamProviders;
-    const rows = await this.db
-      .insert(p)
-      .values(
-        entries.map((e) => ({
-          name: e.name,
-          idKind: e.idKind,
-          movie: e.movie,
-          tv: e.tv,
-          browserOnly: e.browserOnly,
-          enSubtitle: e.enSubtitle,
-          notes: e.notes,
-          originSite: null,
-          addedAt: now,
-          updatedAt: now,
-        })),
-      )
-      .onConflictDoUpdate({
-        target: p.name,
-        set: {
-          idKind: sql`excluded.id_kind`,
-          movie: sql`excluded.movie`,
-          tv: sql`excluded.tv`,
-          browserOnly: sql`excluded.browser_only`,
-          enSubtitle: sql`excluded.en_subtitle`,
-          notes: sql`excluded.notes`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-        setWhere: sql`${p.originSite} is null and (${p.idKind} is distinct from excluded.id_kind or ${p.movie} is distinct from excluded.movie or ${p.tv} is distinct from excluded.tv or ${p.browserOnly} is distinct from excluded.browser_only or ${p.enSubtitle} is distinct from excluded.en_subtitle or ${p.notes} is distinct from excluded.notes)`,
-      })
-      .returning({ inserted: sql<boolean>`(xmax = 0)` });
-    const inserted = rows.filter((r) => r.inserted).length;
-    return { inserted, updated: rows.length - inserted };
+    return this.db.transaction(async (tx) => {
+      const gone = await tx
+        .delete(p)
+        .where(and(isNull(p.originSite), notInArray(p.name, entries.map((e) => e.name))))
+        .returning({ name: p.name });
+      const rows = await tx
+        .insert(p)
+        .values(
+          entries.map((e) => ({
+            name: e.name,
+            idKind: e.idKind,
+            movie: e.movie,
+            tv: e.tv,
+            browserOnly: e.browserOnly,
+            enSubtitle: e.enSubtitle,
+            notes: e.notes,
+            originSite: null,
+            addedAt: now,
+            updatedAt: now,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: p.name,
+          set: {
+            idKind: sql`excluded.id_kind`,
+            movie: sql`excluded.movie`,
+            tv: sql`excluded.tv`,
+            browserOnly: sql`excluded.browser_only`,
+            enSubtitle: sql`excluded.en_subtitle`,
+            notes: sql`excluded.notes`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          setWhere: sql`${p.originSite} is null and (${p.idKind} is distinct from excluded.id_kind or ${p.movie} is distinct from excluded.movie or ${p.tv} is distinct from excluded.tv or ${p.browserOnly} is distinct from excluded.browser_only or ${p.enSubtitle} is distinct from excluded.en_subtitle or ${p.notes} is distinct from excluded.notes)`,
+        })
+        .returning({ inserted: sql<boolean>`(xmax = 0)` });
+      const inserted = rows.filter((r) => r.inserted).length;
+      const h = streamProviderHealth;
+      const reset = await tx
+        .update(h)
+        .set({ consecutiveFailures: 0 })
+        .where(
+          and(
+            sql`${h.consecutiveFailures} > 0`,
+            // Spelled out: both tables have `name` and `updated_at`, and an unqualified column would read the inner one.
+            sql`exists (select 1 from stream_providers sp where sp.name = stream_provider_health.name and sp.origin_site is null and sp.updated_at > stream_provider_health.updated_at)`,
+          ),
+        )
+        .returning({ name: h.name });
+      return { inserted, updated: rows.length - inserted, removed: gone.map((r) => r.name).sort(), reset: [...new Set(reset.map((r) => r.name))].sort() };
+    });
   }
 
   /** Every provider, by name. */

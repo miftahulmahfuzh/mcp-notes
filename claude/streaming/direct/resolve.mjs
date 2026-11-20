@@ -4,7 +4,7 @@
 import { ChromeError } from '../chrome.mjs';
 import { isOriginalAudio } from './audio.mjs';
 import { normalizeLang } from './lang.mjs';
-import { orderProviders, restingUntil, UNREACHABLE } from './order.mjs';
+import { orderProviders, restReason, restingUntil, UNREACHABLE } from './order.mjs';
 
 export const OUTCOMES = Object.freeze(['resolved', 'no_stream', 'bot_check', 'error', 'dubbed', 'skipped_browser_only', 'skipped_no_template', 'skipped']);
 
@@ -479,13 +479,12 @@ async function resolveInOrder(
       attempts.push(attempt(provider, 'skipped_no_template', 0, provider.id_kind === 'anilist' ? 'an anime embed, and this title has no AniList id' : `no ${ref.kind} template`));
       continue;
     }
-    // A provider that is down or behind a check, and never gave a stream here, rests (order.mjs): it is not asked
-    // on every resolve, only once its rest is over. Its health is left alone. `--only` asks it at any time.
+    // A provider that failed DEAD_AFTER times in a row rests (order.mjs): it is not asked on every resolve, only once
+    // its rest is over. Its health is left alone. `--only` asks it at any time.
     const restUntil = resting(provider);
     if (restUntil !== null) {
       const h = health[provider.name];
-      const why = h.last_outcome === 'bot_check' ? 'it shows a bot check' : 'its page does not load';
-      attempts.push(attempt(provider, 'skipped', 0, `resting: it never gave a stream here and failed ${h.consecutive_failures} times in a row (${why}); asked again after ${new Date(restUntil).toISOString().slice(0, 16).replace('T', ' ')} UTC`));
+      attempts.push(attempt(provider, 'skipped', 0, `resting: it failed ${h.consecutive_failures} times in a row (${restReason(h)}); asked again after ${new Date(restUntil).toISOString().slice(0, 16).replace('T', ' ')} UTC`));
       continue;
     }
     if (held !== null && extraTries >= SUBTITLE_EXTRA_TRIES) break;

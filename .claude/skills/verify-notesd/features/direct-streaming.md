@@ -2,7 +2,8 @@
 
 ## Sub-features
 - Provider registry: `claude/streaming/direct/providers.seed.json` is loaded into `stream_providers`
-  at every start (seed rows have `origin_site` null); health per provider
+  at every start (seed rows have `origin_site` null; a seed row the file no longer names is deleted with its
+  health, a site's row never); health per provider
   and host in `stream_provider_health`, written after every resolve. Proven by
   `npm run test:int -- tests/integration/directStream.repo.int.test.ts` and `journey.sh RUN seed`.
 - Episode addresses in the seed, and the whole-series fallback: an episode's stream that a nested

@@ -34,10 +34,13 @@ describe('readSeedFile', () => {
     await expect(readSeedFile(broken)).rejects.toThrow(/not readable JSON/);
   });
 
-  it('reads the checked-in seed: at least the 24 fmovies providers, each named once', async () => {
+  it('reads the checked-in seed: the fmovies providers that still give a stream, each named once, none of the dead ones', async () => {
     expect(existsSync(DEFAULT_SEED_FILE)).toBe(true);
     const entries = await readSeedFile(DEFAULT_SEED_FILE);
-    expect(entries.length).toBeGreaterThanOrEqual(24);
+    expect(entries.length).toBeGreaterThanOrEqual(10);
+    const dead = ['Videasy', 'VidKing', 'Peachify', 'UltraBox', 'CloudBox', 'UpCloud', 'CloudPlay', 'VidMov', 'VidFyi', 'VidSrc', 'NonTongo', 'MediaHub', 'StreamVault', 'StreamBoxHD'];
+    expect(entries.filter((e) => dead.includes(e.name))).toEqual([]);
+    expect(entries.map((e) => e.name)).toEqual(expect.arrayContaining(['Movies111', 'MovieVault']));
     expect(new Set(entries.map((e) => e.name)).size).toBe(entries.length);
   });
 });

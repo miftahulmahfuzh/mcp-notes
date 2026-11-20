@@ -75,11 +75,8 @@ const MOVIE = { kind: 'movie', tmdbId: 550, season: null, episode: null };
 describe('the provider seed', () => {
   const seed: Json[] = readProviders(readFileSync(SEED_PATH, 'utf8'));
 
-  it('holds the 24 fmovies providers, with the learned fields in their shapes', () => {
-    expect(names(seed)).toEqual([
-      'VidNest', 'Videasy', 'VidKing', 'Peachify', 'Smashy', 'VidUp', 'VidFast', 'VidLink', 'VidMov', 'VidFyi', 'VidRock', 'Movies111',
-      'NonTongo', 'VidSrc', 'HyperLink', 'NexaStream', 'UltraBox', 'CloudBox', 'UpCloud', 'StreamVault', 'MediaHub', 'CloudPlay', 'StreamBoxHD', 'MovieVault',
-    ]);
+  it('holds the ten fmovies providers that still give a stream, with the learned fields in their shapes', () => {
+    expect(names(seed)).toEqual(['VidNest', 'Smashy', 'VidUp', 'VidFast', 'VidLink', 'VidRock', 'Movies111', 'HyperLink', 'NexaStream', 'MovieVault']);
     for (const p of seed) {
       expect(p.movie).toMatch(/^https:\/\/[^/]+\/.*\{id\}/);
       // The values of tv, browser_only, en_subtitle and notes are measured (campaign.mjs apply-seed).
@@ -94,7 +91,7 @@ describe('the provider seed', () => {
   it('fills a template with the TMDB id, and has no address for an episode without a tv template', () => {
     const byName = Object.fromEntries(seed.map((p) => [p.name, p]));
     expect(embedUrl(byName.VidFast, MOVIE)).toBe('https://vidfast.pro/movie/550?autoPlay=true');
-    expect(embedUrl(byName.VidSrc, MOVIE)).toBe('https://vidsrc.me/embed/movie?tmdb=550');
+    expect(embedUrl(byName.Movies111, MOVIE)).toBe('https://player.vidmario.net/embed/movie/550?autoplay=true');
     expect(embedUrl({ ...byName.VidFast, tv: null }, { kind: 'tv', tmdbId: 1399, season: 1, episode: 2 })).toBeNull();
     const withTv = provider('Beta', { tv: 'https://beta.example/tv/{id}/{season}/{episode}' });
     expect(embedUrl(withTv, { kind: 'tv', tmdbId: 1399, season: 1, episode: 2 })).toBe('https://beta.example/tv/1399/1/2');
@@ -398,8 +395,8 @@ describe('the command', () => {
         en_subtitle: true,
       },
     });
-    expect(out.attempts).toHaveLength(7);
-    expect(out.attempts.slice(0, 6).every((a: Json) => a.outcome === 'no_stream')).toBe(true);
+    expect(out.attempts).toHaveLength(4);
+    expect(out.attempts.slice(0, 3).every((a: Json) => a.outcome === 'no_stream')).toBe(true);
     expect(typeof out.source.took_s).toBe('number');
   });
 
@@ -408,7 +405,7 @@ describe('the command', () => {
     const { code, printed } = await run(['resolve', 'movie', '550'], { sniff });
     expect(code).toBe(1);
     expect(printed[0]).toMatchObject({ ok: false, error: 'no_source', source: null });
-    expect(printed[0]?.attempts).toHaveLength(24);
+    expect(printed[0]?.attempts).toHaveLength(10);
   });
 
   it('providers prints the order resolve would try, with what this host measured (R1.2)', async () => {
@@ -416,13 +413,13 @@ describe('the command', () => {
       VidNest: { en_subtitle: false },
       VidLink: { en_subtitle: true, best_height: 1080, consecutive_failures: 0, last_success_at: '2026-11-15T10:00:00Z' },
       VidFast: { en_subtitle: true, best_height: 2160, consecutive_failures: 0, last_success_at: '2026-11-15T10:00:00Z' },
-      Videasy: { en_subtitle: true, consecutive_failures: 3 },
+      Smashy: { en_subtitle: true, consecutive_failures: 3 },
     });
     const readText = (file: string): string => (file === 'health.json' ? HEALTH : unlearned(file));
     const { code, printed } = await run(['providers', '--health', 'health.json'], { readText });
     expect(code).toBe(0);
     const order = names(printed[0]?.providers);
-    expect(order.slice(0, 4)).toEqual(['VidFast', 'VidLink', 'Videasy', 'VidKing']);
+    expect(order.slice(0, 4)).toEqual(['VidFast', 'VidLink', 'Smashy', 'VidUp']);
     expect(order.at(-1)).toBe('VidNest');
     expect(printed[0]?.providers[0].health).toMatchObject({ best_height: 2160 });
   });

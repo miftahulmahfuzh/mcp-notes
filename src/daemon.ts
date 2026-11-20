@@ -257,7 +257,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             ffmpegFrameGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
             hlsSegmentFrameGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
           ),
-          // No frame: a stream whose host still hands out a segment plays; only one it does not is passed over.
+          // No frame: the attempt says whether the stream's host still hands out a segment. Either way the stream plays.
           reach: hlsStreamReach(),
           judge: pictureJudge,
         });
@@ -404,7 +404,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   if (directStream !== null) {
     try {
       const seeded = await directStream.syncSeed();
-      console.log(`[notesd] direct stream: on, ${seeded.total} providers in the seed (${seeded.inserted} new, ${seeded.updated} updated)`);
+      console.log(`[notesd] direct stream: on, ${seeded.total} providers in the seed (${seeded.inserted} new, ${seeded.updated} updated${seeded.removed.length === 0 ? '' : `, ${seeded.removed.join(', ')} removed`}${seeded.reset.length === 0 ? '' : `, ${seeded.reset.join(', ')} asked again`})`);
     } catch (err) {
       console.error(`[notesd] direct stream: could not load the provider seed: ${err instanceof Error ? err.message : String(err)}`);
     }

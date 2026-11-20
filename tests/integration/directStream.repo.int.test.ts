@@ -74,8 +74,8 @@ describe('migration 0020 (stream providers)', () => {
 
 describe('DirectStreamRepo.syncSeed', () => {
   it('loads the seed once, updates a changed seed row, and never touches a row a site added', async () => {
-    expect(await repo.syncSeed(SEED)).toEqual({ inserted: 3, updated: 0 });
-    expect(await repo.syncSeed(SEED)).toEqual({ inserted: 0, updated: 0 });
+    expect(await repo.syncSeed(SEED)).toEqual({ inserted: 3, updated: 0, removed: [], reset: [] });
+    expect(await repo.syncSeed(SEED)).toEqual({ inserted: 0, updated: 0, removed: [], reset: [] });
     const rows = await repo.providers();
     expect(rows.map((r) => [r.name, r.originSite])).toEqual([['Alpha', null], ['Bravo', null], ['Charlie', null]]);
     expect(rows.map(providerSeedJson)[1]).toEqual({
@@ -84,14 +84,52 @@ describe('DirectStreamRepo.syncSeed', () => {
     });
 
     const changed = SEED.map((e) => (e.name === 'Alpha' ? { ...e, tv: 'https://alpha.example/tv/{id}/{season}/{episode}' } : e));
-    expect(await repo.syncSeed(changed)).toEqual({ inserted: 0, updated: 1 });
+    expect(await repo.syncSeed(changed)).toEqual({ inserted: 0, updated: 1, removed: [], reset: [] });
     expect((await repo.providers())[0]?.tv).toBe('https://alpha.example/tv/{id}/{season}/{episode}');
 
     // A provider /update-cloud-source added keeps its own values even when the seed later names it.
     await db.insert(streamProviders).values({ name: 'Delta', movie: 'https://delta.example/{id}', originSite: 'https://ww6-fmovies.com/' });
-    expect(await repo.syncSeed([...changed, { name: 'Delta', idKind: 'tmdb', movie: 'https://other.example/{id}', tv: null, browserOnly: true, enSubtitle: null, notes: '' }])).toEqual({ inserted: 0, updated: 0 });
+    expect(await repo.syncSeed([...changed, { name: 'Delta', idKind: 'tmdb', movie: 'https://other.example/{id}', tv: null, browserOnly: true, enSubtitle: null, notes: '' }])).toEqual({ inserted: 0, updated: 0, removed: [], reset: [] });
     const delta = (await repo.providers()).find((r) => r.name === 'Delta');
     expect([delta?.movie, delta?.browserOnly, delta?.originSite]).toEqual(['https://delta.example/{id}', false, 'https://ww6-fmovies.com/']);
+  });
+
+  it('deletes a seed row the seed no longer names, with its health, and never a row a site added', async () => {
+    await repo.syncSeed(SEED);
+    await db.insert(streamProviders).values({ name: 'Delta', movie: 'https://delta.example/{id}', originSite: 'https://ww6-fmovies.com/' });
+    await repo.recordAttempts('host-a', [
+      { provider: 'Charlie', outcome: 'no_stream', took_s: 35, detail: 'unreachable: HTTP 523', source: null },
+      { provider: 'Alpha', outcome: 'resolved', took_s: 3, detail: '', source: null },
+      { provider: 'Delta', outcome: 'bot_check', took_s: 4, detail: '', source: null },
+    ]);
+    expect(await repo.syncSeed(SEED.filter((e) => e.name !== 'Charlie'))).toEqual({ inserted: 0, updated: 0, removed: ['Charlie'], reset: [] });
+    expect((await repo.providers()).map((r) => r.name)).toEqual(['Alpha', 'Bravo', 'Delta']);
+    expect((await repo.healthFor('host-a')).map((r) => r.name).sort()).toEqual(['Alpha', 'Delta']);
+    // An empty seed (a file read wrong) deletes nothing.
+    expect(await repo.syncSeed([])).toEqual({ inserted: 0, updated: 0, removed: [], reset: [] });
+    expect((await repo.providers()).map((r) => r.name)).toEqual(['Alpha', 'Bravo', 'Delta']);
+  });
+
+  it('a seed entry changed after its last try here sets its failures in a row to 0, once', async () => {
+    await repo.syncSeed(SEED, new Date('2026-11-18T00:00:00Z'));
+    const failed = new Date('2026-11-19T00:00:00Z');
+    for (let i = 0; i < 10; i++) {
+      await repo.recordAttempts('host-a', [
+        { provider: 'Bravo', outcome: 'no_stream', took_s: 35, detail: 'unreachable: HTTP 523', source: null },
+        { provider: 'Alpha', outcome: 'bot_check', took_s: 4, detail: '', source: null },
+      ], failed);
+    }
+    const moved = SEED.map((e) => (e.name === 'Bravo' ? { ...e, movie: 'https://bravo.new.example/movie/{id}' } : e));
+    expect(await repo.syncSeed(moved, new Date('2026-11-20T00:00:00Z'))).toEqual({ inserted: 0, updated: 1, removed: [], reset: ['Bravo'] });
+    const byName = Object.fromEntries((await repo.healthFor('host-a')).map((r) => [r.name, r]));
+    // Asked again like a fresh provider; what it did before is still counted.
+    expect(byName.Bravo).toMatchObject({ consecutiveFailures: 0, failures: 10 });
+    expect(byName.Alpha).toMatchObject({ consecutiveFailures: 10 });
+    expect(await repo.syncSeed(moved, new Date('2026-11-21T00:00:00Z'))).toEqual({ inserted: 0, updated: 0, removed: [], reset: [] });
+    // A failure at the new address counts again, and the next start leaves it.
+    await repo.recordAttempts('host-a', [{ provider: 'Bravo', outcome: 'no_stream', took_s: 35, detail: '', source: null }], new Date('2026-11-22T00:00:00Z'));
+    expect(await repo.syncSeed(moved, new Date('2026-11-23T00:00:00Z'))).toMatchObject({ reset: [] });
+    expect((await repo.healthFor('host-a')).find((r) => r.name === 'Bravo')).toMatchObject({ consecutiveFailures: 1 });
   });
 });
 

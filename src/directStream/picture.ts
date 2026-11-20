@@ -19,7 +19,8 @@ import { refLabel, type ResolvedSource, type StreamRef } from './types.js';
  * verdict is kept per title and provider on this machine, so it is paid for once.
  *
  * Nothing here fails a play: a frame that cannot be read or a model that does not answer is
- * `unsure`, which plays.
+ * `unsure`, which plays. A play waits a few seconds for the look (the service's CHECK_HEAD_MS);
+ * a look that takes longer finishes behind the play and keeps its verdict for the next one.
  */
 
 /** Seconds into the title the frames are read at: past the studio logos, and far enough apart to differ. */
@@ -30,8 +31,6 @@ export const PICTURE_JUDGE_TIMEOUT_MS = 60_000;
 export const PICTURE_BAD_TTL_MS = 14 * 24 * 3_600_000;
 export const PICTURE_CLEAN_TTL_MS = 60 * 24 * 3_600_000;
 export const PICTURE_VERDICTS_FILE = 'stream-pictures.json';
-/** A stream no frame could be read from is not tried again for this long (remembered in memory only: a restart forgets it). */
-export const PICTURE_UNREADABLE_MS = 6 * 3_600_000;
 /** How long a stream no frame could be read from has to hand out the first bytes of a segment. */
 export const PICTURE_REACH_TIMEOUT_MS = 10_000;
 
@@ -594,46 +593,41 @@ export interface PictureLook extends PictureFinding {
   kept: boolean;
   /**
    * Not one frame could be read from the stream (`unsure`) and its host did not hand out a segment
-   * either. Such a stream seldom plays (HyperLink's segments on a host this network cannot reach),
-   * so a play passes it over while another provider answers. Remembered for six hours in memory only.
-   * A stream whose segment does answer is only one ffmpeg cannot decode: it is not unreadable, and plays.
+   * either. It says why nothing was seen and rejects nothing: the stream plays, and a host that then
+   * does not deliver is left by the player's own move to another source. A stream whose segment does
+   * answer is only one ffmpeg cannot decode: it is not unreadable.
    */
   unreadable: boolean;
 }
 
-/** A stream a play passes over for the next provider: a rejected picture, or one that could not be read at all. */
-export const passesOver = (look: PictureLook): boolean => isBadPicture(look.verdict) || look.unreadable;
+/**
+ * A stream a play passes over for the next provider: a rejected picture, and nothing else. A stream no
+ * frame could be read from is not a verdict: passing it over cost a play another whole resolve round
+ * (23 to 269 s from resolve to page) for a stream that mostly played.
+ */
+export const passesOver = (look: PictureLook): boolean => isBadPicture(look.verdict);
 
 export interface PictureCheckOptions {
   verdicts: PictureVerdicts;
   grab: FrameGrabber;
-  /** Asked when no frame could be read: whether the stream's host hands out a segment. Without it every such stream is unreadable. */
+  /** Asked when no frame could be read: whether the stream's host hands out a segment, which the attempt then says. Without it every such stream is unreadable. */
   reach?: StreamReach;
   judge: PictureJudge;
   frameAtS?: readonly number[];
-  now?: () => Date;
   log?: (line: string) => void;
 }
 
 /** What the service asks: one stream's verdict (kept, or looked at now), and which providers to leave out from the start. */
 export class PictureCheck {
   private readonly log: (line: string) => void;
-  private readonly now: () => Date;
-  /** `<title>|<provider>` -> { provider, until }: streams no frame could be read from lately. */
-  private readonly unreadable = new Map<string, { provider: string; until: number }>();
 
   constructor(private readonly opts: PictureCheckOptions) {
     this.log = opts.log ?? ((line: string) => console.log(line));
-    this.now = opts.now ?? (() => new Date());
   }
 
-  /** The providers a play of `ref` leaves out from the start: a rejected picture, or a stream that could not be read lately. */
+  /** The providers a play of `ref` leaves out from the start: those whose picture was rejected. */
   async badFor(ref: StreamRef): Promise<string[]> {
-    const kept = await this.opts.verdicts.badFor(ref).catch(() => [] as string[]);
-    const prefix = `${refLabel(ref)}|`;
-    const at = this.now().getTime();
-    const unread = [...this.unreadable.entries()].filter(([key, entry]) => key.startsWith(prefix) && entry.until > at).map(([, entry]) => entry.provider);
-    return [...kept, ...unread.filter((name) => !kept.includes(name))];
+    return this.opts.verdicts.badFor(ref).catch(() => [] as string[]);
   }
 
   /**
@@ -649,15 +643,12 @@ export class PictureCheck {
         const at = (this.opts.frameAtS ?? PICTURE_FRAME_AT_S)[0];
         if (this.opts.reach !== undefined && at !== undefined && (await this.opts.reach(source, at))) {
           // The 129 s detour of Fake Profile S02E01: VidNest's stream played well, and four other providers were asked first.
-          this.unreadable.delete(pictureKey(ref, source.provider));
           this.log(`[notesd] direct stream: no frame of ${refLabel(ref)} could be decoded from ${source.provider}, whose host delivers it: it plays`);
           return { verdict: 'unsure', reason: 'no frame could be decoded, and the stream host delivers', kept: false, unreadable: false };
         }
-        this.unreadable.set(pictureKey(ref, source.provider), { provider: source.provider, until: this.now().getTime() + PICTURE_UNREADABLE_MS });
         this.log(`[notesd] direct stream: no frame of ${refLabel(ref)} could be read from ${source.provider}`);
         return { verdict: 'unsure', reason: 'no frame could be read from the stream', kept: false, unreadable: true };
       }
-      this.unreadable.delete(pictureKey(ref, source.provider));
       const finding = await this.opts.judge.judge(frames, title);
       this.log(`[notesd] direct stream: picture of ${refLabel(ref)} from ${source.provider}: ${finding.verdict}${finding.reason === '' ? '' : ` (${finding.reason})`}`);
       if (finding.verdict !== 'unsure') await this.opts.verdicts.set(ref, source.provider, finding, this.opts.judge.model);

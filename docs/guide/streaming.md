@@ -37,7 +37,7 @@ and [torrents](#torrents).
 | One player, nothing around it | A stream plays in a page notesd serves: no site, countdown, pop-up or advert. Every request goes through a pass-through that reaches only the stream's own hosts | [The player](#the-player), [Sessions and the pass-through](#sessions-and-the-pass-through) |
 | Three sources, one command | A cloud provider, a torrent or this machine's cache, asked in the order that last worked for the title | [What played last time plays first](#what-played-last-time-plays-first) |
 | The original language, never a dub | A stream's audio tags are read, then its first segment; for a cloud file with no tags Whisper listens to 30 seconds of it | [The resolver](#the-resolver), [The audio-language check](#the-audio-language-check) |
-| A proper copy | Before a stream's first play a model looks at two frames and passes over a cinema recording or a burned-in betting logo | [The picture check](#the-picture-check) |
+| A proper copy | On a stream's first play a model looks at two frames; a cinema recording or a burned-in betting logo is passed over from then on, without holding the play up | [The picture check](#the-picture-check) |
 | A torrent picked by its swarm | The trackers are asked before a swarm is joined, the best three torrents are opened side by side, and the one that delivers plays while it downloads. Asking again tries the next ones | [Playing from a torrent](#playing-from-a-torrent) |
 | An English subtitle, one way or another | The stream's own track, a file in the torrent, the track inside the video file, two subtitle services, another provider's file, and Whisper as the last resort. An outside file is re-timed to the audio, and `/sync-subtitle` checks one against what is said | [Subtitles for a torrent](#subtitles-for-a-torrent), [`/sync-subtitle`](#sync-subtitle-a-subtitle-checked-against-the-films-audio) |
 | A stream that mends itself | An expired token is refreshed, a network error is ridden out, a host that stalls is left for another provider, and a pause downloads the film | [How a provider delivers](#how-a-provider-delivers), [A pause caches the film](#a-pause-caches-the-film) |
@@ -456,7 +456,7 @@ requests, with the headers the manifest request carried). `dubbed` is about the 
 provider, so it leaves the provider's health alone. When every stream is a dub the answer is
 `no_source`. A dub's separate English subtitle file is not wasted: when the stream that is kept
 has no English subtitle of its own, the file is added to its tracks (`borrowed_from` names the
-provider it came from). Providers are data, `providers.seed.json`, 24 templates read
+provider it came from). Providers are data, `providers.seed.json`, ten templates read
 from fmovies. `--deadline-s <n>` stops trying providers once `n` seconds have passed (the answer is
 `deadline`, which says nothing about the title). `cli.mjs open <url> --fullscreen` puts a daemon page
 full screen in the streaming Chrome and starts the player with sound, as a click would.
@@ -479,18 +479,18 @@ provider that never gave a stream on this machine and failed five
 times in a row goes last of all (it is still tried); then English subtitle (the seed's "has one"
 stands even when the last title it resolved had none), delivery, health, quality, speed.
 
-**A provider that is down rests.** A provider whose own page does not load (its name no longer resolves, the
+**A provider that keeps failing rests.** A provider whose own page does not load (its name no longer resolves, the
 connection fails, its origin answers 5xx: Cloudflare's 521, 522 and 523) has no stream to wait for: the sniffer
 ends the watch 3 s after it sees that, and the attempt reads `no_stream`,
 `unreachable: HTTP 523; 8 requests, ...`. Seven such providers cost a title nobody carries 39 s each. Once a
-provider has never given a stream on this machine, has failed five times in a row, and its last failure was its
-own (`unreachable`, or a bot check), it is not asked at all: its attempt is `skipped`,
-`resting: it never gave a stream here and failed 5 times in a row (its page does not load); asked again after
-2026-11-20 10:00 UTC`, and its health is left as it was. It is asked again a day after its last failure, then
-after two days, four, up to a week, so a provider that came back is found by an ordinary resolve; `--only` (a
-provider the owner names, `/update-cloud-source`'s probe, the campaign) asks it at any time. A provider that
-loads and merely has no stream of the title never rests, and nothing deletes a provider (`order.mjs`
-`restingUntil`).
+provider's last five tries or more here failed in a row with its own answer (no stream, its page not loading, or a
+bot check), it is not asked at all, whatever it gave before: its attempt is `skipped`,
+`resting: it failed 5 times in a row (its page does not load); asked again after 2026-11-20 10:00 UTC` (or
+`it shows a bot check`, `it gave no stream`), and its health is left as it was. It is asked again a day after its
+last failure, then after two days, four, up to a week, so a provider that came back is found by an ordinary
+resolve, and one stream resets its count; `--only` (a provider the owner names, `/update-cloud-source`'s probe,
+the campaign) asks it at any time. An `error` (the sniffer or Chrome failed on this machine) says nothing of the
+provider and never starts a rest (`order.mjs` `restingUntil`).
 
 **Side by side once the play goes badly.** The providers are asked one after another, and a provider that
 loads but has no stream of the title takes its full 35 s to say so: thirteen of them cost A Story About Fire
@@ -571,7 +571,11 @@ audio, an English subtitle file).
   loads it into this machine's `stream_providers` table at every start. Each machine has its own
   registry: a provider added with `/update-cloud-source` on one laptop is not on the other.
   An entry changed in the file updates its row. A provider added from a site keeps the site's
-  address in `origin_site` and is never rewritten by the seed. Nothing deletes a provider.
+  address in `origin_site` and is never rewritten or deleted by the seed. A seed provider the file no
+  longer names is deleted at the next start, with its health rows; the plays and sources that name
+  it stay. A seed entry that changed after the provider was last tried here (a new address) sets
+  its failures in a row to 0 at the next start, so it is ordered and asked like a fresh provider
+  instead of resting on the failures of its old host; its counts stay.
 - Health is per machine, in `stream_provider_health`: for each provider the last outcome
   (`resolved`, `no_stream`, `bot_check`, `error`), counts, failures in a row, the last success and
   failure, the last ten times to a stream, the manifest kind, the best quality and whether an
@@ -590,14 +594,14 @@ audio, an English subtitle file).
   gone is replaced by where the provider went: `111movies.com` is a parked domain, and
   Movies111 is `player.vidmario.net/embed/...` (where `111movies.net` forwards the old
   addresses).
-- The ten providers the 2026-11-15 campaign called `unreachable` were looked at one by one on
-  2026-11-19 (each entry's `notes` says which it is). None is blocked by this network: seven are
-  dead (Videasy and VidKing shut down, their names no longer answer anywhere; Peachify, CloudBox,
-  UltraBox, UpCloud and CloudPlay sit behind Cloudflare with an origin that is down, error 521 to
-  523, and UpCloud's host now forwards to UltraBox's), and three moved: MovieVault to
-  `www.rivestream.app` (it resolves a film, late), StreamVault to `hexa.su` and StreamBoxHD to
-  `autoembed.me`, both of which put a puzzle before the film (`bot_check`). A dead provider stays
-  in the registry, and after five failures in a row the order puts it last.
+- The seed holds the ten fmovies providers that still give a stream here. Fourteen were taken out
+  of it: seven dead (Videasy and VidKing shut down, their names no longer answer anywhere; Peachify,
+  CloudBox, UltraBox, UpCloud and CloudPlay sit behind Cloudflare with an origin that is down,
+  error 521 to 523), and seven that only ever showed a puzzle or a bot check and never resolved
+  (VidMov, VidFyi and VidSrc behind vidsrc.sh, NonTongo, MediaHub, StreamVault at `hexa.su`,
+  StreamBoxHD at `autoembed.me`). MovieVault resolves at `www.rivestream.app` (late) and Movies111
+  at `player.vidmario.net`. `/update-cloud-source` on ww6-fmovies.com would add the fourteen back
+  as site providers; they then rest after five failures in a row like any other.
 
 ### How a provider delivers
 
@@ -642,8 +646,9 @@ and never stored (`src/directStream/delivery.ts`).
 
 A resolve knows a stream's size, subtitles and sometimes its language, and nothing of what the
 picture looks like. The Shadow's Edge resolved to a "960p" recording made in a cinema with a
-betting site's logo burned in, and then to a Hindi dub with another. So before a provider's stream
-of a title plays for the first time, the daemon looks at it (`src/directStream/picture.ts`):
+betting site's logo burned in, and then to a Hindi dub with another. So the first time a
+provider's stream of a title is about to play, the daemon looks at it
+(`src/directStream/picture.ts`):
 
 1. `ffmpeg` reads two frames, 4 and 15 minutes in, from the manifest with the `Referer`, `Origin`
    and `User-Agent` the resolve captured (what the pass-through sends), scaled to 960 wide.
@@ -656,35 +661,47 @@ of a title plays for the first time, the daemon looks at it (`src/directStream/p
    plays: a poor picture is better than none. The provider's attempt reads
    `picture: watermark (1XBET logo top right)`.
 
+- **A play waits four seconds for the look, no longer** (`CHECK_HEAD_MS` in `service.ts`). A kept
+  verdict answers at once, so a provider rejected before is left out from the start and a clean
+  one plays straight away. A first look takes 10 to 40 seconds, so it finishes behind the play:
+  the page opens on the stream that resolved, its attempt reads `checks: running behind the play`
+  until the verdict is in, and the daemon's log then says
+  `direct stream: <title> from <provider>, checked behind the play: picture: watermark (...); the next play passes this provider over`.
+  That play stays on the stream it opened (the shuffle button, or S, moves it to a proper copy:
+  the verdict is already kept); the next play of the title skips the provider. Of 36 first looks
+  in three days 34 were clean, and waiting for them was the largest delay between a resolve and
+  the page: 8 to 53 seconds. A cache and the shuffle button wait for the whole look: nobody waits
+  for a page there, and a cache keeps what it resolves.
 - The verdict is kept per title (per episode) and provider in
   `<data dir>/movies/stream-pictures.json` on this machine, so a title is paid for once per
   provider. A rejected one is looked at again after 14 days (a proper copy may have replaced it),
   a clean one after 60. `unsure` is never kept, and nothing here fails a play: a model that does
   not answer, or cannot tell, is `unsure`, which plays.
-- **A stream no frame can be read from** is asked for the first bytes of one segment (10 s at
-  most). When its host hands them out, the stream is only one `ffmpeg` cannot decode here
-  (fragmented MP4 in HEVC, an encrypted one): it is `unsure` and plays at once. When it does not,
-  the stream is passed over like a rejected one while another
-  provider answers, and is remembered for six hours in memory only: such a stream seldom plays either (HyperLink's segments sat
-  on a host this network could not reach). `ffmpeg` reads the manifest first; for an HLS stream
-  it cannot open, the daemon fetches the segment itself and hands ffmpeg the transport stream
-  inside it (some hosts wrap every segment in a small picture file).
+- **A stream no frame can be read from plays.** It is `unsure`, like a picture the model cannot
+  judge: only a verdict passes a provider over, nothing is remembered against the stream, and no
+  other provider is asked because of it. The stream is asked for the first bytes of one segment
+  (10 s at most) so the attempt can say which it is: `no frame could be decoded, and the stream
+  host delivers` (fragmented MP4 in HEVC, an encrypted one) or `no frame could be read from the
+  stream`. A host that then does not hand its segments over is left by the player itself
+  ([How a provider delivers](#how-a-provider-delivers)). `ffmpeg` reads the manifest first; for
+  an HLS stream it cannot open, the daemon fetches the segment itself and hands ffmpeg the
+  transport stream inside it (some hosts wrap every segment in a small picture file).
 - It runs for a play, an episode change, a cache and a move to another source (the shuffle
   button lands on the next proper copy, not the next recording). A token refresh looks at nothing
   but keeps away from rejected providers. A provider the owner named (`provider`), a probe and a
   resolve that only reads a subtitle are not looked at.
-- It adds 10 to 40 seconds to a provider's first play of a title, and the same again for each
-  stream it rejects. `NOTESD_STREAM_PICTURE_MODEL=off` turns it off, and the audio-language check
-  below with it.
+- It adds at most four seconds to a provider's first play of a title.
+  `NOTESD_STREAM_PICTURE_MODEL=off` turns it off, and the audio-language check below with it.
 
 ### The audio-language check
 
 The resolver's **"A dub is never a source"** check above reads a stream's audio-track tags. A cloud
 `.mp4` often has none at all — `ffprobe` reports zero tracks — so a film dubbed into English passes it
-undetected. Whisper hears the language actually spoken whatever the tags say, so before a cloud
-provider's stream of a foreign-language title plays for the first time, the daemon listens to it
-(`src/directStream/audioLang.ts`), in the same vet loop as the picture check (`vetted` in
-`service.ts`):
+undetected. Whisper hears the language actually spoken whatever the tags say, so the first time a
+cloud provider's stream of a foreign-language title is about to play, the daemon listens to it
+(`src/directStream/audioLang.ts`), beside the picture check and under the same four-second wait
+(`vetted` in `service.ts`): a kept verdict passes a dubbing provider over before the play, and a
+first hearing that takes longer finishes behind the play and is kept for the next one.
 
 1. `ffmpeg` cuts ~30 s of audio, 10 minutes in, from the manifest with the `Referer`, `Origin` and
    `User-Agent` the resolve captured, to a 16 kHz mono WAV — the format the Whisper worker reads.
@@ -879,7 +896,8 @@ A play is in flight from the moment it is asked for until its player page report
 
 - **One play per title.** A second ask for the same film or episode from the same source (no
   provider, `cloud`, `torrent`, or one provider's name) while the first is in flight joins it: one
-  resolve, one page.
+  resolve, one page. A pasted magnet is part of what is asked: the same magnet again joins, another
+  magnet for the same title is its own play.
 - **It counts as busy.** `GET /api/movies/player` lists it in `starting`
   (`{kind, tmdb_id, season, episode, title, provider, since, stage}`; `stage` says what is being
   done: `asking the cloud providers`, `asking the torrent indexes`,
@@ -895,7 +913,7 @@ A play is in flight from the moment it is asked for until its player page report
   (`PLAY_ANSWER_MS` in `src/mcp/directStreamTools.ts`) and then answers
   `{started: false, pending: true, since, waited_s, stage, attempts}` with the attempts finished
   so far. The play goes on in the daemon and opens the player by itself. The same call again joins
-  it, or answers its outcome (kept 10 minutes for that): `started: true`, or the error with every
+  it, or answers its outcome (kept 10 minutes for that, the newest 50): `started: true`, or the error with every
   attempt. `POST /api/stream/play` (the Movies page) waits for the play as before.
 - **A play that started nothing is in the daemon's log**, whoever waited:
   `direct stream: play of TMDB movie 818647 (torrent) started nothing after 96.2 s: no_source, 8 attempt(s)`,
@@ -2462,7 +2480,7 @@ newtrackon's `stable` (`src/directStream/torrent/trackerLists.ts`).
 | `src/directStream/torrent/subtitles/whisper.ts`, `claude/streaming/torrent/whisper.py` | Whisper, the last subtitle tier of a torrent session: the tier, the ffmpeg audio cutter, the worker client and the faster-whisper worker |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/ahead.ts` | The next episode, fetched while one plays: when, from where, and how it gives way to the episode on screen |
-| `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes |
+| `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes, waiting `CHECK_HEAD_MS` for a look when a page is waited for |
 | `src/directStream/audioLang.ts` | The cloud audio-language check: ~30 s of audio through ffmpeg and Whisper's `detect`, a dub told from the original, the kept verdicts; run in the same `vetted` loop |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
