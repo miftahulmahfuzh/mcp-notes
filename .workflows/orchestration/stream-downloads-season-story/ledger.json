@@ -142,24 +142,24 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "ef290f6",
       "depends_on": [
         4,
         7
       ],
       "difficulty": "NORMAL",
       "n": 8,
-      "note": null,
+      "note": "title page Download buttons, choose menu, bars, useDownloads; decided: a season click while one of its episodes downloads still POSTs the season (R2.1 over the plan's click block); the drive's neighbor check uses movie-990002 (detailSide shows a fileless title as Stream); commit subject lacks the task id (in the body); proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1121-002021-1002627/evidence",
       "package": "web",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-8.md",
-      "reported_at": null,
+      "reported_at": "2026-11-21T00:27:33+07:00",
       "satisfies": [
         "R1",
         "R2",
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD08",
       "title": "The title page: Download buttons, the choose menu, progress bars"
     },
     {
@@ -210,6 +210,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-21T00:09:28+07:00",
+  "updated": "2026-11-21T00:27:33+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
