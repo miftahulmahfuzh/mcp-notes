@@ -1,0 +1,193 @@
+{
+  "branch": "feature/stream-downloads-season-story",
+  "coordinator": "orch-stream-downloads-season-story",
+  "coordinator_session_id": "e0a7d891-bf46-49aa-842a-f2e22f7c5465",
+  "created": "2026-11-20T23:12:31+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/db`, repos, `src/movies",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Schema and single writers: the download queue, the kept mark, the story store"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/directStream/downloads`, `torrent",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The download engine: queue, source order, kept downloads, offline-ready, play first"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/directStream/downloads`, `torrent",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Season downloads: aired episodes, the season pack, a row per episode"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "src/http`, `src/mcp",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2",
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Routes and the tool: `/api/stream/downloads`, `direct_stream_cache"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "cacheShelf`, `web",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The Cache page: Downloading filter, progress bars, why a row downloads"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 6,
+      "note": null,
+      "package": "src/movies`, `src/http",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Stories from the web: the season story, the episode story web-first"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        6
+      ],
+      "difficulty": "NORMAL",
+      "n": 7,
+      "note": null,
+      "package": "web",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-7.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The story on the page: the season row's button, sections and sources in the modal"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4,
+        7
+      ],
+      "difficulty": "NORMAL",
+      "n": 8,
+      "note": null,
+      "package": "web",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-8.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2",
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The title page: Download buttons, the choose menu, progress bars"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        5,
+        8
+      ],
+      "difficulty": "NORMAL",
+      "n": 9,
+      "note": null,
+      "package": "docs`, `verify-notesd",
+      "plan": ".workflows/plan/stream-downloads-season-story/phase-9.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3",
+        "R4",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Guides, pictures, the feature map and the end-to-end proof"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "stream-downloads-season-story",
+  "updated": "2026-11-20T23:12:31+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
+}
