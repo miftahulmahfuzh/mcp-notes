@@ -111,6 +111,11 @@ export interface DownloadTorrents {
   /** True when this host holds a finished torrent download of `ref`. */
   onDisk(ref: StreamRef): Promise<boolean>;
   fetch(ref: StreamRef, ask: TorrentAsk): Promise<TorrentFetch>;
+  /**
+   * The torrent this host already holds part of for `ref` (the fetch-ahead's, a play that was left): its info hash
+   * and the height its name says. Null when it holds none, or only a failed one. A new download carries it on.
+   */
+  partOnDisk?(ref: StreamRef): Promise<{ infoHash: string; height: number | null } | null>;
   /** Forgets the title's torrents whose swarm did not deliver, so the next fetch tries them again (the ask through WARP). */
   forgetNoPeers(ref: StreamRef): void;
   now(handle: KeptTorrentHandle): Promise<TorrentNow>;

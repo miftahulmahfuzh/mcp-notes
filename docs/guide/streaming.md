@@ -1953,6 +1953,12 @@ comes at once; the download runs in the daemon, and the title page and the
   2. else a cloud source at 1080p or lower, through the [stream cache](#caching-a-film-or-an-episode)
      as your own cache (`max_height` 1080);
   3. else a torrent below 1080p.
+
+  A 1080p torrent this machine already holds part of for that film or episode (the next episode
+  [fetched ahead](#the-next-episode-fetched-ahead), a play you left) comes before all three: the
+  download carries it on from what is on disk, by its info hash, with no index asked, and keeps it.
+  When it gives nothing the order goes on as above. Best torrent (1080p) does the same; Cloud and
+  Pick a torrent… download exactly what you chose.
 - **Choose how to download.** The caret beside the button opens a menu titled "Choose how to
   download <name>": Best torrent (1080p), Cloud, and Pick a torrent…, which opens
   [every torrent of the film or episode](#the-torrent-candidates-of-a-title) with a download button

@@ -23,6 +23,12 @@ export class FakeTorrents implements DownloadTorrents {
   /** refLabel of the titles already whole here. */
   readonly onDiskRefs = new Set<string>();
   readonly kept = new Map<string, boolean>();
+  /** The torrent this host holds part of, by refLabel. */
+  readonly parts = new Map<string, { infoHash: string; height: number | null }>();
+
+  async partOnDisk(ref: StreamRef): Promise<{ infoHash: string; height: number | null } | null> {
+    return this.parts.get(refLabel(ref)) ?? null;
+  }
 
   async onDisk(ref: StreamRef): Promise<boolean> {
     return this.onDiskRefs.has(refLabel(ref));

@@ -7,8 +7,8 @@ import { CacheError, type StreamCacheView } from '../cache/types.js';
 import type { MovieStreams } from '../../movies/streams.js';
 import type { DirectStreamService } from '../service.js';
 import type { SessionTorrent } from '../sessions.js';
-import type { SwarmCount, TorrentCandidate } from '../torrent/find/index.js';
-import type { TorrentSource } from '../torrent/source.js';
+import { parseRelease, type SwarmCount, type TorrentCandidate } from '../torrent/find/index.js';
+import { PREFERRED_TORRENT_HEIGHT, type TorrentSource } from '../torrent/source.js';
 import type { TorrentStreams } from '../torrent/service.js';
 import { normalizeInfoHash, PROGRESS_STEP_BYTES } from '../torrent/types.js';
 import { refLabel, type ResolveAttempt, type StreamRef } from '../types.js';
@@ -434,6 +434,7 @@ export class StreamDownloads {
         await this.fail(row.id, downloadRef(row), [{ step: null, error: plan.error, detail: plan.detail }], null);
         continue;
       }
+      plan.steps = await this.carriedOn(row, plan.steps);
       // Play first: a torrent download does not start while a torrent plays on screen; a cloud one does.
       if (playing && plan.steps[0]!.kind !== 'cloud') continue;
       const job: Job = { id: row.id, ref: downloadRef(row), handle: null, warp: null, stopped: false, remuxRetried: false, lastBytes: row.bytesDone, sourceHash: resumeHash };
@@ -457,6 +458,23 @@ export class StreamDownloads {
     const full = planDownload({ via: row.via, infoHash: row.infoHash }, { torrent: this.opts.torrents !== null, cloud: this.opts.caches !== null });
     if (row.source === 'cloud' && full.ok) return { ok: true, steps: [{ kind: 'cloud', maxHeight: CLOUD_MAX_HEIGHT }, ...stepsAfterCloud(full.steps)] };
     return full;
+  }
+
+  /**
+   * A new download whose order starts with the 1080p torrents starts from the 1080p torrent this host already holds
+   * part of for it (the next episode fetched ahead, a play that was left): what is on disk is carried on, by its info
+   * hash, with no index asked. When that torrent gives nothing the order goes on as planned. A torrent picked by hand,
+   * a cloud download, a download carried on, and a held torrent of another height are left as they are.
+   */
+  private async carriedOn(row: StreamDownloadRow, steps: DownloadStep[]): Promise<DownloadStep[]> {
+    const first = steps[0];
+    if (row.source !== null || row.infoHash !== null || this.pending.has(row.id)) return steps;
+    if (first === undefined || first.kind !== 'torrent' || first.band !== 'preferred') return steps;
+    const ref = downloadRef(row);
+    const part = await this.opts.torrents?.partOnDisk?.(ref).catch(() => null);
+    if (part == null || part.height !== PREFERRED_TORRENT_HEIGHT) return steps;
+    this.log(`[notesd] downloads: ${refLabel(ref)}: part of the torrent ${part.infoHash.slice(0, 8)} is on this machine already; it is carried on first`);
+    return [{ kind: 'hash', infoHash: part.infoHash }, ...steps];
   }
 
   /** True on the office network (the pinned or read SSID); a network that cannot be read is not the office. */
@@ -733,6 +751,10 @@ export function torrentDownloadsOf(source: () => TorrentSource | null, streams: 
   const held = new WeakMap<KeptTorrentHandle, SessionTorrent>();
   return {
     onDisk: async (ref) => (await source()?.onDisk(ref)) === true,
+    partOnDisk: async (ref) => {
+      const found = await streams.find(ref);
+      return found === null || found.state !== 'downloading' ? null : { infoHash: found.infoHash, height: parseRelease(found.release ?? found.name).height ?? null };
+    },
     fetch: async (ref, ask) => {
       const s = source();
       if (s === null) return { ok: false, error: 'no_source', detail: 'torrents are off on this machine' };

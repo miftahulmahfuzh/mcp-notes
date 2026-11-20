@@ -109,6 +109,51 @@ describe('R1.2 the order of a download with no source named', () => {
   });
 });
 
+describe('a download carries on the torrent this machine already holds part of', () => {
+  it('opens the 1080p torrent fetched ahead by its info hash first, asking no index, and keeps it', async () => {
+    const t = build();
+    t.torrents.parts.set(refLabel(EPISODE), { infoHash: H2, height: 1080 });
+    t.torrents.answers.set(`hash:${H2}`, ok(H2));
+    t.torrents.answers.set('band:preferred', ok(H1));
+    await t.downloads.request(EPISODE, { via: 'auto' });
+    await t.downloads.settled();
+    expect(t.torrents.calls).toEqual([`fetch hash:${H2}`, `keep ${H2} true`]);
+    expect(t.repo.rows[0]).toMatchObject({ state: 'running', source: 'torrent', sourceId: H2 });
+  });
+
+  it('goes on with the planned order when the held torrent gives nothing', async () => {
+    const t = build();
+    t.torrents.parts.set(refLabel(EPISODE), { infoHash: H2, height: 1080 });
+    t.torrents.answers.set('band:preferred', ok(H1));
+    await t.downloads.request(EPISODE, { via: 'torrent' });
+    await t.downloads.settled();
+    expect(t.torrents.calls).toEqual([`fetch hash:${H2}`, 'fetch band:preferred', `keep ${H1} true`]);
+    expect(t.repo.rows[0]).toMatchObject({ state: 'running', sourceId: H1 });
+  });
+
+  it('leaves a held torrent that is not 1080p, a cloud download and a torrent picked by hand as they are', async () => {
+    const low = build();
+    low.torrents.parts.set(refLabel(EPISODE), { infoHash: H2, height: 720 });
+    low.torrents.answers.set('band:preferred', ok(H1));
+    await low.downloads.request(EPISODE, { via: 'auto' });
+    await low.downloads.settled();
+    expect(low.torrents.calls).toEqual(['fetch band:preferred', `keep ${H1} true`]);
+
+    const cloud = build();
+    cloud.torrents.parts.set(refLabel(EPISODE), { infoHash: H2, height: 1080 });
+    await cloud.downloads.request(EPISODE, { via: 'cloud' });
+    await cloud.downloads.settled();
+    expect(cloud.torrents.calls).toEqual([]);
+
+    const picked = build();
+    picked.torrents.parts.set(refLabel(EPISODE), { infoHash: H2, height: 1080 });
+    picked.torrents.answers.set(`hash:${H1}`, ok(H1));
+    await picked.downloads.request(EPISODE, { via: 'torrent', infoHash: H1 });
+    await picked.downloads.settled();
+    expect(picked.torrents.calls).toEqual([`fetch hash:${H1}`, `keep ${H1} true`]);
+  });
+});
+
 describe('R1.4 the office network: a torrent download asks again through WARP before the cloud', () => {
   it('switches WARP on once when no peer answered, asks the torrents again, and downloads the 1080p torrent', async () => {
     const t = officeThroughWarp();
