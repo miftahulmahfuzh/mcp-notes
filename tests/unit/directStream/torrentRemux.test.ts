@@ -164,6 +164,39 @@ describe('TorrentRemux', () => {
     await vi.waitFor(async () => expect((await readdir(remuxDir(dir, HASH, 3))).sort()).toEqual(['index.m3u8', 'init.mp4', 'seg-00000.m4s']));
   });
 
+  it('deletes the half-made remux once a stopped ffmpeg has exited, and leaves a finished one', async () => {
+    const exits: ((code: number) => void)[] = [];
+    const base = fakeFfmpeg({ segmentsAtStart: 1 });
+    // An ffmpeg that takes a moment to exit after it is told to stop.
+    const slow: SpawnFfmpeg = (args) => {
+      const proc = base.spawn(args);
+      const exited = new Promise<number | null>((resolve) => {
+        exits.push(resolve);
+      });
+      return { exited, stderrTail: proc.stderrTail, kill: () => undefined };
+    };
+    const remux = remuxWith(slow);
+    await remux.start(request());
+    await remux.start(request({ fileIndex: 4 }));
+    remux.release(HASH, 3);
+    await sleep(20);
+    expect(existsSync(remuxDir(dir, HASH, 3))).toBe(true);
+    exits[0]!(255);
+    await vi.waitFor(() => expect(existsSync(remuxDir(dir, HASH, 3))).toBe(false));
+    // File 4 still remuxes: the torrent's notesd-remux folder stays.
+    expect(existsSync(remuxDir(dir, HASH, 4))).toBe(true);
+
+    const done = fakeFfmpeg({ segmentsAtStart: 1 });
+    const whole = remuxWith(done.spawn);
+    await whole.start(request({ fileIndex: 5 }));
+    await done.runs[0]!.write(2, true);
+    done.runs[0]!.exit(0);
+    await vi.waitFor(() => expect(existsSync(path.join(remuxDir(dir, HASH, 5), REMUX_DONE_FILE))).toBe(true));
+    whole.release(HASH, 5);
+    await sleep(20);
+    expect(existsSync(remuxDir(dir, HASH, 5))).toBe(true);
+  });
+
   it('serves a segment with Range and answers null for a file that is not there', async () => {
     const f = fakeFfmpeg({ segmentsAtStart: 1 });
     const remux = remuxWith(f.spawn);

@@ -2016,8 +2016,8 @@ plain file. When the probe says the file is not one Chrome plays as is, the sess
 - **When it is not played.** The play starts once the first segment is written. ffmpeg that writes none in time, or
   stops with an error first, makes the torrent `unplayable` with the reason, and the next one is tried. Video other
   than H.264, HEVC, AV1 or VP9 (MPEG-2, VC-1, MPEG-4 Part 2) is `unplayable` without running ffmpeg.
-- **Stopping and replaying.** A session that lets go of its torrent stops its ffmpeg; the half-made remux starts over
-  the next time. A finished remux stays with the download and plays again from disk with no ffmpeg; it goes when the
+- **Stopping and replaying.** A session that lets go of its torrent stops its ffmpeg, and the half-made remux is
+  deleted once ffmpeg has exited; it starts over the next time. A finished remux stays with the download and plays again from disk with no ffmpeg; it goes when the
   download is cleared.
 - **HEVC** plays where the streaming Chrome decodes it. Where it cannot, the page stops with `mediaError ...` in its
   log, and the shuffle button (S) moves to the next torrent.
