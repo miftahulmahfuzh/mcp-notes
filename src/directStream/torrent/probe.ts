@@ -31,10 +31,10 @@ export interface MediaProbe {
   direct: boolean;
 }
 
-/** Reads one file over HTTP. Rejects with ProbeError. */
-export type ProbeFile = (url: string, timeoutMs: number) => Promise<MediaProbe>;
+/** Reads one file over HTTP. Rejects with ProbeError; `signal` stops it early (`aborted`: the caller saw the swarm stall). */
+export type ProbeFile = (url: string, timeoutMs: number, options?: { signal?: AbortSignal }) => Promise<MediaProbe>;
 
-export type ProbeErrorCode = 'timeout' | 'failed' | 'bad_output';
+export type ProbeErrorCode = 'timeout' | 'aborted' | 'failed' | 'bad_output';
 
 export class ProbeError extends Error {
   override name = 'ProbeError';
@@ -116,14 +116,19 @@ export function parseProbe(raw: unknown): MediaProbe {
 
 /** ffprobe on a URL. A run past `timeoutMs` is killed and rejects with `timeout`: the swarm sent too little in time. */
 export function ffprobeFile(options: { ffprobeBin: string }): ProbeFile {
-  return (url, timeoutMs) =>
+  return (url, timeoutMs, probeOptions) =>
     new Promise<MediaProbe>((resolve, reject) => {
+      const signal = probeOptions?.signal;
       execFile(
         options.ffprobeBin,
         ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', url],
-        { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: PROBE_MAX_BUFFER },
+        { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: PROBE_MAX_BUFFER, ...(signal === undefined ? {} : { signal }) },
         (err, stdout) => {
           if (err !== null) {
+            if (signal?.aborted === true) {
+              reject(new ProbeError('aborted', 'ffprobe was stopped'));
+              return;
+            }
             const killed = (err as { killed?: boolean }).killed === true;
             reject(new ProbeError(killed ? 'timeout' : 'failed', killed ? `ffprobe gave up after ${Math.round(timeoutMs / 1000)} s` : err.message));
             return;

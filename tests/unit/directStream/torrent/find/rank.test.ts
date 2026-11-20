@@ -22,7 +22,7 @@ describe('rankCandidates', () => {
     expect(rankCandidates([four, five], FILM, { minSeeds: 0, goodSeeds: 20, maxSizeBytes: 25 * 1024 ** 3 }).kept).toHaveLength(2);
   });
 
-  it('orders a direct release first, then well seeded, then 1080p > 720p > 2160p > 480p, then more seeds', () => {
+  it('orders well seeded first, then 1080p > 720p > 2160p > 480p, then a release Chrome plays as is, then more seeds', () => {
     const rows = [
       row('Sintel.2010.2160p.WEB.x265-A', 900),
       row('Sintel.2010.1080p.WEB.x264-B', 30),
@@ -36,7 +36,7 @@ describe('rankCandidates', () => {
       rows.map((r) => candidateFrom(r, 'apibay', FILM)),
       FILM,
     );
-    expect(ranked.kept.map((c) => c.name.slice(-1))).toEqual(['D', 'C', 'F', 'B', 'E', 'A', 'G']);
+    expect(ranked.kept.map((c) => c.name.slice(-1))).toEqual(['F', 'B', 'E', 'A', 'G', 'D', 'C']);
   });
 
   it('joins one torrent listed by several indexes into one candidate with the most seeds', () => {

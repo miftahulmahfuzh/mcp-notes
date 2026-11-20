@@ -1836,7 +1836,9 @@ DHT node and no peer.
 6. A torrent is in the swarm only while something uses it (a stream session, the next episode
    being fetched ahead, or `POST /api/stream/torrent` with `files` until its release route is
    called). Once nothing does, a finished download leaves at once and an unfinished one three
-   minutes after its last file request.
+   minutes after its last file request. While it waits it downloads nothing (its files are deselected; a
+   reload's reads still fetch their own range): left downloading, the last film filled this machine's
+   ~9 Mbps link for three more minutes and the next play's TMDB and index requests failed.
 7. A torrent gets its `stream_torrents` row once a peer has sent its file list; one whose file list never
    comes leaves no row. A torrent that does not play (it lost the race to another, its file was refused)
    leaves its swarm with its row and its folder when its open made the row and nothing of it was played;
@@ -1887,7 +1889,11 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   is not the swarm (a film listed with 16 seeds had 3 peers), so the daemon asks the swarms themselves: it opens the
   best three torrents side by side, and for each reads the file list from the swarm (20 s at most), picks the film's
   file (an episode's file inside a season pack), starts downloading it and has ffprobe read its header through the
-  daemon's file route (30 s at most). A file whose audio names only languages other than the title's original is
+  daemon's file route. The header read goes on as long as the swarm delivers, up to the play's budget: it is given
+  up only when the torrent received less than 512 kB in the last 15 s (`stalled before the header arrived: 0.2 MB in
+  the last 15 s (...)`). A flat 30 s used to drop well seeded 1080p torrents: a YTS MP4's header is about 10 MB, and
+  three racers sharing this machine's link (about 9 Mbps) each needed some 35 s; Dune: Part Two then played a 720p
+  after 80 s. A file whose audio names only languages other than the title's original is
   `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
   one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six torrents and what
@@ -1914,13 +1920,22 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   dub never plays over it), and one that really is only the dub is still `dubbed`. A directly-playable dual-audio file
   whose original track is not the default is remuxed so the original plays; with the remux off and the dub as the
   default, it is refused rather than played in the wrong language. In that round one listed seed is enough.
-- **Which of them plays.** Once the first header has arrived, the torrents still opening get 2 more seconds. Of those
-  whose headers arrived, the one that plays is, in this order: one whose swarm delivers (6 peers or more connected,
-  or a download rate at or above the film's own bitrate) before one that does not; one whose files hold an English
-  subtitle file; the one with more peers connected; the one the finder ranked higher. Its attempt says what was
+- **1080p by default.** The finder puts 1080p first among the well seeded releases (then 720p, 2160p, 480p: a 2160p
+  rarely streams smoothly here), ahead of whether Chrome plays the file as is: the remux costs seconds, a lower
+  picture costs the whole film. A lower height plays only when no 1080p delivers within the budget.
+- **Which of them plays.** Once the first header has arrived, the torrents still opening get 2 more seconds, or up to
+  20 seconds when the one that arrived is of a less preferred height than one still opening (a 720p while a 1080p
+  still receives: the log says `waiting up to 20 s for <release> (preferred height)`). Of those whose headers
+  arrived, the one that plays is, in this order: one whose swarm delivers (6 peers or more connected, or a download
+  rate at or above the film's own bitrate) before one that does not; the preferred height (1080p first); one whose
+  files hold an English subtitle file; the one with more peers connected; the one the finder ranked higher. Its attempt says what was
   measured: `16 seeds listed; 3 peers connected, 1.7 Mbps for a 2.6 Mbps film`. The others are `skipped` ("its header
   arrived too", "still opening when ... was chosen"), leave their swarms at once, and are first in line for the
-  shuffle button.
+  shuffle button. Every torrent that does not play gets a log line saying why, with what its swarm gave:
+  `torrent: TMDB movie 693134: <release> (2770fe27) lost: no_stream after 21 s, the swarm stalled before the header
+  arrived: 0.1 MB in the last 15 s (3.2 MB received, 2 peers, 0.1 Mbps in 16 s)`, `lost: its header arrived too
+  (720p; 4 peers connected, ...)`, `lost: still opening (8.1 MB received, 5 peers, 2.2 Mbps) when <release> was
+  chosen`.
 - **An episode TMDB numbers on across seasons.** TMDB files One Piece episode 1000 as season 21, episode 1000;
   Torrentio, and every release named `S21E109`, count it as the 109th of that season. Asked by TMDB's number,
   Torrentio lists nothing. So the query also carries the episode's place in its season's stored list (`alt`, from
@@ -1977,9 +1992,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   H264-FLUX.exe`, `.scr`, `.rar`: the shape of a fake, which would only use up one of the play's six tries), a trailer,
   teaser or sample (all an unreleased film has), a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,
   fewer seeds than `NOTESD_TORRENT_MIN_SEEDS`, or a single release larger than `NOTESD_TORRENT_MAX_GB` (a season pack
-  is not measured: only the episode's file is downloaded). A release Chrome plays as is
-  (H.264, AAC, MP4, one audio track) comes before one that needs a remux, then one with 20 seeds or more, then the picture height (1080p, 720p, 2160p,
-  480p), then more seeds. For an
+  is not measured: only the episode's file is downloaded). A release with 20 seeds or more comes first, then the
+  picture height (1080p, 720p, 2160p, 480p), then a release Chrome plays as is (H.264, AAC, MP4, one audio track)
+  before one that needs a remux, then more seeds. For an
   episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
   (never a sample).
 - **A title with no IMDb id.** TMDB lists none for many small films (Chasing the Moon, 2024), and a play of one used

@@ -58,6 +58,11 @@ interface Fakes {
   /** The source's clock; with it each open may move it on (`openTakesMs`). */
   clock?: { now: number };
   openTakesMs?: Record<string, number>;
+  /** Bytes each swarm received so far (read at each look); with it the probe is watched for stalls, not timed out at 30 s. */
+  received?: Record<string, () => number>;
+  probeStallMs?: number;
+  probeSampleMs?: number;
+  heightSettleMs?: number;
 }
 
 const wait = (ms: number | undefined): Promise<void> => (ms === undefined ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
@@ -68,6 +73,7 @@ function setup(o: Fakes = {}) {
   const durations: string[] = [];
   const logged: string[] = [];
   const openTimeouts: Record<string, number> = {};
+  const probeTimeouts: Record<string, number> = {};
   const swarm: TorrentSwarm = {
     open: async (pick, options) => {
       calls.push(`open ${pick.infoHash}`);
@@ -89,6 +95,7 @@ function setup(o: Fakes = {}) {
     setDuration: (infoHash, s) => {
       durations.push(`${infoHash} ${s}`);
     },
+    ...(o.received === undefined ? {} : { received: (infoHash: string) => o.received?.[infoHash]?.() ?? null }),
     ...(o.stats === undefined
       ? {}
       : {
@@ -110,10 +117,16 @@ function setup(o: Fakes = {}) {
       o.onFind?.(query);
       return answer;
     },
-    probe: async (url) => {
+    probe: async (url, timeoutMs, options) => {
       probed.push(url);
       const hash = /\/torrent\/([0-9a-f]+)\//.exec(url)?.[1] ?? '';
-      await wait(o.probeDelay?.[hash]);
+      probeTimeouts[hash] = timeoutMs;
+      const signal = options?.signal;
+      await Promise.race([
+        wait(o.probeDelay?.[hash]),
+        new Promise<void>((resolve) => signal?.addEventListener('abort', () => resolve(), { once: true })),
+      ]);
+      if (signal?.aborted === true) throw new ProbeError('aborted', 'ffprobe was stopped');
       const p = o.probes?.[hash] ?? MP4_EN;
       if (p === 'timeout') throw new ProbeError('timeout', 'ffprobe gave up after 30 s');
       return p;
@@ -123,6 +136,9 @@ function setup(o: Fakes = {}) {
     localBase: () => BASE,
     ...(o.settleMs === undefined ? {} : { settleMs: o.settleMs }),
     ...(o.subtitleHeadMs === undefined ? {} : { subtitleHeadMs: o.subtitleHeadMs }),
+    ...(o.probeStallMs === undefined ? {} : { probeStallMs: o.probeStallMs }),
+    ...(o.probeSampleMs === undefined ? {} : { probeSampleMs: o.probeSampleMs }),
+    ...(o.heightSettleMs === undefined ? {} : { heightSettleMs: o.heightSettleMs }),
     log: (line) => void logged.push(line),
     ...(o.clock === undefined ? {} : { now: () => o.clock!.now }),
   });
@@ -131,8 +147,85 @@ function setup(o: Fakes = {}) {
     await new Promise((r) => setTimeout(r, 0));
     return calls;
   };
-  return { source, calls, settled, probed, durations, logged, openTimeouts, finds: () => finds };
+  return { source, calls, settled, probed, durations, logged, openTimeouts, probeTimeouts, finds: () => finds };
 }
+
+describe('the header probe goes on while the swarm delivers', () => {
+  /** Bytes that grow by `perMs` bytes each millisecond from now on. */
+  const growing = (perMs: number): (() => number) => {
+    const from = Date.now();
+    return () => (Date.now() - from) * perMs;
+  };
+
+  it('is not cut at 30 s: it gets the play budget left, and plays when the header arrives', async () => {
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264.AAC-A')],
+      received: { [h(1)]: growing(100_000) },
+      probeDelay: { [h(1)]: 150 },
+      probeStallMs: 50,
+      probeSampleMs: 10,
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0000001' });
+    expect(out.ok).toBe(true);
+    expect(t.probeTimeouts[h(1)]).toBeGreaterThan(60_000);
+  });
+
+  it('gives up a swarm that stalls, says what it received, and the next torrent plays', async () => {
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264.AAC-A'), candidate(h(2), 'Film.2026.1080p.WEB-DL.x264.AAC-B')],
+      received: { [h(1)]: () => 1_000, [h(2)]: growing(100_000) },
+      probeDelay: { [h(1)]: 10_000, [h(2)]: 100 },
+      probeStallMs: 60,
+      probeSampleMs: 10,
+      settleMs: 0,
+    });
+    const started = Date.now();
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0000001' });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(out.ok && out.torrent.infoHash).toBe(h(2));
+    const first = out.attempts.find((a) => a.provider.endsWith('-A'));
+    expect(first).toMatchObject({ outcome: 'no_stream' });
+    expect(first?.detail).toMatch(/stalled before the header arrived: 0\.0 MB in the last/);
+    expect(t.logged.some((l) => l.includes(`(${h(1).slice(0, 8)}) lost: no_stream`))).toBe(true);
+  });
+});
+
+describe('1080p first', () => {
+  const D = (peers: number) => ({ peers, downKbps: 5000, filmKbps: 2000 });
+
+  it('chooseOrder takes the preferred height among torrents that deliver, and delivery over height', () => {
+    const p720 = { position: 0, english: true, height: 720 as const };
+    const p1080 = { position: 1, english: false, height: 1080 as const };
+    const p2160 = { position: 2, english: false, height: 2160 as const };
+    expect(chooseOrder([p720, p2160, p1080], () => D(10)).map((p) => p.height)).toEqual([1080, 720, 2160]);
+    expect(chooseOrder([p720, p1080], (p) => (p.height === 720 ? D(10) : { peers: 1, downKbps: 100, filmKbps: 2000 })).map((p) => p.height)).toEqual([720, 1080]);
+  });
+
+  it('waits for a 1080p racer still receiving when a 720p header arrives first, and plays the 1080p', async () => {
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264.AAC-A'), candidate(h(2), 'Film.2026.720p.WEB-DL.x264.AAC-B')],
+      probeDelay: { [h(1)]: 250, [h(2)]: 10 },
+      settleMs: 5,
+      heightSettleMs: 2_000,
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0000001' });
+    expect(out.ok && out.torrent.infoHash).toBe(h(1));
+    expect(t.logged.some((l) => /waiting up to 2 s for Film\.2026\.1080p/.test(l))).toBe(true);
+    expect(t.logged.some((l) => l.includes(`(${h(2).slice(0, 8)}) lost: its header arrived too (720p`))).toBe(true);
+  });
+
+  it('plays the 720p when the 1080p racer does not arrive within the wait', async () => {
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264.AAC-A'), candidate(h(2), 'Film.2026.720p.WEB-DL.x264.AAC-B')],
+      probeDelay: { [h(1)]: 5_000, [h(2)]: 10 },
+      settleMs: 5,
+      heightSettleMs: 100,
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0000001' });
+    expect(out.ok && out.torrent.infoHash).toBe(h(2));
+    expect(t.logged.some((l) => l.includes(`(${h(1).slice(0, 8)}) lost: still opening`))).toBe(true);
+  });
+});
 
 describe('a dub-named release as a last resort', () => {
   // A dual-audio file: the dub first, then the original (eng). Directly playable.

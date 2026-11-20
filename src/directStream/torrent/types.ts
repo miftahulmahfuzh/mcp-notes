@@ -98,9 +98,13 @@ export interface TorrentHandle {
   readonly live: boolean;
   /** Downloads these files (in order); never anything else. A disk handle ignores it. */
   select(indexes: readonly number[]): void;
+  /** Stops fetching these files ahead (a file route's read still fetches its own range). Absent: a disk handle, tests' fakes. */
+  deselect?(indexes: readonly number[]): void;
   /** Bytes start..end of one file, `end` inclusive, in order; the swarm fetches their pieces first. */
   read(index: number, range: { start: number; end: number }): Readable;
   stats(): TorrentStats;
+  /** Bytes received from peers since the torrent was opened (any piece, verified or not); absent: unknown (a disk handle, tests' fakes). */
+  received?(): number;
   /** The stretches of one file that are on disk, `[from, to)` byte offsets, in order, never touching. */
   ranges(index: number): [number, number][];
   done(index: number): boolean;

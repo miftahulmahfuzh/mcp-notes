@@ -215,6 +215,8 @@ them. It takes 5 to 40 seconds; wait for it. The tool always answers within abou
 a play that needs longer answers `pending: true` (see step 3).
 "stream it from a torrent", TM and TS are `provider: "torrent"`: only the torrent source is asked.
 NTM and NTS are `provider: "cloud"`: only the cloud providers are asked, and never a torrent.
+1080p by default: the daemon prefers a 1080p torrent or cloud stream and plays a lower height only
+when no 1080p delivers within the play's budget (2160p is not preferred: it rarely streams smoothly).
 
 A series named without an episode starts where the user left it. The daemon keeps every play
 (streams and VLC) in its database, so this works across sessions and restarts: `picked` is

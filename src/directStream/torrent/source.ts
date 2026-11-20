@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { DEFAULT_TORRENT_FINDER_CONFIG, TORRENT_INDEX_NAMES, type Config, type TorrentIndexName } from '../../config.js';
 import type { SessionTorrent } from '../sessions.js';
 import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type ResolvedSource, type SourceAudio, type StreamRef } from '../types.js';
-import { candidateFromMagnet, deadLast, DEFAULT_TRACKERS, defaultIndexes, findCandidates, IndexHealth, looksDead, pickFile, udpScraper, udpTrackerOf, type IndexAttempt, type ScrapeTrackers, type SwarmCount, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
+import { candidateFromMagnet, deadLast, DEFAULT_TRACKERS, defaultIndexes, findCandidates, heightRank, IndexHealth, looksDead, pickFile, udpScraper, udpTrackerOf, type IndexAttempt, type ReleaseHeight, type ScrapeTrackers, type SwarmCount, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
 import { readMagnet, TRACKER_BOOK_FILE, TrackerBook, trackerKey } from './origins.js';
 import { scrapeTrackerOrder } from './find/scrape.js';
 import type { TrackerLists } from './trackerLists.js';
@@ -50,8 +50,19 @@ export const SUBTITLES_PENDING = 'Subtitles: pending';
 export const TORRENT_DEADLINE_MS = 90_000;
 /** One torrent's file list must arrive within this. */
 export const TORRENT_OPEN_TIMEOUT_MS = 20_000;
-/** ffprobe must have read the file's header within this. */
+/** ffprobe must have read the file's header within this when the swarm cannot say what it received (tests' fakes). */
 export const TORRENT_PROBE_TIMEOUT_MS = 30_000;
+/**
+ * A header probe goes on while the swarm delivers, up to the play's budget: it is given up only when the torrent
+ * received less than PROBE_STALL_BYTES in the last PROBE_STALL_MS. A flat 30 s dropped three well seeded 1080p
+ * torrents racing on a 9 Mbps link (a YTS MP4's header is ~10 MB, so each needed ~35 s with the link split three ways).
+ */
+export const PROBE_STALL_MS = 15_000;
+export const PROBE_STALL_BYTES = 512 * 1024;
+/** How often a probe's swarm is looked at. */
+export const PROBE_SAMPLE_MS = 1_000;
+/** Once a header of a less preferred height arrived, a racer of a preferred height (1080p) still opening gets up to this long to arrive too. */
+export const HEIGHT_SETTLE_MS = 20_000;
 /** The least time a probe is given, even late in the budget. */
 const PROBE_MIN_MS = 5_000;
 
@@ -100,6 +111,8 @@ export interface TorrentSwarm {
   discard?(infoHash: string): unknown;
   /** The peers connected and the download rate of an open torrent, now; null when it is not in the swarm. Absent in tests' fakes. */
   stats?(infoHash: string): Pick<TorrentStats, 'peers' | 'down_kbps'> | null;
+  /** Bytes an open torrent received from peers so far; null when it cannot say. Absent: the probe has the flat TORRENT_PROBE_TIMEOUT_MS. */
+  received?(infoHash: string): number | null;
 }
 
 export interface TorrentSourceOptions {
@@ -128,6 +141,10 @@ export interface TorrentSourceOptions {
   settleMs?: number;
   /** Default SUBTITLE_HEAD_MS. */
   subtitleHeadMs?: number;
+  /** Default PROBE_STALL_MS, PROBE_SAMPLE_MS and HEIGHT_SETTLE_MS (tests shorten them). */
+  probeStallMs?: number;
+  probeSampleMs?: number;
+  heightSettleMs?: number;
   now?: () => number;
   log?: (line: string) => void;
 }
@@ -201,6 +218,8 @@ interface Passed {
   probe: MediaProbe;
   /** Its files hold an English subtitle file (R3.2). */
   english: boolean;
+  /** The height its release name says (chooseOrder prefers 1080p). */
+  height: ReleaseHeight | null;
   /** Seconds from its open to its header. */
   tookS: number;
   /** Lets go of it (once): it lost, or its remux did not start. */
@@ -266,13 +285,21 @@ export function delivers(d: Delivery | null): boolean {
 }
 
 /**
- * The torrents whose headers arrived, best first: one whose swarm delivers before one that does not, then one whose
- * files hold an English subtitle file (R3.2), then the one with more peers connected, then the finder's order.
+ * The torrents whose headers arrived, best first: one whose swarm delivers before one that does not, then the
+ * preferred height (1080p, then 720p, 2160p, 480p: HEIGHT_PREFERENCE), then one whose files hold an English subtitle
+ * file (R3.2), then the one with more peers connected, then the finder's order.
  */
-export function chooseOrder<T extends { position: number; english: boolean }>(passed: readonly T[], deliveryOf: (p: T) => Delivery | null): T[] {
+export function chooseOrder<T extends { position: number; english: boolean; height?: ReleaseHeight | null }>(passed: readonly T[], deliveryOf: (p: T) => Delivery | null): T[] {
   const scored = passed.map((p) => ({ p, d: deliveryOf(p) }));
   return scored
-    .sort((a, b) => Number(delivers(b.d)) - Number(delivers(a.d)) || Number(b.p.english) - Number(a.p.english) || (b.d?.peers ?? 0) - (a.d?.peers ?? 0) || a.p.position - b.p.position)
+    .sort(
+      (a, b) =>
+        Number(delivers(b.d)) - Number(delivers(a.d)) ||
+        heightRank(a.p.height ?? null) - heightRank(b.p.height ?? null) ||
+        Number(b.p.english) - Number(a.p.english) ||
+        (b.d?.peers ?? 0) - (a.d?.peers ?? 0) ||
+        a.p.position - b.p.position,
+    )
     .map((x) => x.p);
 }
 
@@ -850,6 +877,83 @@ export class TorrentSource {
       .catch((err: unknown) => this.log(`[notesd] torrent: could not release ${infoHash}: ${messageOf(err)}`));
   }
 
+  /** What a torrent received so far, for a log line: `4.1 MB, 5 peers, 1.3 Mbps`; empty words when the swarm cannot say. */
+  private receivedText(infoHash: string): string {
+    let bytes: number | null = null;
+    let stats: Pick<TorrentStats, 'peers' | 'down_kbps'> | null = null;
+    try {
+      bytes = this.opts.swarm.received?.(infoHash) ?? null;
+      stats = this.opts.swarm.stats?.(infoHash) ?? null;
+    } catch {
+      // A torrent that is gone says nothing.
+    }
+    const parts = [bytes === null ? null : `${(bytes / 1e6).toFixed(1)} MB received`, stats === null ? null : `${plural(stats.peers, 'peer')}, ${mbps(stats.down_kbps)} Mbps`].filter((x) => x !== null);
+    return parts.length === 0 ? 'nothing known of its swarm' : parts.join(', ');
+  }
+
+  /**
+   * ffprobe on a racer's file, given as long as its swarm delivers (up to `budgetMs`, the play's whole budget left):
+   * it is stopped when the torrent received less than PROBE_STALL_BYTES in the last PROBE_STALL_MS. A swarm that
+   * cannot say what it received gets the flat TORRENT_PROBE_TIMEOUT_MS. Never throws.
+   */
+  private async probeWhileDelivering(
+    url: string,
+    infoHash: string,
+    budgetMs: number,
+    cancelled: () => boolean,
+  ): Promise<{ ok: true; probe: MediaProbe } | { ok: false; outcome: ResolveOutcome; detail: string }> {
+    const received = (): number | null => {
+      try {
+        return this.opts.swarm.received?.(infoHash) ?? null;
+      } catch {
+        return null;
+      }
+    };
+    const started = this.now();
+    const first = received();
+    if (first === null) {
+      const probeMs = Math.max(PROBE_MIN_MS, Math.min(TORRENT_PROBE_TIMEOUT_MS, budgetMs));
+      try {
+        return { ok: true, probe: await this.opts.probe(url, probeMs) };
+      } catch (err) {
+        return err instanceof ProbeError && err.code === 'timeout'
+          ? { ok: false, outcome: 'no_stream', detail: `the swarm sent too little of the file to read it within ${Math.round(probeMs / 1000)} s` }
+          : { ok: false, outcome: 'error', detail: `ffprobe could not read the file: ${messageOf(err)}` };
+      }
+    }
+    const stallMs = this.opts.probeStallMs ?? PROBE_STALL_MS;
+    const probeMs = Math.max(PROBE_MIN_MS, budgetMs);
+    const controller = new AbortController();
+    const samples: Array<{ at: number; bytes: number }> = [{ at: started, bytes: first }];
+    let stalled: string | null = null;
+    const watch = setInterval(() => {
+      if (cancelled()) {
+        controller.abort();
+        return;
+      }
+      const at = this.now();
+      const bytes = received() ?? samples.at(-1)!.bytes;
+      samples.push({ at, bytes });
+      // The newest sample at least stallMs old is the window's start; older ones are no longer needed.
+      while (samples.length > 2 && at - samples[1]!.at >= stallMs) samples.shift();
+      const from = samples[0]!;
+      if (at - from.at < stallMs || bytes - from.bytes >= PROBE_STALL_BYTES) return;
+      stalled = `the swarm stalled before the header arrived: ${((bytes - from.bytes) / 1e6).toFixed(1)} MB in the last ${Math.round((at - from.at) / 1000)} s (${this.receivedText(infoHash)} in ${seconds(started, at)} s)`;
+      controller.abort();
+    }, this.opts.probeSampleMs ?? PROBE_SAMPLE_MS);
+    try {
+      return { ok: true, probe: await this.opts.probe(url, probeMs, { signal: controller.signal }) };
+    } catch (err) {
+      if (stalled !== null) return { ok: false, outcome: 'no_stream', detail: stalled };
+      if (err instanceof ProbeError && (err.code === 'timeout' || err.code === 'aborted')) {
+        return { ok: false, outcome: 'no_stream', detail: `the play's budget ran out before the header arrived (${this.receivedText(infoHash)} in ${seconds(started, this.now())} s)` };
+      }
+      return { ok: false, outcome: 'error', detail: `ffprobe could not read the file: ${messageOf(err)}` };
+    } finally {
+      clearInterval(watch);
+    }
+  }
+
   private deliveryOf(p: Pick<Passed, 'c' | 'opened' | 'video' | 'probe'>): Delivery | null {
     let stats: Pick<TorrentStats, 'peers' | 'down_kbps'> | null = null;
     try {
@@ -904,6 +1008,7 @@ export class TorrentSource {
           if (raced.ok) passed.push(raced.passed);
           else {
             results.set(position, raced.attempt);
+            if (raced.attempt.outcome !== 'skipped') this.log(`[notesd] torrent: ${refLabel(ref)}: ${c.name} (${c.infoHash.slice(0, 8)}) lost: ${raced.attempt.outcome} after ${raced.attempt.took_s ?? 0} s, ${raced.attempt.detail}`);
             if (raced.attempt.outcome !== 'skipped') note?.(c, raced.lasting === true);
           }
           report();
@@ -918,11 +1023,16 @@ export class TorrentSource {
       if (passed.length === 0) {
         await Promise.race([...running.values()].map((r) => r.done));
         if (passed.length === 0) continue;
-        // One header is here: the others still opening get a moment to arrive too, then the swarms are compared.
-        const settleMs = Math.min(this.opts.settleMs ?? TORRENT_SETTLE_MS, deadline - this.now());
+        // One header is here: the others still opening get a moment to arrive too, then the swarms are compared. A racer
+        // of a preferred height (1080p while a 720p arrived) gets longer: it plays when it arrives, and gives up by itself
+        // when its swarm stalls.
+        const bestHeight = Math.min(...passed.map((p) => heightRank(p.height)));
+        const better = [...running.values()].filter((r) => heightRank(r.c.release.height) < bestHeight);
+        const settleMs = Math.min(better.length > 0 ? (this.opts.heightSettleMs ?? HEIGHT_SETTLE_MS) : (this.opts.settleMs ?? TORRENT_SETTLE_MS), deadline - this.now());
         if (running.size > 0 && settleMs > 0) {
+          if (better.length > 0) this.log(`[notesd] torrent: ${refLabel(ref)}: ${passed[0]!.c.name} arrived; waiting up to ${Math.round(settleMs / 1000)} s for ${better.map((r) => r.c.name).join('; ')} (preferred height)`);
           const timer = sleep(settleMs);
-          await Promise.race([Promise.all([...running.values()].map((r) => r.done)), timer.done]);
+          await Promise.race([Promise.all((better.length > 0 ? better : [...running.values()]).map((r) => r.done)), timer.done]);
           timer.clear();
         }
       }
@@ -938,6 +1048,7 @@ export class TorrentSource {
       }
       const later: TorrentCandidate[] = [];
       for (const p of chooseOrder(passed, (x) => this.deliveryOf(x))) {
+        this.log(`[notesd] torrent: ${refLabel(ref)}: ${p.c.name} (${p.c.infoHash.slice(0, 8)}) lost: its header arrived too (${p.height ?? '?'}p${this.deliveryText(this.deliveryOf(p))}); ${best.c.name} was chosen`);
         results.set(p.position, {
           provider: torrentLabel(p.c.name),
           outcome: 'skipped',
@@ -949,6 +1060,7 @@ export class TorrentSource {
       }
       for (const [position, r] of [...running.entries()].sort((a, b) => a[0] - b[0])) {
         running.delete(position);
+        this.log(`[notesd] torrent: ${refLabel(ref)}: ${r.c.name} (${r.c.infoHash.slice(0, 8)}) lost: still opening (${this.receivedText(r.c.infoHash)}) when ${best.c.name} was chosen`);
         r.racer.cancel();
         results.set(position, { provider: torrentLabel(r.c.name), outcome: 'skipped', took_s: null, detail: `still opening when ${best.c.name} was chosen` });
         later.push(r.c);
@@ -1006,23 +1118,18 @@ export class TorrentSource {
         }
         if (state.cancelled) return left();
         const manifestUrl = this.opts.swarm.localUrl(c.infoHash, picked.video);
-        const probeMs = Math.max(PROBE_MIN_MS, Math.min(TORRENT_PROBE_TIMEOUT_MS, budgetMs - (this.now() - started)));
         let probe: MediaProbe;
-        try {
-          probe = await this.opts.probe(`${this.opts.localBase()}${manifestUrl}`, probeMs);
-        } catch (err) {
-          if (state.cancelled) return left();
-          return err instanceof ProbeError && err.code === 'timeout'
-            ? fail('no_stream', `the swarm sent too little of the file to read it within ${Math.round(probeMs / 1000)} s`)
-            : fail('error', `ffprobe could not read the file: ${messageOf(err)}`);
-        }
+        const probed = await this.probeWhileDelivering(`${this.opts.localBase()}${manifestUrl}`, c.infoHash, budgetMs - (this.now() - started), () => state.cancelled);
+        if (state.cancelled) return left();
+        if (!probed.ok) return fail(probed.outcome, probed.detail);
+        probe = probed.probe;
         if (state.cancelled) return left();
         const refusal = refusalOf(probe, play.audioLang, this.opts.remux ?? null);
         if (refusal !== null) return fail(refusal.outcome, refusal.detail, true);
         const videoName = opened.files.find((f) => f.index === picked.video)?.name ?? '';
         return {
           ok: true,
-          passed: { position, c, opened, video: picked.video, subtitles: picked.subtitles, probe, english: hasEnglishSubtitleFile(opened.files, picked.subtitles, videoName), tookS: seconds(started, this.now()), drop },
+          passed: { position, c, opened, video: picked.video, subtitles: picked.subtitles, probe, height: c.release.height ?? null, english: hasEnglishSubtitleFile(opened.files, picked.subtitles, videoName), tookS: seconds(started, this.now()), drop },
         };
       } catch (err) {
         return fail('error', messageOf(err));

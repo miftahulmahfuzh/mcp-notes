@@ -205,7 +205,20 @@ export class TorrentStreams {
       return;
     }
     live.users -= 1;
-    if (live.users === 0) await this.settle(hash, live);
+    if (live.users === 0) {
+      // Nobody plays it now: it stops downloading while it waits (lingerMs) for a reload. A finished one leaves in
+      // settle. Left downloading, the last film filled this machine's ~9 Mbps link for three more minutes and the
+      // next play's TMDB and index requests timed out (Sinners, F1: "could not read the IMDb id").
+      const row = live.row;
+      if (row.fileIndex !== null && !row.files.every((f) => live.handle.done(f.index))) {
+        try {
+          live.handle.deselect?.(row.files.map((f) => f.index));
+        } catch (err) {
+          this.log(`[notesd] torrent: could not pause ${hash.slice(0, 8)}: ${messageOf(err)}`);
+        }
+      }
+      await this.settle(hash, live);
+    }
   }
 
   /**
@@ -260,6 +273,13 @@ export class TorrentStreams {
     const hash = normalizeInfoHash(infoHash);
     const live = hash === null ? undefined : this.active.get(hash);
     return live === undefined ? null : live.handle.stats();
+  }
+
+  /** Bytes the torrent received from peers since it was opened; null when it is not in the swarm or its handle cannot say. */
+  received(infoHash: string): number | null {
+    const hash = normalizeInfoHash(infoHash);
+    const live = hash === null ? undefined : this.active.get(hash);
+    return live?.handle.received?.() ?? null;
   }
 
   /** This host's best record of a title with a chosen video: a ready one first, then the most recent. */

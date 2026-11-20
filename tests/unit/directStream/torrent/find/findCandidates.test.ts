@@ -99,9 +99,10 @@ describe('findCandidates', () => {
       ['bitsearch', 'empty', 0],
       ['torrentscsv', 'empty', 0],
     ]);
+    // 1080p before a 720p Chrome plays as is: both are well seeded, and the height comes first.
     expect(found.candidates.map((c) => c.infoHash)).toEqual([
-      'a779fa758f2229586eebc2e5960eb32fe5659596',
       '43f4001de4ab25d521c63684e2b69804193ed9d9',
+      'a779fa758f2229586eebc2e5960eb32fe5659596',
       '150922bce30a1091e347741ebbf96072593a69b4',
     ]);
     for (const c of found.candidates) {
@@ -110,8 +111,8 @@ describe('findCandidates', () => {
       expect(c.seeds).toBeGreaterThanOrEqual(5);
       expect(c.sizeBytes).toBeGreaterThan(0);
     }
-    expect(found.candidates[0]).toMatchObject({ listedBy: ['torrentio'], fileName: 'Sintel.2010.720p.BluRay.x264.AAC-[YTS.MX].mp4' });
-    expect(found.candidates[0]?.release.direct).toBe(true);
+    expect(found.candidates[1]).toMatchObject({ listedBy: ['torrentio'], fileName: 'Sintel.2010.720p.BluRay.x264.AAC-[YTS.MX].mp4' });
+    expect(found.candidates[1]?.release.direct).toBe(true);
     const mitzep = found.excluded.filter((e) => e.infoHash === 'afb2c3f4ee0901947219e69997e95cd7280ca2d7');
     expect(mitzep).toEqual([expect.objectContaining({ seeds: 1, reason: 'few_seeds' })]);
   });

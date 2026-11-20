@@ -116,6 +116,11 @@ class WebTorrentHandle implements TorrentHandle {
     for (const index of indexes) this.file(index).select();
   }
 
+  deselect(indexes: readonly number[]): void {
+    if (this.torrent.destroyed) return;
+    for (const index of indexes) this.file(index).deselect();
+  }
+
   read(index: number, range: { start: number; end: number }): Readable {
     return Readable.from(take(this.file(index), range.start, range.end), { objectMode: false });
   }
@@ -124,6 +129,10 @@ class WebTorrentHandle implements TorrentHandle {
     const t = this.torrent;
     if (t.destroyed) return { peers: 0, down_kbps: 0, up_kbps: 0 };
     return { peers: t.numPeers, down_kbps: kilobits(t.downloadSpeed), up_kbps: kilobits(t.uploadSpeed) };
+  }
+
+  received(): number {
+    return this.torrent.destroyed ? 0 : this.torrent.downloaded;
   }
 
   ranges(index: number): [number, number][] {

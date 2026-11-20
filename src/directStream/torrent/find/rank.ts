@@ -117,7 +117,8 @@ export function exclusionOf(c: TorrentCandidate, query: TorrentQuery, settings: 
   return null;
 }
 
-function heightRank(height: ReleaseHeight | null): number {
+/** A height's place in HEIGHT_PREFERENCE (0 is best); unknown or unlisted heights come last. */
+export function heightRank(height: ReleaseHeight | null): number {
   const at = height === null ? -1 : HEIGHT_PREFERENCE.indexOf(height);
   return at < 0 ? HEIGHT_PREFERENCE.length : at;
 }
@@ -125,9 +126,9 @@ function heightRank(height: ReleaseHeight | null): number {
 /** Negative when `a` is the better pick. */
 export function compareCandidates(a: TorrentCandidate, b: TorrentCandidate, settings: RankSettings = DEFAULT_RANK_SETTINGS): number {
   return (
-    Number(b.release.direct) - Number(a.release.direct) ||
     Number(b.seeds >= settings.goodSeeds) - Number(a.seeds >= settings.goodSeeds) ||
     heightRank(a.release.height) - heightRank(b.release.height) ||
+    Number(b.release.direct) - Number(a.release.direct) ||
     b.seeds - a.seeds ||
     a.infoHash.localeCompare(b.infoHash)
   );

@@ -167,6 +167,18 @@ describe('TorrentStreams', () => {
     expect(await later.json()).toMatchObject({ error: 'not_in_swarm' });
   });
 
+  it('stops downloading an unfinished torrent nobody uses while it waits, and fetches again when it is used', async () => {
+    const { streams, engine } = build();
+    await streams.open(PICK, OPEN);
+    await streams.use(HASH, [1]);
+    expect(engine.deselected).toEqual([]);
+    await streams.release(HASH);
+    expect(engine.deselected).toEqual([{ infoHash: HASH, indexes: [1] }]);
+    expect(engine.removed).toEqual([]);
+    await streams.use(HASH, [1]);
+    expect(engine.selected.at(-1)).toEqual({ infoHash: HASH, indexes: [1] });
+  });
+
   it('drops at once a torrent opened and never used, and ignores an unknown hash', async () => {
     const { streams, engine } = build();
     await streams.open(PICK, OPEN);
