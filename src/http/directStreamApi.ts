@@ -157,10 +157,13 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
   // The player page, when the film keeps stalling: another provider under the same session id.
   r.post('/api/stream/sessions/:id/source', sameOriginOnly, async (c) => {
     const body = sourceBody.safeParse(await c.req.json().catch(() => ({})));
-    if (!body.success) return c.json({ error: 'invalid_body', message: 'leave_cache must be true or false.' }, 400);
+    if (!body.success) return c.json({ error: 'invalid_body', message: 'leave_cache must be true or false; auto "stalled" or "broken".' }, 400);
     try {
       // A cached play that starves goes back to the live stream; any other moves to another provider.
-      const answer = body.data.leave_cache === true ? await service().leaveCache(c.req.param('id')) : await service().switchSource(c.req.param('id'));
+      // `auto`: the page asks by itself (the film keeps stalling, or cannot be played), so the daemon's rules for a move nobody asked for apply.
+      const id = c.req.param('id');
+      const auto = body.data.auto;
+      const answer = body.data.leave_cache === true ? await service().leaveCache(id) : await service().switchSource(id, auto === undefined ? {} : { auto });
       return c.json({ ...answer.session, switched: answer.switched, reason: answer.reason, from: answer.from });
     } catch (err) {
       return directStreamErrorResponse(c, err);
@@ -218,7 +221,7 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
 }
 
 const episodeBody = z.object({ to: z.enum(['prev', 'next']) });
-const sourceBody = z.object({ leave_cache: z.boolean().optional() });
+const sourceBody = z.object({ leave_cache: z.boolean().optional(), auto: z.enum(['stalled', 'broken']).optional() });
 /** What the page knows of the play it lost: the title, its old session id, the provider or the torrent, and where the film is. */
 const continueFrom = {
   session_id: z.string().max(64).nullish(),
@@ -250,7 +253,7 @@ const positionBody = z.object({
 });
 
 /** The session a report is for: `subtitleRev` counts the times its subtitle changed since the play started (a torrent session's, else a cloud session's outside one). */
-type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number; infoHash?: string } | null; outside?: { subtitleRev: number } };
+type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number; infoHash?: string } | null; outside?: { subtitleRev: number }; sourceRev?: number };
 
 /** What the position route reads (AppDeps fits: DirectStreamService.session returns a superset of StreamSessionRef). */
 export interface StreamPositionDeps {
@@ -260,6 +263,8 @@ export interface StreamPositionDeps {
     session(id: string): PositionSession | null | Promise<PositionSession | null>;
     letGo?(id: string): void;
     watched?(id: string, report: { paused: boolean; over: boolean; positionS?: number | null; durationS?: number | null }): void;
+    /** A report of the film playing carries out a move a check behind the play asked for (DirectStreamService.reported). */
+    reported?(id: string, report: { paused: boolean; over: boolean }): void;
   } | null;
   /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
   live?: StreamLive | null;
@@ -281,6 +286,8 @@ export interface StreamPositionDeps {
  *
  * Every 200 carries `subtitle_rev`, the session's count of subtitle changes (Wyzie Synced re-timed
  * it, or an outside subtitle arrived late): the page loads its subtitle again when the number changes.
+ * And `source_rev`, the count of the daemon's own moves of the session to another source (a check behind
+ * the play rejected the stream, a torrent kept stalling): the page loads the new source when it changes.
  */
 export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: () => Date; log?: (line: string) => void } = {}): Hono {
   const r = new Hono();
@@ -304,15 +311,18 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     const report = body.data;
     const over = report.ended === true || report.closed === true;
     const subtitleRev = session.torrent?.subtitleRev ?? session.outside?.subtitleRev ?? 0;
+    const sourceRev = session.sourceRev ?? 0;
     // Torrent phase 3: the page is gone or the film is over, so the session lets go of its torrent (a reload takes it again).
     if (over) service.letGo?.(session.id);
     // An episode that is really being watched has its next one fetched to this machine (src/directStream/ahead.ts).
     service.watched?.(session.id, { paused: report.paused === true, over, positionS: report.position_s, durationS: report.duration_s ?? null });
+    // A check behind the play rejected the stream on screen: the move is made now that the film plays (never when paused).
+    service.reported?.(session.id, { paused: report.paused === true, over });
     if (live !== null && report.beat === true && report.paused === true && !over && live.has(session.id)) {
       const on = live.current();
       if (on !== null) {
         live.report({ sessionId: session.id, titleId: on.title_id, ref: session.ref, provider: session.source.provider, positionS: report.position_s, durationS: report.duration_s ?? on.duration, paused: true });
-        return c.json({ ok: true, play_id: null, ended: false, subtitle_rev: subtitleRev });
+        return c.json({ ok: true, play_id: null, ended: false, subtitle_rev: subtitleRev, source_rev: sourceRev });
       }
     }
     const playing = session.torrent?.infoHash;
@@ -346,7 +356,7 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
         });
       }
     }
-    return c.json({ ok: true, play_id: written.play.id, ended: written.play.endedAt !== null, subtitle_rev: subtitleRev });
+    return c.json({ ok: true, play_id: written.play.id, ended: written.play.endedAt !== null, subtitle_rev: subtitleRev, source_rev: sourceRev });
   });
   return r;
 }

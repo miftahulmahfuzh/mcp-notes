@@ -285,6 +285,11 @@ interface Delivery {
 
 const mbps = (kbps: number): string => (kbps / 1000).toFixed(1);
 
+/** A file's bitrate in kbit/s: its bytes over its length; null when either is unknown. */
+function filmKbpsOf(length: number | null, durationS: number | null): number | null {
+  return length !== null && durationS !== null && durationS > 0 ? Math.round((length * 8) / 1000 / durationS) : null;
+}
+
 /**
  * Above this bitrate many peers are no promise: this machine's link carries about 9 Mbps, and Amélie's 18.3 Mbps
  * BDRip (four audio tracks) was chosen for its 7 peers and never moved past its first frame.
@@ -694,13 +699,37 @@ export class TorrentSource {
     return out;
   }
 
-  /** The shuffle button: the session's remaining candidates, in their order, without asking the indexes again. */
+  /** The shuffle button: the session's remaining candidates, in their order, without asking the indexes again. Torrents that failed this title lately are left out. */
   async next(ref: StreamRef, torrent: SessionTorrent, audioLang: string | null): Promise<TorrentResolve> {
-    if (torrent.query === null || torrent.candidates.length === 0) return { ok: false, error: 'no_source', attempts: [] };
+    const key = refKey(ref);
+    const failed = this.remembered(key);
+    const candidates = torrent.candidates.filter((c) => !failed.has(c.infoHash.toLowerCase()));
+    if (torrent.query === null || candidates.length === 0) return { ok: false, error: 'no_source', attempts: [] };
     const play: PlayFacts = { audioLang, imdbId: torrent.imdbId, resumeS: null, cloudTried: false };
     // A torrent the shuffle tried and could not play is left out of the title's next plays too.
-    const key = refKey(ref);
-    return this.tryCandidates(ref, torrent.query, torrent.candidates, play, this.now() + TORRENT_DEADLINE_MS, undefined, (c, lasting) => this.remember(key, c.infoHash, lasting));
+    return this.tryCandidates(ref, torrent.query, candidates, play, this.now() + TORRENT_DEADLINE_MS, undefined, (c, lasting) => this.remember(key, c.infoHash, lasting));
+  }
+
+  /**
+   * A session's torrent kept stalling while it played (autoSwitch in service.ts): it is left out of this title's next
+   * asks like a swarm that did not deliver (SWARM_FAILURE_KEEP_MS), so `next` and `resolve` try the others.
+   */
+  noteStalled(ref: StreamRef, infoHash: string): void {
+    this.remember(refKey(ref), infoHash, false);
+  }
+
+  /**
+   * What the session's swarm delivers now: the peers, the rate and the film's own bitrate (null when unknown). Null
+   * when the torrent is not in the swarm or the engine cannot say.
+   */
+  delivery(torrent: SessionTorrent): { peers: number; downKbps: number; filmKbps: number | null } | null {
+    let stats: Pick<TorrentStats, 'peers' | 'down_kbps'> | null = null;
+    try {
+      stats = this.opts.swarm.stats?.(torrent.infoHash) ?? null;
+    } catch {
+      stats = null;
+    }
+    return stats === null ? null : { peers: stats.peers, downKbps: stats.down_kbps, filmKbps: torrent.filmKbps ?? null };
   }
 
   /**
@@ -997,8 +1026,7 @@ export class TorrentSource {
       stats = null;
     }
     if (stats === null) return null;
-    const length = p.opened.files.find((f) => f.index === p.video)?.length ?? null;
-    const filmKbps = length !== null && p.probe.durationS !== null && p.probe.durationS > 0 ? Math.round((length * 8) / 1000 / p.probe.durationS) : null;
+    const filmKbps = filmKbpsOf(p.opened.files.find((f) => f.index === p.video)?.length ?? null, p.probe.durationS);
     return { peers: stats.peers, downKbps: stats.down_kbps, filmKbps };
   }
 
@@ -1207,6 +1235,7 @@ export class TorrentSource {
         subtitleRev: 0,
         candidates: [],
         durationS: probe.durationS,
+        filmKbps: filmKbpsOf(p.opened.files.find((f) => f.index === p.video)?.length ?? null, probe.durationS),
         candidate: c,
         held: true,
         imdbId: play.imdbId,

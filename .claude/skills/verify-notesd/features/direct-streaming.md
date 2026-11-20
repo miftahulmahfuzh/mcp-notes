@@ -75,7 +75,7 @@
   peers and the download speed (`GET /api/stream/torrent/<hash>` every 2 s while it downloads and the
   tab shows; a drive once the file is on disk), the timeline's grey bar fed by
   `GET /api/stream/torrent/<hash>/map`, a spinner and `Fetching this part from peers` for a seek past
-  what is on disk, no automatic move to another source (its stalls are only logged), the shuffle
+  what is on disk, no automatic move for fewer than four stalls (they are only logged), the shuffle
   button (`Another torrent (S)`) moving to the next torrent and naming it, no pause cache;
   `window.notesdStream.torrent`. Logic proven by `npx vitest run web/src/stream`; in a real browser by
   `torrent-player.steps.mjs` and `torrent-live.steps.mjs` (below).
@@ -138,6 +138,12 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `TORRENT LIVE PASS` (the page read the daemon's peers and speed into the mark and
   `window.notesdStream.torrent`) and `TORRENT DISK PASS` (the download completes, the bar covers the
   film, the page stops asking).
+- A play that moves by itself (`autoSwitch`): a dub or a watermark heard behind the play moves the session,
+  same id, at the next report of the film playing (never a paused one) to another cloud provider, else a
+  torrent; a torrent stalling four times while its swarm delivers under the film's bitrate moves to the next
+  torrent, else a cloud provider; a named provider never moves, a codename stays within its kind, two moves
+  at most; the page reloads on `source_rev` and says `Switched to another source: <why>`. Proven by
+  `npx vitest run tests/unit/directStream/autoSwitch.test.ts tests/unit/directStream/positionRoute.test.ts web/src/stream/controller.test.tsx`.
 - A film that keeps stalling moves to another provider (same fixture and `up --web --direct-stream` as the
   DASH expiry below, on its own run: it counts the resolves in `calls.jsonl`):
   `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/source-switch.steps.mjs`

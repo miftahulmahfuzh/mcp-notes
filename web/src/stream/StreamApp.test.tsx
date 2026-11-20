@@ -500,6 +500,9 @@ describe('the player on a torrent (torrent-stream-source phase 4)', () => {
     expect(sourceLine(true, null, false)).toBe('Looking for another source…');
     expect(sourceLine(false, 'No other source', false)).toBe('No other source');
     expect(sourceLine(false, 'VidFast', false)).toBe('Source: VidFast');
+    // A move the daemon made by itself says why.
+    expect(sourceLine(false, 'VidFast', false, 'dubbed audio')).toBe('Switched to another source: dubbed audio');
+    expect(sourceLine(true, 'VidFast', true, 'the torrent kept stalling')).toBe('Looking for another torrent…');
     expect(sourceLine(false, null, false)).toBeNull();
   });
 });

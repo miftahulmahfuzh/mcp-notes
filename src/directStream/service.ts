@@ -169,6 +169,15 @@ export interface SessionInfo {
    * longer this number, the page reads the session again and loads `subtitles` anew.
    */
   subtitle_rev: number;
+  /**
+   * Counts the times the daemon moved the session to another source by itself (a check behind the play rejected the
+   * stream, or a torrent kept stalling: autoSwitch); 0 for a session it never happened to. The answer to a position
+   * report carries it too: when it is no longer this number, the page reads the session again and loads its stream at
+   * the position the film had reached.
+   */
+  source_rev: number;
+  /** Why the last of those moves was made (`a burned-in watermark`, `the torrent kept stalling`); null before the first. */
+  source_note: string | null;
 }
 
 /** What `play` answers (JSON-ready; the route adds `ok: true`). */
@@ -410,10 +419,21 @@ export interface CacheSessionAnswer {
   session: SessionInfo;
 }
 
+/** How many times one play may be moved to another source by the daemon itself (autoSwitch); then it is left as it is. */
+export const MAX_AUTO_SWITCHES = 2;
+
+/** Why the player page asks for another source by itself: the film keeps stalling, or the stream cannot be played at all. */
+export type AutoAsk = 'stalled' | 'broken';
+
 /** switchSource's answer: the session as it is now, and whether it moved to another provider. */
 export interface SwitchSourceAnswer {
   switched: boolean;
-  reason: 'cached' | 'no_other_source' | null;
+  /**
+   * Why not: `cached`, `no_other_source`; for a move the page asked for by itself (`auto`) also `named_provider` (the
+   * owner named the provider), `switching` (another move runs), `limit` (MAX_AUTO_SWITCHES made) and `delivering`
+   * (a torrent whose swarm keeps up with the film's bitrate, or whose file is whole: its stalls are not the swarm's).
+   */
+  reason: 'cached' | 'no_other_source' | 'named_provider' | 'switching' | 'limit' | 'delivering' | null;
   /** The provider the player was on when it asked. */
   from: string;
   session: SessionInfo;
@@ -579,8 +599,10 @@ export class DirectStreamService {
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
     // Checks that outlasted the head: what they said takes the place of `checks: running behind the play` in the session's attempts.
     if (late !== null) {
-      void late.then((said) => {
-        session.attempts = session.attempts.map((a) => (a.detail.includes(CHECKS_PENDING) ? { ...a, detail: a.detail.replace(CHECKS_PENDING, said) } : a));
+      const provider = out.source.provider;
+      void late.then((done) => {
+        session.attempts = session.attempts.map((a) => (a.detail.includes(CHECKS_PENDING) ? { ...a, detail: a.detail.replace(CHECKS_PENDING, done.said) } : a));
+        if (done.bad) this.rejectedBehind(session, provider, done);
       });
     }
     return session;
@@ -810,6 +832,8 @@ export class DirectStreamService {
     else if (namesTorrent(only)) session = (await this.diskSession(ref, resumeS)) ?? (await this.torrentAgain(ref, resumeS, track));
     else if (namesCloud(only)) session = (await this.cachedSession(ref, resumeS)) ?? (await this.cloudAgain(ref, resumeS, track));
     else session = await this.cloudSession(ref, { resumeS, only }, track);
+    // Where an automatic move may take the play: nowhere for a provider named, within the kind for a codename or a magnet.
+    session.lock = magnet !== null || (only !== null && namesTorrent(only)) ? 'torrent' : only === null ? null : namesCloud(only) ? 'cloud' : 'provider';
     track.stage = 'opening the player page';
     track.attempts = session.attempts;
     return this.openPage(session);
@@ -1371,9 +1395,16 @@ export class DirectStreamService {
    * recordResolve hook runs only for a resolve that found a source, so a title whose other providers
    * all failed is not marked stale while it plays. Throws `unknown_session`.
    */
-  async switchSource(id: string): Promise<SwitchSourceAnswer> {
+  async switchSource(id: string, options: { auto?: AutoAsk } = {}): Promise<SwitchSourceAnswer> {
     const session = this.sessions.get(id);
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
+    // The page asks by itself: the daemon's rules for a move nobody asked for (autoSwitch).
+    if (options.auto !== undefined && session.cache === null) {
+      const stalled = options.auto === 'stalled';
+      const why = stalled ? (session.torrent !== null ? 'the torrent kept stalling' : 'the stream kept stalling') : 'the stream stopped playing';
+      if (stalled) this.ahead?.stalled(session.id);
+      return this.autoSwitch(session, why, stalled ? 'stall' : 'broken');
+    }
     // The stream on screen cannot keep up: a next episode being cached beside it stops.
     this.ahead?.stalled(session.id);
     if (session.cache !== null) return { switched: false, reason: 'cached', from: session.source.provider, session: await this.sessionInfo(session) };
@@ -1392,6 +1423,162 @@ export class DirectStreamService {
     safeRecord(this.evidence, sessionRecord(session, 'switched', null));
     this.log(`[notesd] direct stream: ${refLabel(session.ref)} moved from ${from} to ${out.source.provider} (the stream stalled)`);
     return { switched: true, reason: null, from, session: await this.sessionInfo(session) };
+  }
+
+  /**
+   * A check that finished behind the play (picture.ts, audioLang.ts) rejected the stream the session plays: the move to
+   * another source waits for the page's next report of the film playing (`reported`), so a paused play is never moved.
+   * Nothing when the session has left that provider already. The verdict itself is kept by the check, as always.
+   */
+  private rejectedBehind(session: StreamSession, provider: string, done: { said: string; why: string }): void {
+    if (session.cache !== null || session.torrent !== null || session.source.provider !== provider) return;
+    if (session.lock === 'provider') {
+      this.log(`[notesd] direct stream: ${refLabel(session.ref)} keeps ${provider}, which the owner named, though its check found ${done.why}`);
+      return;
+    }
+    session.pendingMove = done.why;
+  }
+
+  /**
+   * A position report of the session's page (the position route): a move a check behind the play asked for
+   * (`rejectedBehind`) is carried out now, while the film plays. Never for a paused page, a closing one or an
+   * unknown id; the page learns of the move from `source_rev` in a later report's answer.
+   */
+  reported(id: string, report: { paused: boolean; over: boolean }): void {
+    const session = this.sessions.peek(id);
+    if (session === null || session.pendingMove === null || report.paused || report.over || session.moving) return;
+    const why = session.pendingMove;
+    session.pendingMove = null;
+    void this.autoSwitch(session, why, 'verdict').catch((err: unknown) => this.log(`[notesd] direct stream: the move of ${refLabel(session.ref)} away from ${session.source.provider} failed: ${messageOf(err)}`));
+  }
+
+  /** What the session plays from, for a log line: the provider, `Torrent: <release>` or the cache. */
+  private sourceName(session: StreamSession): string {
+    if (session.torrent !== null) return `${TORRENT_PROVIDER}: ${session.torrent.name}`;
+    return session.cache !== null ? `the cache ${session.cache.id}` : session.source.provider;
+  }
+
+  /**
+   * A move nobody asked for, under the same session id: a check behind the play rejected the stream (`verdict`), or
+   * the page says the film keeps stalling (`stall`) or cannot be played (`broken`). The next good source of the same
+   * title: from a cloud provider another cloud provider (looked at whole, passing over the rejected ones), then a
+   * torrent; from a torrent the next torrent (the stalled one left out), then a cloud provider. A play the owner started
+   * with a provider named never moves; a codename or a magnet keeps the play within its kind. One move at a time, at most
+   * MAX_AUTO_SWITCHES per session; a torrent whose swarm keeps up with the film's bitrate, or whose file is whole, is
+   * not moved for its stalls. The page loads the new source at the position it reached (it reads `source_rev`). One
+   * log line per move, with the reason.
+   */
+  private async autoSwitch(session: StreamSession, why: string, cause: 'verdict' | 'stall' | 'broken'): Promise<SwitchSourceAnswer> {
+    const from = this.sourceName(session);
+    const keep = async (reason: NonNullable<SwitchSourceAnswer['reason']>): Promise<SwitchSourceAnswer> => ({ switched: false, reason, from, session: await this.sessionInfo(session) });
+    if (session.lock === 'provider') return keep('named_provider');
+    if (session.moving) return keep('switching');
+    if (session.autoSwitches >= MAX_AUTO_SWITCHES) {
+      this.log(`[notesd] direct stream: ${refLabel(session.ref)} stays on ${from} (${why}): it was moved ${MAX_AUTO_SWITCHES} times by itself already`);
+      return keep('limit');
+    }
+    const torrent = session.torrent;
+    const source = this.torrentSource();
+    if (cause === 'stall' && torrent !== null && source !== null) {
+      // A torrent buffers while it fills: only a swarm that cannot keep up with the film is left.
+      const onDisk = (await source.state(torrent)) === 'ready';
+      const d = source.delivery(torrent);
+      if (onDisk || (d !== null && d.filmKbps !== null && d.downKbps >= d.filmKbps)) {
+        this.log(`[notesd] direct stream: ${refLabel(session.ref)} stalls on ${from}, which ${onDisk ? 'is whole on disk' : `delivers ${d?.downKbps} kbit/s for a ${d?.filmKbps} kbit/s film`}: not moved`);
+        return keep('delivering');
+      }
+    }
+    session.moving = true;
+    try {
+      const moved = torrent !== null ? await this.awayFromTorrent(session, torrent) : await this.awayFromCloud(session);
+      if (!moved) {
+        this.log(`[notesd] direct stream: ${refLabel(session.ref)} stays on ${from} (${why}): no other source plays it now`);
+        return keep('no_other_source');
+      }
+      session.autoSwitches += 1;
+      session.sourceRev += 1;
+      session.sourceNote = why;
+      safeRecord(this.evidence, sessionRecord(session, 'switched', null));
+      this.log(`[notesd] direct stream: ${refLabel(session.ref)} switched by itself from ${from} to ${this.sourceName(session)} (${why}; ${session.autoSwitches} of ${MAX_AUTO_SWITCHES})`);
+      return { switched: true, reason: null, from, session: await this.sessionInfo(session) };
+    } finally {
+      session.moving = false;
+    }
+  }
+
+  /**
+   * autoSwitch from a cloud provider: the other cloud providers, each stream looked at whole (a recording or a dub is
+   * passed over, and the move is made only to one that passed), then, unless the play is held to the cloud, the
+   * torrents. True when the session moved.
+   */
+  private async awayFromCloud(session: StreamSession): Promise<boolean> {
+    const ref = session.ref;
+    const from = session.source.provider;
+    try {
+      const { out, passed } = await this.vetted(ref, [...session.avoid, from], (skip) => this.resolveQuietly(ref, skip), null);
+      if (passed) {
+        session.avoid.push(from);
+        this.sessions.replaceSource(session, out.source, out.attempts);
+        return true;
+      }
+    } catch {
+      // No other cloud provider: the torrents, below.
+    }
+    if (session.lock === 'cloud') return false;
+    const out = await this.torrentFor(ref, session.audioLang, []);
+    if (!out.ok) return false;
+    session.avoid.push(from);
+    this.sessions.replaceTorrent(session, out.source, out.torrent, out.attempts);
+    this.followSubtitles(session);
+    this.watchTorrents();
+    return true;
+  }
+
+  /**
+   * autoSwitch from a torrent: the session's other candidates (chooseOrder: a swarm that delivers first, then 1080p),
+   * else the indexes asked again, the stalled torrent left out; then, unless the play is held to the torrents, the
+   * cloud providers, looked at whole. True when the session moved.
+   */
+  private async awayFromTorrent(session: StreamSession, torrent: SessionTorrent): Promise<boolean> {
+    const ref = session.ref;
+    const source = this.torrentSource();
+    if (source !== null && session.lock !== 'cloud') {
+      source.noteStalled(ref, torrent.infoHash);
+      let out = await source.next(ref, torrent, session.audioLang);
+      if (!out.ok) out = await this.torrentFor(ref, session.audioLang, [torrent.infoHash]);
+      if (out.ok) {
+        this.letGoTorrent(session);
+        this.sessions.replaceTorrent(session, out.source, out.torrent, out.attempts);
+        this.followSubtitles(session);
+        this.watchTorrents();
+        return true;
+      }
+    }
+    if (session.lock === 'torrent') return false;
+    try {
+      const { out, passed } = await this.vetted(ref, session.avoid, (skip) => this.resolveQuietly(ref, skip), null);
+      if (!passed) return false;
+      this.letGoTorrent(session);
+      this.sessions.replaceSource(session, out.source, out.attempts);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The indexes asked for the title's torrents while a play goes on, `skip` left out. Torrents off: `no_source`. */
+  private async torrentFor(ref: StreamRef, audioLang: string | null, skip: readonly string[]): Promise<TorrentResolve> {
+    const source = this.torrentSource();
+    if (source === null) return { ok: false, error: 'no_source', attempts: [] };
+    const namesHook = this.opts.hooks?.titleNames;
+    return source.resolve(ref, {
+      audioLang,
+      imdbId: await this.imdbIdOf(ref),
+      names: namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref)),
+      resumeS: null,
+      cloudTried: true,
+      skip,
+    });
   }
 
   /**
@@ -1812,12 +1999,12 @@ export class DirectStreamService {
     skip: readonly string[],
     one: (skip: readonly string[], later: boolean) => Promise<ResolvedOutput>,
     headMs: number | null,
-  ): Promise<{ out: ResolvedOutput; late: Promise<string> | null }> {
+  ): Promise<{ out: ResolvedOutput; late: Promise<{ said: string; bad: boolean; why: string }> | null; passed: boolean }> {
     const picture = this.opts.picture ?? null;
     const audio = this.opts.audioCheck ?? null;
     const original = audio === null ? null : await this.audioLang(ref);
     const heard = audio !== null && original !== null && normalizeAudioLang(original) !== 'en' ? { audio, original } : null;
-    if (picture === null && heard === null) return { out: await one(skip, false), late: null };
+    if (picture === null && heard === null) return { out: await one(skip, false), late: null, passed: true };
     const rejected = await this.rejectedProviders(ref, skip);
     const titleHook = this.opts.hooks?.titleLabel;
     const title = (titleHook === undefined ? null : await this.hookValue('titleLabel', () => titleHook(ref))) ?? refLabel(ref);
@@ -1832,7 +2019,7 @@ export class DirectStreamService {
         if (rejected.length === 0 || !(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
         // Only providers rejected on an earlier play are left: one of them plays.
         this.log(`[notesd] direct stream: ${refLabel(ref)} has no provider left but ${rejected.join(', ')}, rejected before (a poor picture or a dub)`);
-        return { out: await one(skip, true), late: null };
+        return { out: await one(skip, true), late: null, passed: false };
       }
       const provider = out.source.provider;
       const looking = this.lookAt(ref, out.source, title, picture, heard);
@@ -1847,17 +2034,17 @@ export class DirectStreamService {
         this.log(`[notesd] direct stream: ${refLabel(ref)} plays from ${provider} while its stream is still being checked`);
         const late = looking.then((done) => {
           this.log(`[notesd] direct stream: ${refLabel(ref)} from ${provider}, checked behind the play: ${done.said}${done.bad ? '; the next play passes this provider over' : ''}`);
-          return done.said;
+          return done;
         });
-        return { out, late };
+        return { out, late, passed: true };
       }
-      if (!look.bad) return { out, late: null };
+      if (!look.bad) return { out, late: null, passed: true };
       first ??= out;
       rejected.push(provider);
     }
     if (first === null) throw new DirectStreamError('no_source', `No provider could stream ${refLabel(ref)}.`, { attempts: seen });
     this.log(`[notesd] direct stream: no provider passed the stream checks for ${refLabel(ref)}; playing ${first.source.provider}`);
-    return { out: { ...first, attempts: seen }, late: null };
+    return { out: { ...first, attempts: seen }, late: null, passed: false };
   }
 
   /**
@@ -1870,16 +2057,19 @@ export class DirectStreamService {
     title: string,
     picture: PictureCheck | null,
     heard: { audio: AudioLangCheck; original: string } | null,
-  ): Promise<{ said: string; bad: boolean }> {
-    type Said = { said: string; bad: boolean };
+  ): Promise<{ said: string; bad: boolean; why: string }> {
+    type Said = { said: string; bad: boolean; why?: string };
     const line = (what: string, look: { verdict: string; reason: string }): string => `${what}: ${look.verdict}${look.reason === '' ? '' : ` (${look.reason})`}`;
     const failed = (what: string) => (err: unknown): Said => ({ said: `${what}: unsure (${messageOf(err).slice(0, 200)})`, bad: false });
     const [seen, sound] = await Promise.all([
-      picture === null ? null : picture.check(ref, source, title).then((look): Said => ({ said: line('picture', look), bad: passesOver(look) }), failed('picture')),
-      heard === null ? null : heard.audio.check(ref, source, heard.original).then((look): Said => ({ said: line('audio', look), bad: passesOverAudio(look) }), failed('audio')),
+      picture === null
+        ? null
+        : picture.check(ref, source, title).then((look): Said => ({ said: line('picture', look), bad: passesOver(look), why: look.verdict === 'recording' ? 'a cinema recording' : 'a burned-in watermark' }), failed('picture')),
+      heard === null ? null : heard.audio.check(ref, source, heard.original).then((look): Said => ({ said: line('audio', look), bad: passesOverAudio(look), why: 'dubbed audio' }), failed('audio')),
     ]);
     const both = [seen, sound].filter((l): l is Said => l !== null);
-    return { said: both.map((l) => l.said).join('; '), bad: both.some((l) => l.bad) };
+    // `why`: the faults in plain words, for the line over the picture when the play moves away from this stream.
+    return { said: both.map((l) => l.said).join('; '), bad: both.some((l) => l.bad), why: both.filter((l) => l.bad).map((l) => l.why ?? '').join(' and ') };
   }
 
   /** One resolve for a title that is already playing or already has a stream in hand: the recordResolve hook runs only when a source was found, so a round that finds none does not mark the title stale. Throws `no_source` / `resolve_failed`. */
@@ -2028,6 +2218,8 @@ export class DirectStreamService {
           ? null
           : { info_hash: torrent.infoHash, file_index: torrent.fileIndex, name: torrent.name, index: torrent.index, state: torrent.state, seeds: torrent.seeds },
       subtitle_rev: torrent === null ? session.outside.subtitleRev : torrent.subtitleRev,
+      source_rev: session.sourceRev,
+      source_note: session.sourceNote,
     };
   }
 

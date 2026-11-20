@@ -52,6 +52,8 @@ export interface SessionTorrent {
   /** The candidates after this one, in the finder's order, for the shuffle button (switchSource). */
   candidates: TorrentCandidate[];
   durationS: number | null;
+  /** The film's own bitrate (the file's bytes over its length), in kbit/s; null or unset when not known (a replay from disk). */
+  filmKbps?: number | null;
   /** The candidate this session opened, to open it again after a release; null: a replay from disk, which joins no swarm. */
   candidate: TorrentCandidate | null;
   /** True while this session holds a `use` of the torrent in the swarm; a release sets it false, a hold true again. */
@@ -67,6 +69,13 @@ export interface SessionTorrent {
    */
   stop: AbortController;
 }
+
+/**
+ * How the owner started the play, which bounds where an automatic switch may take it (autoSwitch in service.ts):
+ * `provider`, a provider named by name, never moves by itself; `cloud` (NTM, NTS) stays among the cloud providers;
+ * `torrent` (TM, TS, a pasted magnet) among the torrents; null (no source named) may go either way.
+ */
+export type SessionLock = 'provider' | 'cloud' | 'torrent' | null;
 
 /** One resolved title the player may stream. In memory only: a daemon restart ends every session. */
 export interface StreamSession {
@@ -101,6 +110,18 @@ export interface StreamSession {
   refreshes: number;
   /** Providers this session left because their stream stalled (switchSource): no later resolve of the session tries them. */
   avoid: string[];
+  /** See SessionLock; null for a session made by anything but a play that named a source. */
+  lock: SessionLock;
+  /** The moves the daemon made by itself (a check behind the play, a torrent that keeps stalling): at most MAX_AUTO_SWITCHES. */
+  autoSwitches: number;
+  /** Counts those moves; the page reads it in the answer to its position reports and loads the session again when it changes. */
+  sourceRev: number;
+  /** Why the last of those moves was made, for the line over the picture; null before the first. */
+  sourceNote: string | null;
+  /** A check behind the play rejected the stream on screen: the move waits for a report of the film playing (never a paused one). */
+  pendingMove: string | null;
+  /** True while an automatic move runs: one at a time. */
+  moving: boolean;
   lastUsedAt: Date;
 }
 
@@ -167,6 +188,12 @@ export class SessionStore {
       refreshedAt: at,
       refreshes: 0,
       avoid: [],
+      lock: null,
+      autoSwitches: 0,
+      sourceRev: 0,
+      sourceNote: null,
+      pendingMove: null,
+      moving: false,
       lastUsedAt: at,
     };
     this.sessions.set(session.id, session);
@@ -208,19 +235,24 @@ export class SessionStore {
     return this.now().getTime() >= this.expiresAt(session).getTime() ? null : session;
   }
 
-  /** A refresh: the new source, its hosts added to the ones the session already had. A resolved source is never a cache's. */
+  /**
+   * A refresh: the new source, its hosts added to the ones the session already had. A resolved source is never a
+   * cache's, nor a torrent's (a torrent session moved to a cloud provider: the caller released the torrent).
+   */
   replaceSource(session: StreamSession, source: ResolvedSource, attempts: ResolveAttempt[]): void {
     session.source = source;
     session.attempts = attempts;
     session.cache = null;
+    session.torrent = null;
     for (const host of sourceHosts(source)) session.allowedHosts.add(host);
     session.refreshedAt = this.now();
     session.refreshes += 1;
   }
 
-  /** The shuffle button on a torrent session: the next torrent and its stand-in source. The caller released the old torrent. */
+  /** The shuffle button on a torrent session, or a cloud session moved to a torrent: the torrent and its stand-in source. The caller released the old torrent. */
   replaceTorrent(session: StreamSession, source: ResolvedSource, torrent: SessionTorrent, attempts: ResolveAttempt[]): void {
     session.source = source;
+    session.cache = null;
     session.attempts = attempts;
     session.torrent = torrent;
     session.refreshedAt = this.now();

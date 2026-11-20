@@ -152,9 +152,13 @@ function TorrentMark({ torrent }: { torrent: TorrentView }) {
 export const SYNCED_NOTICE = 'Subtitles synced';
 export const SYNCED_NOTICE_MS = 4000;
 
-/** The line over the picture about the last ask for another source; a torrent session speaks of torrents. Null: nothing to say. */
-export function sourceLine(changing: boolean, notice: string | null, torrent: boolean): string | null {
+/**
+ * The line over the picture about the last ask for another source; a torrent session speaks of torrents. A move the
+ * daemon made by itself (`switched`: why) says so. Null: nothing to say.
+ */
+export function sourceLine(changing: boolean, notice: string | null, torrent: boolean, switched: string | null = null): string | null {
   if (changing) return torrent ? 'Looking for another torrent…' : 'Looking for another source…';
+  if (switched !== null) return `Switched to another source: ${switched}`;
   if (notice === null) return null;
   if (notice === NO_OTHER_SOURCE) return torrent ? 'No other torrent' : NO_OTHER_SOURCE;
   return torrent ? `Torrent: ${notice}` : `Source: ${notice}`;
@@ -572,7 +576,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
   // A series' session names a neighbour on at least one side; a film's never does.
   const series = state.prevEpisode !== null || state.nextEpisode !== null;
   const fill = view.duration > 0 ? (Math.min(view.time, view.duration) / view.duration) * 100 : 0;
-  const sourceText = sourceLine(state.changingSource, state.sourceNotice, state.torrent !== null);
+  const sourceText = sourceLine(state.changingSource, state.sourceNotice, state.torrent !== null, state.switchedWhy);
 
   return (
     <IconContext.Provider value={ICONS}>

@@ -48,6 +48,11 @@ export const MAX_REFRESHES = 3;
 export const STALL_MIN_MS = 1_500;
 /** This many stalls (or network recoveries) within the window, and the page asks for another source. */
 export const STALLS_TO_SWITCH = 3;
+/**
+ * A torrent session asks only after this many stalls within the window: a torrent buffers while it fills, so the
+ * daemon also checks that its swarm delivers less than the film's bitrate before it moves the play (autoSwitch).
+ */
+export const TORRENT_STALLS_TO_SWITCH = 4;
 export const STALL_WINDOW_MS = 120_000;
 /** A film still waiting is counted again this often. */
 export const STALL_REPEAT_MS = 10_000;
@@ -171,6 +176,8 @@ export interface StreamState {
   changingSource: boolean;
   /** What the last ask for another source came to, for the line over the picture: the new provider's name, or "No other source". */
   sourceNotice: string | null;
+  /** Why the daemon moved the play to another source by itself (`a burned-in watermark`, `the torrent kept stalling`); null when it did not, or the owner asked since. */
+  switchedWhy: string | null;
   /**
    * The subtitle lines to show now, one per line; '' for none. The page draws them itself: Chrome's
    * own drawing of a text track vanished in full screen on the owner's laptop and sat under the
@@ -214,6 +221,7 @@ export const INITIAL_STATE: StreamState = {
   cached: null,
   changingSource: false,
   sourceNotice: null,
+  switchedWhy: null,
   caption: '',
   subtitleDelayMs: 0,
   subtitleSyncs: 0,
@@ -892,20 +900,20 @@ export class StreamController {
   private countStall(): void {
     const now = Date.now();
     this.stalls = [...this.stalls.filter((at) => now - at < STALL_WINDOW_MS), now];
-    if (this.stalls.length >= STALLS_TO_SWITCH) void this.changeSource();
+    if (this.stalls.length >= (this.session?.torrent != null ? TORRENT_STALLS_TO_SWITCH : STALLS_TO_SWITCH)) void this.changeSource();
   }
 
   /**
-   * The film keeps stalling: ask the daemon for another provider of the same title. The film on
-   * screen plays on while the daemon resolves; only when another provider answered does the page
-   * load its stream, at the position it had reached. A cached play has no provider to leave, a
-   * muted check never moves (it measures the provider it was given), and a torrent that buffers is
-   * still filling, so only the owner moves a torrent session (to the next torrent).
+   * The film keeps stalling: ask the daemon for another source of the same title. The film on
+   * screen plays on while the daemon resolves; only when another source answered does the page
+   * load its stream, at the position it had reached. A cached play goes back to the live stream, a
+   * muted check never moves (it measures the provider it was given), and a torrent asks only after
+   * TORRENT_STALLS_TO_SWITCH stalls: the daemon then moves it only when its swarm cannot keep up.
+   * The page's own asks are `auto`, so the daemon's rules for a move nobody asked for apply.
    */
   private async changeSource(byOwner = false): Promise<void> {
     const now = Date.now();
     if (this.disposed || this.askingSource || this.carrying || this.mutedMode || this.session === null || !this.onFilm()) return;
-    if (!byOwner && this.session.torrent !== null) return;
     // A cached play that keeps stalling (a part not on disk fetched from a slow host) goes back to the live stream.
     const leaveCache = this.session.cached !== null;
     if (leaveCache && byOwner) return;
@@ -920,9 +928,9 @@ export class StreamController {
         : `${this.stalls.length} stalls in ${Math.round(STALL_WINDOW_MS / 1000)} s: ${leaveCache ? 'leaving the cache for the live stream' : 'asking for another source'}`,
     );
     this.stalls = [];
-    this.set({ changingSource: true, sourceNotice: null });
+    this.set({ changingSource: true, sourceNotice: null, ...(byOwner ? { switchedWhy: null } : {}) });
     try {
-      const answer = await switchSource(asked, this.deps.fetch, { leaveCache });
+      const answer = await switchSource(asked, this.deps.fetch, leaveCache ? { leaveCache } : byOwner ? {} : { auto: 'stalled' });
       if (this.disposed || this.sessionId !== asked || this.state.stage === 'error') return;
       if (!answer.switched) {
         this.note(`source kept: ${answer.reason ?? 'no_other_source'}`);
@@ -941,8 +949,12 @@ export class StreamController {
     }
   }
 
-  /** Loads the stream of the provider the daemon moved the session to, at the position the film had reached. */
+  /**
+   * Loads the stream of the provider the daemon moved the session to, at the position the film had reached. A move
+   * the daemon made by itself (its `source_rev` went up) says why over the picture: `Switched to another source: …`.
+   */
   private async moveTo(answer: SourceSwitch): Promise<void> {
+    const byDaemon = answer.session.sourceRev !== (this.session?.sourceRev ?? 0) && answer.session.sourceNote !== null;
     this.sourceSwitches += 1;
     // A play that left the cache never goes back to it with a pause.
     if (this.session?.cached != null && answer.session.cached === null) this.cacheAskedFor = this.sessionId;
@@ -968,7 +980,8 @@ export class StreamController {
     });
     this.note(`source: ${answer.from ?? '?'} -> ${answer.provider ?? '?'} at ${round1(continueAt)} s`);
     // Every torrent's provider is `Torrent`: a torrent is named by its release.
-    this.set({ sourceNotice: answer.session.torrent?.name ?? answer.provider });
+    this.set({ sourceNotice: answer.session.torrent?.name ?? answer.provider, switchedWhy: byDaemon ? answer.session.sourceNote : null });
+    if (byDaemon) this.note(`switched by the daemon: ${answer.session.sourceNote ?? ''}`);
     if (answer.session.torrent !== null) this.followTorrent(answer.session.torrent.infoHash);
     await this.loadFileSubtitles(answer.session);
     if (this.disposed || this.session !== answer.session) return;
@@ -1003,7 +1016,7 @@ export class StreamController {
     this.set({ stage: 'refreshing', changingSource: true, sourceNotice: null });
     let gone = false;
     try {
-      const answer = await switchSource(asked, this.deps.fetch, { leaveCache: session.cached !== null });
+      const answer = await switchSource(asked, this.deps.fetch, session.cached !== null ? { leaveCache: true } : { auto: 'broken' });
       if (this.disposed || this.sessionId !== asked) return;
       if (!answer.switched) {
         this.note(`source kept: ${answer.reason ?? 'no_other_source'}`);
@@ -1447,10 +1460,33 @@ export class StreamController {
       writePlayMemory(this.deps.memory, this.memory);
     }
     void postPosition(asked, report, this.deps.fetch).then((answer) => {
-      if (answer.rev !== null) void this.followSubtitleRev(asked, answer.rev);
+      // The daemon moved the session to another source by itself: that reload brings its subtitles too.
+      if (answer.sourceRev !== null && this.session !== null && answer.sourceRev !== this.session.sourceRev) void this.followSourceRev(asked, answer.sourceRev);
+      else if (answer.rev !== null) void this.followSubtitleRev(asked, answer.rev);
       // The daemon restarted under the film (or is restarting): a fresh session for the same play.
       if (answer.gone && !this.disposed && this.sessionId === asked && !this.carrying) void this.carryOn('unknown_session');
     });
+  }
+
+  /**
+   * The daemon moved the session to another source by itself, and the answer to a position report said so (its
+   * `source_rev` went up): a check that finished behind the play rejected the stream on screen (a recording, a
+   * watermark, a dub). The session is read again and its new stream loaded at the position the film reached, as a
+   * move the page asked for is. Nothing while the page's own ask, a move or a carry-on runs: those read the session.
+   */
+  private async followSourceRev(asked: string, rev: number): Promise<void> {
+    const session = this.session;
+    if (this.disposed || this.askingSource || this.carrying || session === null || this.sessionId !== asked || rev === session.sourceRev || !this.onFilm()) return;
+    this.askingSource = true;
+    try {
+      const fresh = await fetchSession(asked, this.deps.fetch);
+      if (this.disposed || this.session !== session || this.sessionId !== asked || fresh.sourceRev === session.sourceRev) return;
+      await this.moveTo({ switched: true, reason: null, from: session.torrent?.name ?? session.provider, provider: fresh.provider, session: fresh });
+    } catch (err) {
+      this.note(`source not reloaded: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+    } finally {
+      this.askingSource = false;
+    }
   }
 
   /**

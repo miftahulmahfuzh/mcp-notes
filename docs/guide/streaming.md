@@ -642,8 +642,10 @@ and never stored (`src/directStream/delivery.ts`).
   log says `source: HyperLink -> VidNest Anime at 312 s`. The session never goes back to a
   provider it left, a token refresh included. With no other source the film stays as it is
   (`source kept: no_other_source`). At most two moves per session, one ask per two minutes;
-  a play from the cache, a torrent (it buffers because it is still filling, not failing; its stalls
-  are only logged) and a `?muted=1` check never move.
+  a `?muted=1` check never moves, and a play from the cache goes back to the live stream. These asks
+  are the page's own (`auto`), so the rules of [A play that moves by itself](#a-play-that-moves-by-itself)
+  apply: a provider the owner named stays, and with no other cloud provider the play goes to a torrent.
+  A torrent asks after four stalls, and moves only when its swarm cannot keep up (same section).
 - **By hand.** The shuffle button, or S, asks for another source at once and as often as wanted
   (a poor picture, a cinema recording): the same route, without the page's own limits. The line
   over the picture says `Looking for another source…`, then `Source: <provider>` or `No other source`.
@@ -651,6 +653,42 @@ and never stored (`src/directStream/delivery.ts`).
   says `Looking for another torrent…`, then `Torrent: <release name>` or `No other torrent`.
 - `direct_stream_sources` shows each provider's `delivery` (`verdict`, `requests`, `failed`,
   `stalls`, `median_kbps`, `at`), null when nothing played from it lately.
+
+### A play that moves by itself
+
+Two things used to be only recorded while the film went on: a picture or audio check that finished
+behind the play (the checks hold a play four seconds at most) and found a watermark, a cinema
+recording or a dub; and a torrent that kept stalling. Now the play moves, with nobody asking, to the
+next good source of the same title, under the same session id and at the position the film reached
+(`autoSwitch` in `src/directStream/service.ts`).
+
+- **A check behind the play.** The verdict is kept as always; the session remembers the move and
+  makes it at the page's next position report of the film playing, never while it is paused. Another
+  cloud provider first, each stream looked at whole, the rejected providers passed over; the move is
+  made only to one that passed. With no cloud provider left, a torrent.
+- **A torrent that keeps stalling.** The page asks after four stalls within two minutes
+  (`POST /api/stream/sessions/<id>/source` with `{auto: "stalled"}`). The daemon leaves the torrent
+  where it is when its swarm delivers at least the film's bitrate (the file's bytes over its length)
+  or its file is whole: those stalls are not the swarm's. Otherwise the stalled torrent is left out of
+  the title's asks like a swarm that did not deliver, the session's other candidates are tried
+  (a swarm that delivers first, then 1080p before 720p), then the indexes again, and with no torrent
+  that plays, a cloud provider.
+- **Where it may go.** Original language only, as every play. A provider the owner named ("from
+  VidLink") never moves by itself (`named_provider`); NTM and NTS stay among the cloud providers, TM,
+  TS and a pasted magnet among the torrents. A play with no source named may go either way.
+- **How often.** One move at a time (`switching`), at most two per session (`limit`); then the play is
+  left as it is and the log says so. A cloud play's own stall asks count among the two.
+- **What the page does.** The answer to each position report carries the session's `source_rev`.
+  When it goes up the page reads the session again and loads the new stream where the film was, as it
+  does after the shuffle button; the line over the picture says
+  `Switched to another source: dubbed audio` (or `a burned-in watermark`, `a cinema recording`,
+  `the torrent kept stalling`, `the stream kept stalling`), and the session's `source_note` holds it.
+- **The log.** One line per move with its reason:
+  `direct stream: <title> switched by itself from Alpha to Beta (dubbed audio; 1 of 2)`, and one when
+  a play stays (`stays on <source> (<why>): no other source plays it now`).
+- **Not covered.** A play carried on after a daemon restart forgets how it was started, so a named
+  provider's play may then move. A cached play that starves goes back to the live stream as before,
+  outside the two moves.
 
 ### The picture check
 
@@ -677,8 +715,9 @@ provider's stream of a title is about to play, the daemon looks at it
   the page opens on the stream that resolved, its attempt reads `checks: running behind the play`
   until the verdict is in, and the daemon's log then says
   `direct stream: <title> from <provider>, checked behind the play: picture: watermark (...); the next play passes this provider over`.
-  That play stays on the stream it opened (the shuffle button, or S, moves it to a proper copy:
-  the verdict is already kept); the next play of the title skips the provider. Of 36 first looks
+  The play then moves by itself, at the page's next report of the film playing, to the next proper
+  copy at the same position ([A play that moves by itself](#a-play-that-moves-by-itself)); the next
+  play of the title skips the provider from the start. Of 36 first looks
   in three days 34 were clean, and waiting for them was the largest delay between a resolve and
   the page: 8 to 53 seconds. A cache and the shuffle button wait for the whole look: nobody waits
   for a page there, and a cache keeps what it resolves.
@@ -711,7 +750,9 @@ undetected. Whisper hears the language actually spoken whatever the tags say, so
 cloud provider's stream of a foreign-language title is about to play, the daemon listens to it
 (`src/directStream/audioLang.ts`), beside the picture check and under the same four-second wait
 (`vetted` in `service.ts`): a kept verdict passes a dubbing provider over before the play, and a
-first hearing that takes longer finishes behind the play and is kept for the next one.
+first hearing that takes longer finishes behind the play and is kept for the next one; a dub heard
+there moves the play by itself to a provider serving the original
+([A play that moves by itself](#a-play-that-moves-by-itself)).
 
 1. ~30 s of audio, 10 minutes in, is cut to a 16 kHz mono WAV, the format the Whisper worker reads,
    the way Wyzie Synced and `/sync-subtitle` cut a cloud stream
@@ -2102,12 +2143,14 @@ torrent soak shared the line; the comparison, not the speed, is the result.
 
   ![A seek past what is on disk: the spinner and "Fetching this part from peers"](img/streaming/player-fetching.png)
 
-- **No automatic move.** A torrent that buffers is still filling, so the page never asks for another
-  source by itself; its `stalled at` lines still go to the stream evidence log. A move throws away what
-  is on disk and starts the next torrent from nothing, and a pause fills a slow one; the choice at the
-  start already took the swarm that delivered. The shuffle button, `Another torrent (S)`, moves to the
-  next torrent (first the ones whose headers also arrived at the start), and the line over the picture
-  names its release.
+- **A torrent that keeps stalling moves.** A torrent that buffers now and then is still filling, so
+  its `stalled at` lines only go to the stream evidence log. Four stalls within two minutes, and the
+  page asks the daemon by itself; the daemon moves the play only while the swarm delivers less than the
+  film's bitrate and the file is not whole on disk
+  ([A play that moves by itself](#a-play-that-moves-by-itself)). In the audit of 2026-11-20, 94 of
+  the stall lines over 35 sessions were torrents', with two moves in all. The shuffle button,
+  `Another torrent (S)`, moves to the next torrent (first the ones whose headers also arrived at the
+  start), and the line over the picture names its release.
 - **No pause cache.** A pause asks for no stream cache: the download is already on this machine.
 - `window.notesdStream.torrent` holds `infoHash`, `name`, `index`, `seeds`, `state`, `peers`,
   `downKbps` (kilobits per second), `progress` (0 to 1) and `fetching`; `cachedRanges` holds the

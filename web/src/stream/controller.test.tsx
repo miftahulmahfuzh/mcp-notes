@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_POLL_MS, RECONNECT_GIVE_UP_MS, RECONNECT_RETRY_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, SUBTITLE_HOLD_MS, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
+import { CACHE_POLL_MS, RECONNECT_GIVE_UP_MS, RECONNECT_RETRY_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_WINDOW_MS, TORRENT_STALLS_TO_SWITCH, SUBTITLE_HOLD_MS, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
@@ -61,9 +61,12 @@ describe('parseSession', () => {
       cached: null,
       torrent: null,
       subtitleRev: 0,
+      sourceRev: 0,
+      sourceNote: null,
       ref: { kind: 'movie', tmdbId: 550 },
       provider: 'VidFast',
     });
+    expect(parseSession(streamSessionJson({ source_rev: 1, source_note: 'dubbed audio' }))).toMatchObject({ sourceRev: 1, sourceNote: 'dubbed audio' });
     expect(parseSession(streamSessionJson({ subtitle_rev: 2 })).subtitleRev).toBe(2);
     // The title the session plays, which a page whose session a restart ended asks to continue by.
     expect(parseSession(streamSessionJson({ kind: 'tv', tmdb_id: 37854, season: 18, episode: 787 })).ref).toEqual({ kind: 'tv', tmdbId: 37854, season: 18, episode: 787 });
@@ -989,6 +992,59 @@ describe('a film that keeps stalling', () => {
   });
 });
 
+describe('the daemon moves the play by itself (a check behind the play, a torrent that keeps stalling)', () => {
+  it("a stall ask is the page's own (auto), and a move the daemon made says why over the picture", async () => {
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson()),
+      [`POST ${S1}/source`]: () =>
+        jsonResponse({ ...streamSessionJson({ manifest_url: `${S1}/p?u=m2`, provider: 'VidNest', source_rev: 1, source_note: 'the stream kept stalling' }), switched: true, reason: null, from: 'HyperLink' }),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 300, duration: 1440, paused: false });
+    t.fire('timeupdate');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    for (let i = 0; i < STALLS_TO_SWITCH; i++) {
+      t.fire('waiting');
+      await vi.advanceTimersByTimeAsync(STALL_MIN_MS);
+      t.fire('playing');
+    }
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.calls.filter((c) => c.url === `${S1}/source`).map((c) => c.body)).toEqual([{ auto: 'stalled' }]);
+    expect(t.controller.getState().switchedWhy).toBe('the stream kept stalling');
+    expect(t.controller.getState().log).toContain('switched by the daemon: the stream kept stalling');
+  });
+
+  it('a position answer whose source_rev went up loads the new source at the position the film reached', async () => {
+    const daemon = { rev: 0 };
+    const t = setup({
+      [`GET ${S1}`]: () =>
+        jsonResponse(
+          daemon.rev === 0
+            ? streamSessionJson()
+            : streamSessionJson({ manifest_url: `${S1}/p?u=m2`, provider: 'VidNest', source_rev: 1, source_note: 'dubbed audio' }),
+        ),
+      [`POST ${S1}/position`]: () => jsonResponse({ ok: true, play_id: 'p1', ended: false, subtitle_rev: 0, source_rev: daemon.rev }),
+    });
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 612, duration: 1440, paused: false });
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    expect(t.made).toHaveLength(1);
+    daemon.rev = 1;
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    // The same session id: the address and the play's memory stay; only the stream changes.
+    expect(t.made[1].req).toMatchObject({ src: `${S1}/p?u=m2`, startAt: 612 });
+    expect(t.controller.getState()).toMatchObject({ sourceNotice: 'VidNest', switchedWhy: 'dubbed audio' });
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    expect(t.made).toHaveLength(2);
+  });
+});
+
 describe('a pause caches the film on this machine', () => {
   const CACHE = `POST ${S1}/cache`;
   const CID = 'cb36a1ba-2c30-458e-8a8a-12475511d510';
@@ -1401,7 +1457,7 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
     await vi.waitFor(() => expect(t.reads()).toBe(hidden + 1));
   });
 
-  it('a torrent that buffers never asks for another source by itself; the button moves to the next torrent and names it', async () => {
+  it('a torrent that buffers now and then does not ask for another source by itself; the button moves to the next torrent and names it', async () => {
     const t = await playing({
       [STATUS]: () => downloading(),
       [MAP]: sixtyOnDisk,
@@ -1417,14 +1473,16 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
         }),
     });
     await vi.waitFor(() => expect(t.controller.getState().cachedRanges).toEqual([[0, 60]]));
-    for (let i = 0; i < STALLS_TO_SWITCH * 2; i++) {
+    // Fewer than TORRENT_STALLS_TO_SWITCH within the window, spread out: a torrent filling, not failing.
+    for (let i = 0; i < TORRENT_STALLS_TO_SWITCH * 2; i++) {
       t.fire('waiting');
       await vi.advanceTimersByTimeAsync(STALL_MIN_MS);
       t.fire('playing');
+      await vi.advanceTimersByTimeAsync(STALL_WINDOW_MS / (TORRENT_STALLS_TO_SWITCH - 1));
     }
     const asks = () => t.calls.filter((c) => c.method === 'POST' && c.url === `${S1}/source`);
     expect(asks()).toHaveLength(0);
-    expect(t.controller.getState().log.filter((line) => line.startsWith('stalled at'))).toHaveLength(STALLS_TO_SWITCH * 2);
+    expect(t.controller.getState().log.filter((line) => line.startsWith('stalled at'))).toHaveLength(TORRENT_STALLS_TO_SWITCH * 2);
     expect(t.controller.getState().log.some((line) => line.includes('asking for another source'))).toBe(false);
     t.controller.anotherSource();
     await vi.waitFor(() => expect(t.made).toHaveLength(2));
@@ -1439,6 +1497,32 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
     // The torrent it left is no longer read, and the next one is complete: nothing more to ask.
     expect(t.reads()).toBe(first);
     expect(t.reads(NEXT)).toBe(next);
+  });
+
+  it('a torrent that keeps stalling asks the daemon by itself, and plays the torrent it moved to from where the film was', async () => {
+    const t = await playing({
+      [STATUS]: () => downloading({ peers: 2, down_kbps: 300 }),
+      [MAP]: sixtyOnDisk,
+      [`GET /api/stream/torrent/${NEXT}`]: () => jsonResponse({ info_hash: NEXT, state: 'downloading', peers: 30, down_kbps: 9000, progress: 0.1 }),
+      [`GET /api/stream/torrent/${NEXT}/map`]: () => jsonResponse({ duration_s: 888, ranges: [[0, 40]] }),
+      [`POST ${S1}/source`]: () =>
+        jsonResponse({
+          ...onTorrent({ manifest_url: `/api/stream/torrent/${NEXT}/f/0`, torrent: torrentJson({ info_hash: NEXT, name: 'Sintel.2010.1080p.BluRay.x264' }), source_rev: 1, source_note: 'the torrent kept stalling' }),
+          switched: true,
+          reason: null,
+          from: 'Torrent: Sintel.2010.1080p.WEB.x264',
+          provider: 'Torrent',
+        }),
+    });
+    for (let i = 0; i < TORRENT_STALLS_TO_SWITCH; i++) {
+      t.fire('waiting');
+      await vi.advanceTimersByTimeAsync(STALL_MIN_MS);
+      t.fire('playing');
+    }
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.calls.filter((c) => c.method === 'POST' && c.url === `${S1}/source`).map((c) => c.body)).toEqual([{ auto: 'stalled' }]);
+    expect(t.made[1].req).toMatchObject({ src: `/api/stream/torrent/${NEXT}/f/0`, startAt: 30 });
+    expect(t.controller.getState().switchedWhy).toBe('the torrent kept stalling');
   });
 
   it('a seek past what is on disk waits for it, and the wait ends when the part arrives', async () => {

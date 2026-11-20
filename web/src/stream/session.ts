@@ -32,6 +32,10 @@ export interface StreamSession {
   torrent: TorrentInfo | null;
   /** How many times the daemon replaced `subtitles` since the play started (Wyzie Synced re-timed a torrent's subtitle). The answer to a position report carries the number now. */
   subtitleRev: number;
+  /** The daemon's count of its own moves of the session to another source (a check behind the play, a torrent that kept stalling); 0 when none. */
+  sourceRev: number;
+  /** Why the daemon last moved the session by itself (`a burned-in watermark`); null when it never did. */
+  sourceNote: string | null;
   /** The film or episode the session plays; null when the daemon did not say. A page whose session a restart ended asks to continue it by this. */
   ref: SessionRef | null;
   /** The provider the session streams from (`Torrent` for a torrent); null when not said. */
@@ -191,6 +195,8 @@ export function parseSession(json: unknown): StreamSession {
     cached: torrent === null ? cachedInfo(o.cached) : null,
     torrent,
     subtitleRev: count(o.subtitle_rev) ?? 0,
+    sourceRev: count(o.source_rev) ?? 0,
+    sourceNote: text(o.source_note),
     ref: sessionRef(o),
     provider: text(o.provider),
   };
@@ -378,11 +384,13 @@ export interface SourceSwitch {
  * resolves without the provider on screen, which takes seconds, like a play. Throws SessionError
  * with the daemon's code (`unknown_session`, ...).
  */
-export async function switchSource(id: string, fetchImpl: typeof fetch, options: { leaveCache?: boolean } = {}): Promise<SourceSwitch> {
+export async function switchSource(id: string, fetchImpl: typeof fetch, options: { leaveCache?: boolean; auto?: 'stalled' | 'broken' } = {}): Promise<SourceSwitch> {
   let res: Response;
+  // `leave_cache`: a play from this machine's cache that keeps stalling goes back to the live stream.
+  // `auto`: the page asks by itself, so the daemon's rules for a move nobody asked for apply (its budget, a named provider stays).
+  const ask = options.leaveCache === true ? { leave_cache: true } : options.auto !== undefined ? { auto: options.auto } : null;
   try {
-    // `leave_cache`: a play from this machine's cache that keeps stalling goes back to the live stream.
-    res = await fetchImpl(sourceUrl(id), options.leaveCache === true ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ leave_cache: true }) } : { method: 'POST' });
+    res = await fetchImpl(sourceUrl(id), ask === null ? { method: 'POST' } : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ask) });
   } catch {
     throw new SessionError('network', 0);
   }
@@ -415,6 +423,8 @@ export async function switchEpisode(id: string, to: 'prev' | 'next', fetchImpl: 
 export interface PositionAnswer {
   /** The session's `subtitle_rev` as the daemon has it now (StreamSession.subtitleRev); null when it did not say. */
   rev: number | null;
+  /** The session's `source_rev` as the daemon has it now (StreamSession.sourceRev); null when it did not say. */
+  sourceRev: number | null;
   /** The daemon does not know the session (it restarted), or could not be reached: the page carries its play on. */
   gone: boolean;
 }
@@ -433,12 +443,12 @@ export async function postPosition(id: string, report: PositionReport, fetchImpl
       ...(report.closed === true ? { keepalive: true } : {}),
     });
   } catch {
-    return { rev: null, gone: report.closed !== true };
+    return { rev: null, sourceRev: null, gone: report.closed !== true };
   }
-  if (report.closed === true) return { rev: null, gone: false };
-  const body = (await res.json().catch(() => null)) as { subtitle_rev?: unknown; error?: unknown } | null;
-  if (!res.ok) return { rev: null, gone: body?.error === 'unknown_session' || daemonDown(res.status, body) };
-  return { rev: count(body?.subtitle_rev), gone: false };
+  if (report.closed === true) return { rev: null, sourceRev: null, gone: false };
+  const body = (await res.json().catch(() => null)) as { subtitle_rev?: unknown; source_rev?: unknown; error?: unknown } | null;
+  if (!res.ok) return { rev: null, sourceRev: null, gone: body?.error === 'unknown_session' || daemonDown(res.status, body) };
+  return { rev: count(body?.subtitle_rev), sourceRev: count(body?.source_rev), gone: false };
 }
 
 /** A 502, 503 or 504 with no error of the daemon's own: a proxy in front of a daemon that is not there (the Vite dev server). */
