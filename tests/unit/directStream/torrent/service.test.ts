@@ -283,6 +283,27 @@ describe('TorrentStreams', () => {
     await expect(readdir(folder.dirOf(OLD))).rejects.toThrow();
   });
 
+  it('sweeps folders no row of this host names and nothing uses, and keeps every other file under the root', async () => {
+    const records = new MemoryTorrentRecords();
+    const KEPT = 'b2'.repeat(20);
+    const ORPHAN = 'd3'.repeat(20);
+    const THEIRS = 'e4'.repeat(20);
+    await records.record('host-a', { infoHash: KEPT, ref: REF, name: 'Kept', release: null, trackers: [] }, new Date(clock));
+    await records.record('host-b', { infoHash: THEIRS, ref: REF, name: 'Theirs', release: null, trackers: [] }, new Date(clock));
+    const { streams, folder } = build({ records });
+    await streams.open(PICK, OPEN);
+    await records.delete('host-a', HASH);
+    for (const hash of [KEPT, ORPHAN, THEIRS, HASH]) {
+      await mkdir(path.join(folder.dirOf(hash), 'notesd-remux', '1'), { recursive: true });
+      await writeFile(path.join(folder.dirOf(hash), 'notesd-remux', '1', 'seg-00000.m4s'), 'x');
+    }
+    await writeFile(path.join(root, 'trackers.json'), '{}');
+    await writeFile(path.join(root, 'tracker-lists.json'), '{}');
+    await mkdir(path.join(root, 'not-a-torrent'), { recursive: true });
+    expect(await streams.prune()).toBe(2);
+    expect((await readdir(root)).sort()).toEqual([HASH, KEPT, 'not-a-torrent', 'tracker-lists.json', 'trackers.json'].sort());
+  });
+
   it('peeks at a swarm without recording, selecting or keeping anything (the trending probe)', async () => {
     const { streams, engine, records, folder } = build();
     const seen = await streams.peek(HASH.toUpperCase(), PICK.trackers, OPEN);

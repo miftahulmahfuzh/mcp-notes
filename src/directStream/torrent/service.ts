@@ -431,7 +431,11 @@ export class TorrentStreams {
     }
   }
 
-  /** Deletes this host's downloads not played for `keepDays`, with their folders. Never throws. */
+  /**
+   * Deletes this host's downloads not played for `keepDays`, with their folders, then every folder under the torrent
+   * dir that no row of this host names and nothing uses now (a torrent left behind by a crash or an older daemon).
+   * Files under the root (the tracker book, the tracker lists) are never touched. Never throws.
+   */
   async prune(): Promise<number> {
     this.lastPrune = this.nowMs();
     let cleared = 0;
@@ -446,6 +450,17 @@ export class TorrentStreams {
       }
     } catch (err) {
       this.log(`[notesd] torrent: could not clear old downloads: ${messageOf(err)}`);
+    }
+    try {
+      const named = new Set((await this.repo.all()).filter((r) => r.host === this.host).map((r) => r.infoHash));
+      for (const hash of await this.folder.hashes()) {
+        if (named.has(hash) || this.active.has(hash) || this.opening.has(hash) || this.peeking.has(hash)) continue;
+        await this.folder.remove(hash);
+        cleared += 1;
+        this.log(`[notesd] torrent: cleared the folder ${hash.slice(0, 8)}, which no download names`);
+      }
+    } catch (err) {
+      this.log(`[notesd] torrent: could not clear folders no download names: ${messageOf(err)}`);
     }
     return cleared;
   }
