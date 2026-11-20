@@ -1803,7 +1803,11 @@ DHT node and no peer.
    being fetched ahead, or `POST /api/stream/torrent` with `files` until its release route is
    called). Once nothing does, a finished download leaves at once and an unfinished one three
    minutes after its last file request.
-7. A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
+7. A torrent gets its `stream_torrents` row once a peer has sent its file list; one whose file list never
+   comes leaves no row. A torrent that does not play (it lost the race to another, its file was refused)
+   leaves its swarm with its row and its folder when its open made the row and nothing of it was played;
+   a row an earlier play made stays.
+   A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
    A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
 8. Peers are reached over TCP only, with no switch. uTP beside it made things worse from this machine, WSL 2
    behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP alone fetched 183, 226, 184

@@ -116,6 +116,28 @@ describe('a hold on a torrent is given back only by the caller that took it', ()
     expect(records.rows).toHaveLength(1);
   });
 
+  it('the torrents of a race that do not play leave no row behind', async () => {
+    const OTHER = 'beef'.padEnd(40, '1');
+    const DEAD = 'dead'.padEnd(40, '2');
+    const engine = new FakeTorrentEngine([
+      { infoHash: HASH, name: NAME, files: FILES },
+      { infoHash: OTHER, name: 'Other', files: [{ path: 'Other/Fixture.Film.2026.mkv', data: Buffer.alloc(2048, 3) }] },
+    ]);
+    const records = new MemoryTorrentRecords();
+    const streams = new TorrentStreams({ engine, repo: records, folder: new TorrentFolder(root), host: 'host-a', uploadKbps: 100, keepDays: 7, discovery: true, log: () => undefined, every: () => () => undefined });
+    const answer: FindAnswer = {
+      candidates: [candidate, { ...candidate, infoHash: OTHER, name: 'Other.720p' }, { ...candidate, infoHash: DEAD, name: 'Dead.720p' }],
+      indexes: [],
+      excluded: [],
+      lastResort: [],
+    };
+    const source = new TorrentSource({ swarm: streams, find: async () => answer, probe: async () => MP4, tiers: [], localBase: () => 'http://127.0.0.1:1', log: () => undefined, settleMs: 20 });
+    const out = await source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0137523' });
+    expect(out.ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(records.rows.map((r) => r.infoHash)).toEqual([out.ok ? out.torrent.infoHash : '']);
+  });
+
   it('a use whose row cannot be written counts no user', async () => {
     const { streams, records } = build();
     await streams.open(PICK, OPEN);

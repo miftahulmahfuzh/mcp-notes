@@ -177,10 +177,36 @@ describe('TorrentStreams', () => {
     expect(engine.removed).toEqual([HASH]);
   });
 
-  it('records a torrent no peer describes as failed', async () => {
+  it('writes no row for a torrent no peer describes', async () => {
     const { streams, records } = build({ engine: new FakeTorrentEngine([]) });
     await expect(streams.open(PICK, OPEN)).rejects.toMatchObject({ code: 'no_metadata' });
-    expect(records.rows[0]).toMatchObject({ state: 'failed', error: 'no_metadata' });
+    expect(records.rows).toEqual([]);
+  });
+
+  it('a torrent that does not play, opened fresh and never played, leaves no row and no folder', async () => {
+    const { streams, engine, records, folder } = build();
+    await streams.open(PICK, OPEN);
+    await streams.use(HASH, [1]);
+    await put(folder, FILES[1]!.path, VIDEO.subarray(0, 100));
+    await streams.drop(HASH);
+    expect(engine.removed).toEqual([HASH]);
+    expect(records.rows).toEqual([]);
+    await expect(readdir(folder.dirOf(HASH))).rejects.toThrow();
+    await streams.open(PICK, OPEN);
+    await streams.discard(HASH);
+    expect(records.rows).toEqual([]);
+  });
+
+  it('a torrent that does not play keeps the row an earlier play made', async () => {
+    const records = new MemoryTorrentRecords();
+    await records.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: PICK.name, trackers: [] }, new Date(clock - 86_400_000));
+    const { streams, folder } = build({ records });
+    await streams.open(PICK, OPEN);
+    await streams.use(HASH, [1]);
+    await put(folder, FILES[1]!.path, VIDEO.subarray(0, 100));
+    await streams.drop(HASH);
+    expect(records.rows).toHaveLength(1);
+    expect(await onDisk(folder)).toEqual([FILES[1]!.path]);
   });
 
   it('plays a finished download from disk without joining a swarm (R2.9)', async () => {

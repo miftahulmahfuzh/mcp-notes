@@ -64,6 +64,11 @@ interface Active {
   lastRequestAt: number;
   /** This host's row as last written; ticks read it instead of the database. */
   row: StreamTorrentRow;
+  /**
+   * The row was made by this open (none was there, or only a failed one): a torrent that leaves as one that does not
+   * play, never played, takes its row and folder with it.
+   */
+  fresh: boolean;
 }
 
 const defaultEvery = (fn: () => void, ms: number): (() => void) => {
@@ -237,7 +242,7 @@ export class TorrentStreams {
     if (hash === null || live === undefined) return;
     live.lastRequestAt = this.nowMs();
     if (live.users === 0) {
-      await this.leave(hash, live, 'it was opened and never used');
+      await this.leave(hash, live, 'it was opened and never used', { forget: true });
       return;
     }
     live.users -= 1;
@@ -254,7 +259,7 @@ export class TorrentStreams {
     const live = hash === null ? undefined : this.active.get(hash);
     if (hash === null || live === undefined) return;
     if (live.users > 0) live.users -= 1;
-    if (live.users === 0) await this.leave(hash, live, 'it is not the torrent that plays');
+    if (live.users === 0) await this.leave(hash, live, 'it is not the torrent that plays', { forget: true });
   }
 
   /**
@@ -266,7 +271,7 @@ export class TorrentStreams {
     const hash = normalizeInfoHash(infoHash);
     const live = hash === null ? undefined : this.active.get(hash);
     if (hash === null || live === undefined || live.users > 0) return;
-    await this.leave(hash, live, 'it is not the torrent that plays');
+    await this.leave(hash, live, 'it is not the torrent that plays', { forget: true });
   }
 
   /** The peers connected and the download rate of a torrent in the swarm, now; null when it is not in it. */
@@ -444,16 +449,17 @@ export class TorrentStreams {
     try {
       handle = await this.engine.add({ infoHash: pick.infoHash, trackers: pick.trackers, name: pick.name }, options);
     } catch (err) {
+      // No row: a torrent whose file list never came holds nothing (most are the race's candidates that did not answer).
       const failure = err instanceof TorrentError ? err : new TorrentError('engine_error', messageOf(err));
       if (failure.code !== 'closing') {
-        await this.repo.record(this.host, spec(existing?.name ?? pick.name ?? pick.infoHash), this.now());
-        await this.repo.failed(this.host, pick.infoHash, failure.code, this.now());
+        if (existing === null) await this.folder.remove(pick.infoHash).catch(() => undefined);
         this.log(`[notesd] torrent: ${pick.name ?? pick.infoHash}: ${failure.code}: ${failure.message}`);
       }
       throw failure;
     }
     const row = await this.repo.record(this.host, spec(handle.name), this.now());
-    this.active.set(pick.infoHash, { handle, users: 0, lastRequestAt: this.nowMs(), row });
+    const fresh = existing === null || existing.state === 'failed';
+    this.active.set(pick.infoHash, { handle, users: 0, lastRequestAt: this.nowMs(), row, fresh });
     this.log(`[notesd] torrent: joined the swarm of ${handle.name} (${pick.infoHash.slice(0, 8)}), ${handle.files.length} files, nothing chosen yet`);
     return handle;
   }
@@ -504,9 +510,24 @@ export class TorrentStreams {
     }
   }
 
-  private async leave(hash: string, live: Active, why: string): Promise<void> {
+  /**
+   * Leaves the swarm. `forget`: the torrent does not play (it lost the race, its open gave up, its file was refused);
+   * when this open made its row and nothing of it was ever played or finished, the row and the folder go too.
+   */
+  private async leave(hash: string, live: Active, why: string, options: { forget?: boolean } = {}): Promise<void> {
     if (this.active.get(hash) !== live) return;
     this.active.delete(hash);
+    if (options.forget === true && live.fresh && live.row.playedAt === null && live.row.state !== 'ready') {
+      try {
+        await this.engine.remove(hash, { deleteFiles: true });
+        await this.folder.remove(hash);
+        await this.repo.delete(this.host, hash);
+      } catch (err) {
+        this.log(`[notesd] torrent: could not clear ${live.row.name} after leaving its swarm: ${messageOf(err)}`);
+      }
+      this.log(`[notesd] torrent: left the swarm of ${live.row.name} (${hash.slice(0, 8)}) and deleted what it fetched: ${why}`);
+      return;
+    }
     try {
       await this.engine.remove(hash, { deleteFiles: false });
     } catch (err) {
