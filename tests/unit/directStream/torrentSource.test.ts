@@ -48,7 +48,7 @@ interface Fakes {
   onFind?: (query: unknown) => void;
   /** Wyzie Synced as a recorder of what it was started with. */
   sync?: SyncRequest[];
-  /** What each swarm delivers; with it the swarm also has `drop` (recorded as `drop <hash>`). */
+  /** What each swarm delivers; with it the swarm also has `drop` and `discard` (recorded as `drop <hash>`, `discard <hash>`). */
   stats?: Record<string, { peers: number; down_kbps: number }>;
   /** Milliseconds before a torrent's file list arrives, and before its header is read. */
   openDelay?: Record<string, number>;
@@ -89,6 +89,9 @@ function setup(o: Fakes = {}) {
           stats: (infoHash: string) => o.stats?.[infoHash] ?? null,
           drop: (infoHash: string) => {
             calls.push(`drop ${infoHash}`);
+          },
+          discard: (infoHash: string) => {
+            calls.push(`discard ${infoHash}`);
           },
         }),
   };
@@ -397,9 +400,11 @@ describe('TorrentSource: the torrent is chosen by what its swarm delivers', () =
       ['skipped', `still opening when ${B.name} was chosen`],
     ]);
     expect(out.ok && out.torrent.candidates.map((c) => c.infoHash)).toEqual([h(1), h(3)]);
-    // A torrent cancelled while its file list was on its way is let go of as soon as it is open, and never used.
+    // A torrent cancelled while its file list was on its way is let go of as soon as it is open, and never used:
+    // it took no hold, so it gives none back.
     await wait(450);
-    expect(t.calls.filter((c) => c.startsWith('drop ')).sort()).toEqual([`drop ${h(1)}`, `drop ${h(3)}`]);
+    expect(t.calls.filter((c) => c.startsWith('discard ')).sort()).toEqual([`discard ${h(1)}`, `discard ${h(3)}`]);
+    expect(t.calls.some((c) => c.startsWith('drop '))).toBe(false);
     expect(t.calls).not.toContain(`use ${h(1)} 0`);
     expect(t.calls).not.toContain(`use ${h(3)} 0`);
   });

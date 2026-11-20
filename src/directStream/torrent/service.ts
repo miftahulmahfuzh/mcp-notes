@@ -218,7 +218,13 @@ export class TorrentStreams {
     for (const f of chosen) if (!files.some((m) => m.index === f.index)) files.push({ index: f.index, path: f.path, length: f.length });
     const fileIndex = live.row.fileIndex ?? chosen.find((f) => mediaOf(f.name) === 'video')?.index ?? null;
     const fileLength = files.find((f) => f.index === fileIndex)?.length ?? null;
-    live.row = await this.repo.chosen(this.host, hash, { files, fileIndex, fileLength }, this.now());
+    try {
+      live.row = await this.repo.chosen(this.host, hash, { files, fileIndex, fileLength }, this.now());
+    } catch (err) {
+      // The caller sees a throw and holds nothing: the user it was counted as is taken back.
+      live.users -= 1;
+      throw err;
+    }
   }
 
   /**
@@ -239,8 +245,9 @@ export class TorrentStreams {
   }
 
   /**
-   * One user fewer, and with none left the swarm is left at once, finished or not: a torrent that lost the choice
-   * to another, or whose file does not play. What it downloaded stays until the prune. Unknown: ignored.
+   * Gives back a hold taken with `use`, and with none left the swarm is left at once, finished or not: a torrent
+   * that lost the choice to another, or whose file does not play. Only for a caller whose `use` answered; one
+   * that opened the torrent and used nothing calls `discard`. Unknown: ignored.
    */
   async drop(infoHash: string): Promise<void> {
     const hash = normalizeInfoHash(infoHash);
@@ -248,6 +255,18 @@ export class TorrentStreams {
     if (hash === null || live === undefined) return;
     if (live.users > 0) live.users -= 1;
     if (live.users === 0) await this.leave(hash, live, 'it is not the torrent that plays');
+  }
+
+  /**
+   * For a caller that opened a torrent and took no hold of it (its open gave up, it holds no file of the title,
+   * another torrent was chosen first): the swarm is left at once when nothing uses the torrent. A hold another
+   * caller took is never touched, so a torrent a session plays stays in the swarm. Unknown: ignored.
+   */
+  async discard(infoHash: string): Promise<void> {
+    const hash = normalizeInfoHash(infoHash);
+    const live = hash === null ? undefined : this.active.get(hash);
+    if (hash === null || live === undefined || live.users > 0) return;
+    await this.leave(hash, live, 'it is not the torrent that plays');
   }
 
   /** The peers connected and the download rate of a torrent in the swarm, now; null when it is not in it. */

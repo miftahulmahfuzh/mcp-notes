@@ -1905,7 +1905,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   old one. A torrent session is never moved into the stream cache: its download is already on this machine.
 - **Leaving the swarm.** A session lets go of its torrent when the page closes or the film ends, when it moves to
   another torrent, after two minutes without a word from the page, and when the session ends; with no other session
-  on it the daemon leaves the swarm. Reopening the page takes the torrent again.
+  on it the daemon leaves the swarm. Reopening the page takes the torrent again. Each user of a torrent gives
+  back only its own hold: an ask that opens a torrent another session is playing and cannot use it (no file of
+  the episode, a dub, another torrent chosen first) never takes it out of the swarm.
 - **Playing again from disk.** A title whose torrent download is whole on this machine plays from disk at once, with
   no index asked and no swarm joined (no `Index:` or `Torrent:` attempt, `torrent.state` `ready`). The file is read again first: one
   that turns out to be a dub, or that Chrome cannot play, is passed over and the play goes on as if it were not there.

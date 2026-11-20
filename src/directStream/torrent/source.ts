@@ -93,8 +93,10 @@ export interface TorrentSwarm {
   localUrl(infoHash: string, index: number): string;
   /** The video's length once the probe knows it: `/map` then answers seconds (phase 4's grey bar). */
   setDuration(infoHash: string, seconds: number): unknown;
-  /** One user fewer, and with none left the swarm is left at once (a torrent that lost the race, or did not play). Absent: `release`. */
+  /** Gives back a hold taken with `use`; with none left the swarm is left at once (a torrent that lost the race, or did not play). Absent: `release`. */
   drop?(infoHash: string): unknown;
+  /** For a torrent opened and not used: leaves its swarm at once when nothing uses it, and touches nobody's hold. Absent: `release`. */
+  discard?(infoHash: string): unknown;
   /** The peers connected and the download rate of an open torrent, now; null when it is not in the swarm. Absent in tests' fakes. */
   stats?(infoHash: string): Pick<TorrentStats, 'peers' | 'down_kbps'> | null;
 }
@@ -818,11 +820,15 @@ export class TorrentSource {
     return [{ provider: SUBTITLES_PENDING, outcome: 'skipped', took_s: seconds(started, this.now()), detail: 'the subtitle search goes on behind the play; the player loads the track when it arrives' }];
   }
 
-  /** One user fewer for a torrent that will not play, leaving its swarm at once where the swarm can (`drop`). */
-  private dropNow(infoHash: string): void {
+  /**
+   * Lets go of a torrent that will not play, leaving its swarm at once where the swarm can. `held`: this caller's
+   * `use` took a hold, which is given back (`drop`); without one nobody's hold is touched (`discard`).
+   */
+  private dropNow(infoHash: string, held: boolean): void {
     const swarm = this.opts.swarm;
+    const letGo = held ? swarm.drop : swarm.discard;
     void Promise.resolve()
-      .then(() => (swarm.drop === undefined ? swarm.release(infoHash) : swarm.drop(infoHash)))
+      .then(() => (letGo === undefined ? swarm.release(infoHash) : letGo.call(swarm, infoHash)))
       .catch((err: unknown) => this.log(`[notesd] torrent: could not release ${infoHash}: ${messageOf(err)}`));
   }
 
@@ -943,11 +949,12 @@ export class TorrentSource {
    */
   private race(ref: StreamRef, query: FindQuery, c: TorrentCandidate, position: number, play: PlayFacts, budgetMs: number): Racer {
     const started = this.now();
-    const state = { cancelled: false, opened: false, gone: false };
+    // `held`: this racer's `use` counted it as a user of the torrent; only then is there a hold to give back.
+    const state = { cancelled: false, opened: false, held: false, gone: false };
     const drop = (): void => {
       if (!state.opened || state.gone) return;
       state.gone = true;
-      this.dropNow(c.infoHash);
+      this.dropNow(c.infoHash, state.held);
     };
     const attempt = (outcome: ResolveOutcome, detail: string): ResolveAttempt => ({ provider: torrentLabel(c.name), outcome, took_s: seconds(started, this.now()), detail });
     const fail = (outcome: ResolveOutcome, detail: string, lasting = false): Raced => {
@@ -971,7 +978,14 @@ export class TorrentSource {
         if (picked === null) {
           return fail('no_stream', ref.kind === 'tv' ? `the torrent holds no file of S${pad(ref.season)}E${pad(ref.episode)}` : 'the torrent holds no video file', true);
         }
-        await this.opts.swarm.use(c.infoHash, [picked.video, ...picked.subtitles]);
+        // Set before the call: the swarm counts the user at once, and a cancel while the row is written must give it back.
+        state.held = true;
+        try {
+          await this.opts.swarm.use(c.infoHash, [picked.video, ...picked.subtitles]);
+        } catch (err) {
+          state.held = false;
+          throw err;
+        }
         if (state.cancelled) return left();
         const manifestUrl = this.opts.swarm.localUrl(c.infoHash, picked.video);
         const probeMs = Math.max(PROBE_MIN_MS, Math.min(TORRENT_PROBE_TIMEOUT_MS, budgetMs - (this.now() - started)));
