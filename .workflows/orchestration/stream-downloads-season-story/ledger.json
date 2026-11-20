@@ -62,24 +62,24 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "2a665d9",
       "depends_on": [
         2,
         3
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "routes POST/GET/DELETE /api/stream/downloads, direct_stream_cache provider/info_hash/season, web client functions, docs regenerated; typecheck, npm test (4599) and test:int (1052) pass; minted only SD04, index TaskID column left to coordinator; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1121-000528-921728/evidence",
       "package": "src/http`, `src/mcp",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-21T00:09:08+07:00",
       "satisfies": [
         "R1",
         "R2",
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD04",
       "title": "Routes and the tool: `/api/stream/downloads`, `direct_stream_cache"
     },
     {
@@ -98,7 +98,7 @@
         "R4",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "The Cache page: Downloading filter, progress bars, why a row downloads"
     },
@@ -158,7 +158,7 @@
         "R2",
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "The title page: Download buttons, the choose menu, progress bars"
     },
@@ -202,7 +202,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Office network: a torrent download through WARP before the cloud"
     }
@@ -210,6 +210,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-20T23:59:44+07:00",
+  "updated": "2026-11-21T00:09:28+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
