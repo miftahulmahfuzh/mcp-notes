@@ -22,6 +22,28 @@
 
 ### [P1] High
 
+- [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns docs/guide/streaming.md "Seek previews" section and related lines, docs/guide/movies.md Cache page, the NOTESD_STREAM_PREVIEWS row's link, CLAUDE.md Streaming rule, scripts/docs/shots/streaming.mjs + player-preview.png, the verify-notesd feature map entry and scripts/stream/{make-preview-film.sh,seek-previews.steps.mjs}; fixes what the end-to-end run finds in phases 1-4, each with its test. Exit: the end-to-end steps pass for a cache play and a torrent play; `npm run docs:check` is clean; the guide shows the new picture.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/seek-preview-thumbnails/PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R1 — "user hover on the timeline and see miniscreen showing the scene of that timestamp. [...] can we build it here?" · criteria: R1.6
+  - **Depends on**: P1-NOTES-A139, P1-NOTES-A140, P1-NOTES-SP03, P1-NOTES-SP04
+  - **Plan**: `.workflows/plan/P1-NOTES-SP05.md`
+  - **Completed**: 2026-11-20 21:19
+  - **Method**: /implement
+  - **Files**: docs/guide/streaming.md, docs/guide/movies.md, docs/guide/reference/configuration.md, CLAUDE.md, scripts/docs/shots/streaming.mjs, docs/guide/img/streaming/player-preview.png, docs/guide/img/streaming/player.png, docs/guide/img/streaming/player.gif, docs/guide/img/streaming/player-fetching.png, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/features/README.md, .claude/skills/verify-notesd/scripts/stream/make-preview-film.sh, .claude/skills/verify-notesd/scripts/stream/seek-previews.steps.mjs, .workflows/todos.md, .workflows/plan/P1-NOTES-SP05.md, .workflows/plan/SEEK_PREVIEW_THUMBNAILS_PLAN.md
+  - **Proof**: verified-first-pass — 2 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-211451-430399/evidence
+  - **Drift**:
+    - Guide's torrent-budget paragraph wraps differently from the plan's quote (':1957-1958' continues 'it holds). At start, ...' on one line); same words applied, line re-wrapped.
+    - The end-to-end run found nothing wrong in phases 1 to 4: no Step 9 fix, no code under src/, web/, claude/ or tests/ changed.
+    - player-torrent.png was retaken byte-identical, so it is not in the commit.
+    - Observed, not changed (phase 4's design): the subtitle caption is drawn over the hover box where they overlap.
+  - **Decided**:
+    - Plan's cache journey names TMDB 550, which the harness's fake TMDB does not know (position report 404 unknown_title, so no sheet is ever made) -> the cache film is TMDB 990001 and the torrent film 467905, as constants CACHE_TITLE/TORRENT_TITLE in seek-previews.steps.mjs; the feature map says 990001 (and 467905 for the provider-track recipe) (rung 2: exit criteria need both journeys to pass; thresholds and fixture untouched)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching phases 1-4 of this set; the coordinator's integrator reconciles them. Last phase of the set: no successor to unblock; the swarm coordinator lands the set.
+
 - [x] **P1-NOTES-A140** Phase 2: Torrent previews: file, remux, partial download
   - **Difficulty**: HARD
   - **Type**: Feature

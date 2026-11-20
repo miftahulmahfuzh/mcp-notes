@@ -680,7 +680,8 @@ streaming, the movie library or the TMDB credential are.
 
 The drive icon after the Films and Series buttons of the Stream grid opens `/movies/cache`: everything
 this machine keeps on disk for streaming, its torrent downloads (`NOTESD_TORRENT_DIR`, with their remux
-copies and cue files) and its cloud stream cache (`NOTESD_STREAM_CACHE_DIR`). Only this machine's: the
+copies, cue files and seek-preview sheets) and its cloud stream cache (`NOTESD_STREAM_CACHE_DIR`, its
+seek-preview sheets included; see [Seek previews](streaming.md#seek-previews)). Only this machine's: the
 other laptop's rows are never listed.
 
 ![The Cache page: the total against the torrent budget, the two bulk buttons, every title holding cache, Dan Da Dan unfolded to its episodes](img/movies/cache.png)
@@ -698,7 +699,7 @@ other laptop's rows are never listed.
   watched tag. A season pack's files that no single episode owns (its subtitles, its extras, the
   edges of files nobody chose, the subtitles notesd kept for it) count to the season: the season's
   size is its episodes' plus that, and its tooltip says how much. An episode counts its own video,
-  that video's remux and its cue files.
+  that video's remux, its cue files and its seek-preview sheets.
 - **Playing.** A title or episode on screen or being started, a torrent held (a play, the next episode
   being fetched ahead) and a cloud cache downloading show a `playing` (or `in use`) tag and a disabled
   trash; every episode of a pack that is held is in use. The daemon refuses them too (`in_use`).
@@ -721,9 +722,10 @@ How a deletion is carried out:
    next start. Something that started playing meanwhile is kept, with a log line
    (`cache page: kept the torrent 3f2a91c0 of Barbie: it plays now`).
 3. A torrent is deleted the way the budget's prune deletes one, through `TorrentStreams`: with no
-   episode of it left, its whole folder (remux and cue files with it) and every row; in a season pack
-   another kept episode still uses, the deleted episodes' rows and the files only they own, so the kept
-   episodes still play from disk. A cloud cache goes through the stream cache (`StreamCache.remove`).
+   episode of it left, its whole folder (remux, cue and preview files with it) and every row; in a season
+   pack another kept episode still uses, the deleted episodes' rows and the files only they own (their
+   preview sheets too), so the kept episodes still play from disk. A cloud cache goes through the stream
+   cache (`StreamCache.remove`), its preview sheets with it.
 4. Nothing is blacklisted: a deleted torrent may be fetched again. A title whose remembered torrent
    was deleted asks again at its next play.
 

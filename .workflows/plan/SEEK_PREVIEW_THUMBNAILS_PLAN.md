@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/seek-preview-thumbnails`
 **Branch:** `feature/seek-preview-thumbnails` (base: `origin/main` @ `77051ca`)
 **Phases:** 5
-**Status:** phase 2/5 complete (phases 1, 2 and 4 done; 3 and 5 open)
+**Status:** complete (phases 1-5 done)
 **Coordinator:** —
 
 ---
@@ -193,7 +193,7 @@ grow sheet by sheet with what is on disk, a finished sheet is never made again, 
 | 2 | Torrent previews: file, remux, partial download | R1, R2 | `src/directStream/torrent`, `src/directStream/previews` | 7 | 1 | HARD | `.workflows/plan/seek-preview-thumbnails/phase-2.md` | P1-NOTES-A140 | — |
 | 3 | A provider's own preview track | R1, R2 | `claude/streaming/direct`, `src/directStream` | 20 | 1 | NORMAL | `.workflows/plan/seek-preview-thumbnails/phase-3.md` | P1-NOTES-SP03 | — |
 | 4 | The hover box on the player page | R1, R2 | `web/src/stream` | 9 | — | NORMAL | `.workflows/plan/seek-preview-thumbnails/phase-4.md` | — | — |
-| 5 | Guide, pictures, feature map and the end-to-end proof | R1 | `docs`, `scripts/docs`, `.claude/skills/verify-notesd` | 10 | 1, 2, 3, 4 | NORMAL | `.workflows/plan/seek-preview-thumbnails/phase-5.md` | — | — |
+| 5 | Guide, pictures, feature map and the end-to-end proof | R1 | `docs`, `scripts/docs`, `.claude/skills/verify-notesd` | 10 | 1, 2, 3, 4 | NORMAL | `.workflows/plan/seek-preview-thumbnails/phase-5.md` | P1-NOTES-SP05 | — |
 
 Phases 1 and 4 run at the same time; 2 and 3 after 1, at the same time as each other; 5 after all four.
 Shared files, in landing order: `src/directStream/sessions.ts` (1: `previewRev`; then 3: `sourceHosts`, another

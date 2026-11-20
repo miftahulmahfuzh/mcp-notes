@@ -82,6 +82,9 @@
   button (`Another torrent (S)`) moving to the next torrent and naming it, no pause cache;
   `window.notesdStream.torrent`. Logic proven by `npx vitest run web/src/stream`; in a real browser by
   `torrent-player.steps.mjs` and `torrent-live.steps.mjs` (below).
+- Seek previews (seek-preview-thumbnails): with the pointer on the player's timeline, a box shows the time there
+  and, where the session has one, the frame of the film at that point; the time alone over a gap or when the
+  picture fails. See "Seek previews" below.
 
 ## How to get to it (user POV)
 Play on a stream (phase 9) or `/direct-stream <title>` (phase 7) opens the player page full screen in
@@ -734,6 +737,46 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Gotcha: a run's Whisper folder is `<run>/data/whisper`, which has no venv, so the tier is off on a
   throwaway daemon unless `NOTESD_TORRENT_WHISPER_PYTHON` is set in the caller's shell (verify.sh passes
   it through). Never point it at `~/mcp-notes-data/whisper`.
+
+## Seek previews (the frame over the player's timeline)
+- The player page shows a box above the pointer on the timeline (`.st-preview`): the time (`.st-preview-time`)
+  and, where a cue covers it, the frame (`.st-preview-frame`, a part of a sheet scaled to the box); the time
+  alone over a gap or when the picture fails, never a broken picture; shown during a drag, gone on leave and
+  when the controls hide, no pointer events. `window.notesdStream.previews` holds the list it read.
+- `GET /api/stream/sessions/:id/previews` answers `{state: none|partial|ready, rev, source: provider|local|null, cues}`
+  (403 `unknown_session` as the session route). The first source that has frames: a stream's own seek-preview
+  WebVTT track (pictures through the pass-through with `img=1`, kind `image` in the evidence, never in a
+  provider's delivery), else ffmpeg sheets of the video on this machine: a torrent's file or remux
+  (`<torrent dir>/<hash>/notesd-previews/<index>/`), else the stream cache the session plays from (`<cache>/previews/`). A frame
+  every 10 s, 240 px wide, 6×6 to a JPEG, a sheet once its whole stretch is on disk; one niced ffmpeg at a time,
+  the film on screen first; a failed sheet leaves no file and is tried a fixed number of times; finished sheets
+  survive a restart. The page reads the list once the session loads and again on a higher `preview_rev` (session
+  or position answer), never on a timer. Sizes on disk (budget, Cache page) count the sheets; deleting a cache, a
+  download or one episode takes them. `NOTESD_STREAM_PREVIEWS=off`: no build, no frame.
+- Logic: `npx vitest run tests/unit/directStream/previews web/src/stream tests/unit/scripts/directResolve.test.ts tests/unit/directStream/torrent`.
+- Throwaway daemon, the machine's ffmpeg making real sheets (a cached film and a torrent film, about five minutes):
+  `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-preview-film.sh "$HOME/.local/state/notesd-verify/.preview-film")`,
+  `NOTESD_STREAM_PREVIEWS=on TORRENT_FIXTURE_FILE="$FIX/film.mp4" $V up --web --torrent` (note RUN and `DIRECT=`), then
+  `DIRECT=<that path> PREVIEW_FILM="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/seek-previews.steps.mjs`.
+  The film is 600 s of a white bar crossing a dark picture, so a frame gives away its time. The transcript has
+  `SEEK PREVIEW CACHE 125 PASS`, `SEEK PREVIEW CACHE 487 PASS` (a ready cache of TMDB 990001 made through
+  `POST /api/stream/cache`, played with nothing resolving) and `SEEK PREVIEW TORRENT 125 PASS`,
+  `SEEK PREVIEW TORRENT 487 PASS` (the same film as the loopback torrent's file): each says the closest of
+  ffmpeg's frames (one every 2 s) to the frame the box shows is within one preview interval of the box's time,
+  and that the frame half the film away is at least three times further off. Screenshots
+  `preview-cache-125`, `preview-cache-487`, `preview-torrent-125`, `preview-torrent-487`. `PREVIEW_ONLY=cache`
+  or `torrent` runs one. Sheets on disk: `ls ~/.local/state/notesd-verify/RUN/data/movies/stream-cache/*/previews
+  ~/.local/state/notesd-verify/RUN/data/movies/torrents/*/notesd-previews/*`.
+- The picture in the guide (`player-preview.png`) comes from `npm run docs:shots -- streaming`, with the previews
+  route faked from the Sintel trailer as a stream's own preview track.
+- A stream's own preview track through the real pass-through: `NOTESD_STREAM_PREVIEWS=on $V up --direct-stream`, then
+  `printf 'thumbs.vtt\n' > <DIRECT>/thumbs` (the fake resolver names that track on the fixture host; `whole.vtt`,
+  `words.vtt`, `page.vtt`, `big.vtt` or a missing name give none) and play TMDB 467905: the previews are
+  `source: "provider"` with `.../p?u=...&img=1` addresses that answer pictures, recorded as kind `image` in the
+  evidence, the track itself not at all.
+- A torrent still downloading: `NOTESD_STREAM_PREVIEWS=on TORRENT_FIXTURE_FILE=<a 25-minute MP4> $V up --torrent`, play
+  it as a torrent, post position reports and read the previews every few seconds: `partial` cues only inside the
+  map's `ranges`, and after a `closed` report the swarm empties while the previews route is still read.
 
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.

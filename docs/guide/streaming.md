@@ -43,6 +43,7 @@ and [torrents](#torrents).
 | An English subtitle, one way or another | The stream's own track, a file in the torrent, the track inside the video file, two subtitle services, another provider's file, and Whisper as the last resort. An outside file is re-timed to the audio, and `/sync-subtitle` checks one against what is said | [Subtitles for a torrent](#subtitles-for-a-torrent), [`/sync-subtitle`](#sync-subtitle-a-subtitle-checked-against-the-films-audio) |
 | A stream that mends itself | An expired token is refreshed, a network error is ridden out, a host that stalls is left for another provider, and a pause downloads the film | [How a provider delivers](#how-a-provider-delivers), [A pause caches the film](#a-pause-caches-the-film) |
 | The next episode is already here | While an episode plays, the one after it is fetched to this machine | [The next episode, fetched ahead](#the-next-episode-fetched-ahead) |
+| A picture on the timeline | Hovering the player's timeline shows the frame at that point, from the stream's own preview track or from the film on this machine, made in the background one at a time | [Seek previews](#seek-previews) |
 | Asked in your own words | "Play one of Nolan's films", "a Korean mafia film from this year TM", "resume One Piece from episode 730": people, studios, services, languages, genres and six codenames. A title chosen for you is never one you have seen | [Finding something to stream](#finding-something-to-stream), [Codenames](#codenames) |
 | It knows what was said | An episode's story on the wall is retold from its whole dialogue, read from its subtitle | [What a title says](#what-a-title-says-its-dialogue) |
 | A broken stream explains itself | Every request of a play is logged. `/report-stream-bug` measures your connection against the stream host and names the cause | [Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug) |
@@ -58,7 +59,8 @@ Contents: [What sets it apart](#what-sets-it-apart) · [pahe.ink](#paheink) ·
 [In the chat bar](#in-the-chat-bar) · [Adding a site](#adding-a-site) ·
 [Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ([Anime](#anime) ·
 [The picture check](#the-picture-check) · [The audio-language check](#the-audio-language-check) ·
-[The player](#the-player) · [Finding something to stream](#finding-something-to-stream) ·
+[The player](#the-player) · [Seek previews](#seek-previews) ·
+[Finding something to stream](#finding-something-to-stream) ·
 [Codenames](#codenames) · [What played last time plays first](#what-played-last-time-plays-first) ·
 [What a title says](#what-a-title-says-its-dialogue) ·
 [`/update-cloud-source`](#update-cloud-source-providers-from-another-site) ·
@@ -555,9 +557,10 @@ and is kept, and a film is never refused this way.
 made, also when the file's address is a relay's parameter (`fetch?url=...%2Fx.vtt&ref=...`) or the
 request is a text track; and the list a page's subtitle service answered with (`sub.vdrk.site`,
 `sub.wyzie.io`: a JSON list of files per language), since a page loads a file only when the viewer
-picks its language. A player's seek-preview file is left out: it is WebVTT too, but its cues are
-picture addresses (`thumbs/sprite-001.jpg#xywh=160,0,160,90`), told by its name (`thumbs`,
-`thumbnails`, `sprite`, `storyboard`) or by its cues.
+picks its language. A player's seek-preview file is never a subtitle: it is WebVTT too, but its
+cues are picture addresses (`thumbs/sprite-001.jpg#xywh=160,0,160,90`), told by its name (`thumbs`,
+`thumbnails`, `sprite`, `storyboard`) or by its cues. The first one the page loaded is kept as the
+session's preview track instead ([Seek previews](#seek-previews)).
 
 ### Anime
 
@@ -1134,6 +1137,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 
   ![The quality menu, the subtitle delay key and a seek, in the player](img/streaming/player.gif)
 
+- **Seek previews.** With the pointer on the timeline, a box above it shows the time there and,
+  where the session has one, the frame of the film at that point ([Seek previews](#seek-previews)).
+
 - **Previous and next episode.** A series' session names the episodes before and after its own
   (TMDB's order, specials left out, never an episode that has not aired), and the two buttons show
   which (`Next episode (S17E731)`); a side with no episode is greyed out, and a film has neither
@@ -1159,8 +1165,71 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 The page keeps its state on `window.notesdStream` (`stage`: `loading`, `ready`, `refreshing`,
 `recovering` or `error`; `kind`, `levels`, `level`, subtitle
 choice, `refreshes`, `errors`, the last position sent and a short log; `cached`, `torrent` and
-`cachedRanges` for a play from this machine's disk), for scripts that check a play, and its
-`start()`.
+`cachedRanges` for a play from this machine's disk; `previews`, the session's preview frames), for
+scripts that check a play, and its `start()`.
+
+### Seek previews
+
+![The pointer on the timeline: the frame at 0:40 from the stream's own preview track, and the time under it](img/streaming/player-preview.png)
+
+With the pointer on the player's timeline, a box above it shows the time at that point and, where
+the session has one, the frame of the film there: a picture 240 px wide, taken within 10 seconds of
+that time. Where the session has no frame for that point, or its picture does not load, the box
+shows the time alone, never a broken picture. The box follows a drag of the position too, goes when
+the pointer leaves the timeline or the controls hide, and never takes a click.
+
+The frames come from the first of three sources that has any for the session:
+
+1. **The stream's own preview track.** Many players load a WebVTT file whose cues are pictures,
+   each a part of a larger sheet (`thumbs/sprite-001.jpg#xywh=160,0,160,90`, see "Where subtitles
+   are found"). The resolver keeps the first one the page loaded as the source's `thumbnails`, with
+   the headers of that request. The daemon reads it once per session through the same headers, with
+   a size limit and a time limit, and lists a frame per cue. The page fetches each picture through
+   the pass-through (`img=1`), which asks only the hosts the track named, takes only an `image/*`
+   answer under a size limit, and records it in the stream evidence as `image`, never as part of the
+   provider's delivery. A track that cannot be read, is too large or names no picture gives no
+   frame. It covers the whole film at once, so it is asked first.
+2. **A torrent's video on this machine:** the file as it downloads, or its remux.
+3. **The stream cache the session plays from**, ready or still downloading. A session that streams a title through
+   a provider gets no frame from a cache of that title on this machine: that copy may come from another provider
+   whose timeline is slightly offset.
+
+For the last two the daemon makes the frames itself, with ffmpeg, from the video on disk:
+
+- **Sheets.** A frame every 10 seconds, 240 px wide, up to 36 frames (6 minutes of film) to one
+  JPEG. A sheet is made only once its whole stretch is on disk, so the frames grow sheet by sheet
+  with the download (on a torrent, with the grey bar), and the film has all its frames when its last
+  sheet is made.
+- **One at a time, out of the way.** One preview ffmpeg runs at a time for the whole daemon, at low
+  CPU priority, the film on screen first. A whole cache or a whole torrent download that nobody plays
+  gets its sheets in the background too, so an episode fetched ahead has its frames before it plays.
+- **Only what is on disk.** A cache is read from its files. A torrent's file that is still
+  downloading is read only where its pieces are on disk: a sheet that would need a missing piece
+  stops and is tried once more of the file is there. For a frame the torrent is never held in the
+  swarm, no file is selected and no piece is asked for. No preview build makes a network request.
+- **A failure is a missing picture.** A sheet is written to a temporary name and renamed when it
+  is whole. ffmpeg that is missing, fails or runs past its time limit leaves nothing, and the sheet is
+  tried again a fixed number of times, then left. Each failure is one line in the daemon's log; the
+  play, its manifest and the download are never touched.
+- **Kept.** Finished sheets stay beside the video and survive a restart; after one, only the
+  missing sheets are made.
+
+The sheets of a cloud cache are in its folder, `<cache id>/previews/`; those of a torrent's file or
+its remux in `<NOTESD_TORRENT_DIR>/<info hash>/notesd-previews/<file index>/`. They count in the
+size on disk of their cache or download (the torrent budget, the
+[Cache page](movies.md#the-cache-page)) and go with it: a cache cleared, a download deleted whole or
+one episode of a season pack deleted takes its sheets along.
+
+What is not done: a cloud stream with no preview track and no cache on this machine gets no frames,
+since making them would mean hundreds of requests to the stream host for one film; the box shows the
+time alone there. A cache made from a stream with a preview track keeps nothing of the provider's
+pictures. VLC plays and the streaming sites' own players have no previews.
+
+The page reads `GET /api/stream/sessions/<id>/previews` once the session loads, and again whenever
+the session or the answer to a position report carries a higher `preview_rev`, so new sheets show
+on the open page without a reload. It never asks that route on a timer, and fetches a sheet only
+when the pointer comes near a frame of it. `NOTESD_STREAM_PREVIEWS=off` starts no build, and the
+route answers no frame.
 
 ### `/direct-stream`
 
@@ -1681,7 +1750,8 @@ cache that is played starts beside the running one). `action: "status"` shows on
 The files are in `<NOTES_DATA_DIR>/movies/stream-cache/<cache id>/` (`NOTESD_STREAM_CACHE_DIR`):
 `master.m3u8` (the one rendition, and `audio.m3u8` when the audio is separate), `video.m3u8`,
 `v-init-1.mp4`, `v-key-1.key`, `v-00001.ts` and on, `subtitle.vtt`, or `video.mp4`, plus
-`cache.json` (the shape of the source; no address, since addresses carry tokens). The local
+`cache.json` (the shape of the source; no address, since addresses carry tokens) and `previews/`,
+the [seek-preview](#seek-previews) sheets made from it. The local
 playlists list every segment by index, with `EXT-X-ENDLIST`, from the start, so a player can seek
 anywhere while the cache downloads: `GET /api/stream/cache/<id>/f/<file>` serves a file from disk
 with `Range`, and fetches one that is not on disk yet from the stream host at once, ahead of the
@@ -1954,12 +2024,12 @@ DHT node and no peer.
    is still to be merged, that folder sweep is skipped: a download whose row is only there yet keeps its files.
 8. The torrent folder has a budget, `NOTESD_TORRENT_BUDGET_GB` (40 GiB; `NOTESD_TORRENT_MAX_GB` is only the
    finder's limit for one release). It counts everything under each torrent's folder: the downloaded files, a
-   remux's segments, subtitle cue files and kept subtitles (blocks on disk, so an unfinished download counts what
-   it holds). At start, every six hours and after a download finishes, whole torrents are deleted until the folder
+   remux's segments, subtitle cue files, kept subtitles and [seek-preview](#seek-previews) sheets (blocks on disk,
+   so an unfinished download counts what it holds). At start, every six hours and after a download finishes, whole torrents are deleted until the folder
    is under it: first the downloads of titles the owner marked Watched or Not interested (whenever they were
    played), then never-played ones, oldest first, then the least recently played. A torrent played or
    finished in the last 24 hours goes only when that was not enough, and one in use (a session, the next episode
-   being fetched ahead) never goes. Its remux and cue files go with it. Each deletion is one log line:
+   being fetched ahead) never goes. Its remux, cue and preview files go with it. Each deletion is one log line:
    `torrent: cleared <name> (4.2 GB, last played 2026-11-12): the downloads took more than the 40.0 GB budget,
    38.1 GB now`. The owner deletes one by hand on the [Cache page](movies.md#the-cache-page), the same way.
 9. A season pack keeps every episode chosen from it. `stream_torrents` has one row per host, info hash and
@@ -2295,6 +2365,9 @@ is whole too, the original is deleted and the remux is the film's one copy (`rem
   reloaded while the pack downloads another episode) leaves it unselected, and what an edge piece of a neighbouring
   episode writes at its path is deleted when the torrent leaves the swarm. The file route answers 410 `remuxed`. Should
   the remux itself go missing, the download starts over on the next play.
+- **Seek previews.** The sheets made from the original stay valid when it is deleted: they are kept
+  per file index in `notesd-previews/`, not inside the remux, and stand for the same film. A film that
+  already lives as its remux gets its sheets from the remux's segments.
 - Each original deleted is one log line with its size: `torrent: deleted the original of <name> (<file>, 4.2 GB): its
   whole remux plays in its place, one copy on disk`. With `NOTESD_TORRENT_REMUX=off` no original is deleted, and a film
   that already lives as its remux does not play from disk.
@@ -2816,6 +2889,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - Cloudflare WARP for torrents (`src/directStream/torrentWarp.ts`, `src/streaming/warp.ts` over `claude/streaming/warp.mjs`, the one place WARP and the SSID are read or switched): the owner switches WARP with the `warp` tool or `/warp`. A torrent ask (index or pasted magnet) where every torrent tried ended at `NO_FILE_LIST` (`noPeersAtAll`), on SSID `Employee` with WARP off, gains an attempt `WARP`: a hint, or with `TORRENT_WARP_AUTO` WARP on, the swarm failures forgotten (`TorrentSource.forgetNoPeers`) and one more ask, kept on only when that played. Never for a cloud stream. `NOTESD_STREAM_WARP=off` (verify.sh pins it) builds none of it; the owner's switch works either way.
   - Torrents (`src/directStream/torrent/*`): `TorrentsRepo` is the only writer of `stream_torrents`. A torrent is in the swarm only while something uses it, and only its video and subtitle files are selected, read or served; nothing from a torrent is ever run. Tests use `DEFAULT_TORRENT_CONFIG` (off) or a fake engine; the real-engine test seeds over loopback with DHT and trackers off.
   - A remuxed film keeps one copy (`torrent/remuxOnly.ts`, `TorrentStreams.dropOriginals`): once a file's remux is whole and its torrent file whole, the original is deleted and its file entry marked `remuxed` (by `TorrentsRepo.remuxed`), never while the torrent is in the swarm or being opened, and never before the English text track inside the file is in a complete cue feed. A `remuxed` file is never selected again, its file route answers 410, a replay from disk plays its remux with the kept `probe.json`, and the audio cuts read the remux's segments through `withHlsSegments` (`remuxAudioInput`), never ffmpeg on the playlist alone.
+  - Seek previews (`src/directStream/previews/`): the sources are listed in `sources.ts` and asked in the order provider, torrent, cache; each `PreviewSource.list` never throws, and the first list that is not `none` is the session's. A `LocalVideo.input` reads only what its `coverage()` said is on disk: never a fetch, a torrent `use`, a selected file or a wait for a piece. The builder runs one ffmpeg at a time, niced, from `NOTESD_FFMPEG_BIN`, writes a sheet to `*.part` and renames it, and gives a sheet up after a fixed number of tries; a failure is a missing picture and one log line, never a change to the play. `StreamPreviews.list` (`service.ts`) is the one place a session's `preview_rev` rises: it compares the list with the last one that session was given (a route read, a look on a position report, a made sheet, or a source's `changed(session)` all go through it), and the position answer never awaits a source; the page reads the previews again on the number in the session or the position answer. A provider's track is told by its name in `resolve.mjs` (`isThumbnailTrack`; `sniff.ps1` keeps no `.vtt` body) and proven by its cues in the daemon; its pictures go through the pass-through with the captured headers, as kind `image`, and never count in `deliveryByProvider`. No table: the sheets and their index are files beside the video. Tests inject the spawn, the paths, the fetch and the clock; `DEFAULT_DIRECT_STREAM_CONFIG` has previews off.
 
 ## Where the code is
 
@@ -2843,6 +2917,7 @@ rule it states; the few that must never change are also in the repository's `CLA
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
 | `src/directStream/torrent/` | Torrents: the WebTorrent engine (`engine.ts`), the torrent folder (`store.ts`), downloads, users and the swarm (`service.ts`), Range answers (`serve.ts`), `stream_torrents` (`repo.ts`) |
 | `src/directStream/torrent/remux.ts`, `src/directStream/torrent/remuxOnly.ts`, `src/http/streamTorrentRemuxApi.ts` | The torrent remux: ffmpeg into a growing HLS playlist, its files and map; when its original may go |
+| `src/directStream/previews/`, `web/src/stream/StreamApp.tsx` | Seek previews: the sources (`sources.ts`: a stream's own preview track, a torrent's file or remux, the stream cache), the ffmpeg sheet builder and its queue, the frames a session lists; the box over the player's timeline |
 | `src/directStream/torrent/subtitles/` | A torrent session's subtitle tiers: the chain (`chain.ts`), kept files (`disk.ts`), files in the torrent (`files.ts`), the subtitle services (`service.ts`, `wyzie.ts`), a cloud provider's subtitle (`borrow.ts`) |
 | `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
 | `src/directStream/torrent/subtitles/embedded.ts`, `feed.ts`, `src/http/streamTorrentCuesApi.ts` | The subtitle track inside a torrent's file: track choice, the ffmpeg extraction, the growing cue feed and its route |
@@ -2905,6 +2980,10 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - The player page on a torrent: `torrent-player.steps.mjs` on `verify.sh up --web` (the session and
   the torrent routes faked, a 300 s film made with ffmpeg) and `torrent-live.steps.mjs` on
   `verify.sh up --web --direct-stream --torrent` (a real torrent session); see the feature map entry.
+- Seek previews: `seek-previews.steps.mjs` on `NOTESD_STREAM_PREVIEWS=on TORRENT_FIXTURE_FILE=<film.mp4> verify.sh up --web --torrent`
+  plays a cached film and a torrent film with this machine's ffmpeg, hovers the timeline, and checks the
+  frame on screen against the frame ffmpeg gives for that time, with a far-away frame as a control; see the
+  feature map entry.
 - The pictures of the player in this guide: `npm run docs:shots -- streaming`
   (`scripts/docs/shots/streaming.mjs`). They come from a throwaway daemon's real page build, with
   the session, the pass-through and the torrent routes answered by Playwright the way the steps
