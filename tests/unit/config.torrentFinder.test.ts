@@ -16,10 +16,10 @@ describe('parseTorrentFinder', () => {
         NOTESD_TORRENT_MAX_GB: '12',
         NOTESD_TORRENT_INDEX_TIMEOUT_MS: '6000',
         NOTESD_TORRENT_TORRENTIO_URL: 'http://127.0.0.1:4555/',
-        NOTESD_TORRENT_YTS_URL: 'OFF',
+        NOTESD_TORRENT_EZTV_URL: 'OFF',
         NOTESD_TORRENT_APIBAY_URL: '',
       }),
-    ).toEqual({ minSeeds: 8, maxSizeBytes: 12 * 1024 ** 3, indexTimeoutMs: 6000, indexes: { torrentio: 'http://127.0.0.1:4555', yts: null } });
+    ).toEqual({ minSeeds: 8, maxSizeBytes: 12 * 1024 ** 3, indexTimeoutMs: 6000, indexes: { torrentio: 'http://127.0.0.1:4555', eztv: null } });
   });
 
   it('reads the title-search indexes: an address replaces the finder\'s, off never asks it', () => {

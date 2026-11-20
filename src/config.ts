@@ -333,7 +333,7 @@ export const DEFAULT_TORRENT_UPLOAD_KBPS = 100
 export const DEFAULT_TORRENT_KEEP_DAYS = 7
 
 /** The JSON torrent indexes the finder asks (src/directStream/torrent/find/). */
-export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'yts', 'torrentsdb', 'peerflix', 'knaben', 'bitsearch', 'torrentscsv'] as const
+export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'torrentsdb', 'peerflix', 'knaben', 'bitsearch', 'torrentscsv'] as const
 export type TorrentIndexName = (typeof TORRENT_INDEX_NAMES)[number]
 
 /**
@@ -362,7 +362,6 @@ export const TORRENT_INDEX_URL_KEYS: Record<TorrentIndexName, string> = {
   torrentio: 'NOTESD_TORRENT_TORRENTIO_URL',
   apibay: 'NOTESD_TORRENT_APIBAY_URL',
   eztv: 'NOTESD_TORRENT_EZTV_URL',
-  yts: 'NOTESD_TORRENT_YTS_URL',
   torrentsdb: 'NOTESD_TORRENT_TORRENTSDB_URL',
   peerflix: 'NOTESD_TORRENT_PEERFLIX_URL',
   knaben: 'NOTESD_TORRENT_KNABEN_URL',
@@ -1218,7 +1217,7 @@ function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback:
  * NOTESD_TORRENT_TRACKER_LISTS (on or off; anything else throws ConfigError),
  * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
  * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_INDEX_TIMEOUT_MS, NOTESD_TORRENT_TORRENTIO_URL,
- * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_YTS_URL, NOTESD_TORRENT_TORRENTSDB_URL, NOTESD_TORRENT_PEERFLIX_URL,
+ * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_TORRENTSDB_URL, NOTESD_TORRENT_PEERFLIX_URL,
  * NOTESD_TORRENT_KNABEN_URL, NOTESD_TORRENT_BITSEARCH_URL, NOTESD_TORRENT_TORRENTSCSV_URL (a number below 1 or a non-http address throw ConfigError),
  * NOTESD_FFMPEG_BIN.
  * Torrent Whisper keys: NOTESD_TORRENT_WHISPER, NOTESD_TORRENT_WHISPER_DIR, NOTESD_TORRENT_WHISPER_PYTHON,

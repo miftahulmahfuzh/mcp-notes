@@ -8,7 +8,6 @@ import { DEFAULT_RANK_SETTINGS, rankCandidates, type RankSettings } from './rank
 import { torrentioIndex } from './torrentio.js';
 import { torrentscsvIndex } from './torrentscsv.js';
 import { torrentsdbIndex } from './torrentsdb.js';
-import { ytsIndex } from './yts.js';
 import type { FetchLike, FoundCandidates, IndexAnswer, IndexAttempt, IndexContext, IndexOutcome, TorrentCandidate, TorrentIndex, TorrentQuery } from './types.js';
 
 /**
@@ -73,8 +72,6 @@ export interface IndexBases {
   torrentio: string;
   apibay: string;
   eztv: string;
-  /** Up to and including `/api/v2`. */
-  yts: string;
   /** A Stremio add-on, like Torrentio. */
   torrentsdb: string;
   /** A Stremio add-on of Spanish releases, asked only for a title made in Spanish. */
@@ -91,7 +88,6 @@ export const DEFAULT_INDEX_BASES: Readonly<IndexBases> = {
   torrentio: 'https://torrentio.strem.fun',
   apibay: 'https://apibay.org',
   eztv: 'https://eztvx.to',
-  yts: 'https://yts.mx/api/v2',
   torrentsdb: 'https://torrentsdb.com',
   peerflix: 'https://addon.peerflix.mov',
   knaben: 'https://api.knaben.org/v1',
@@ -110,8 +106,6 @@ export interface FindOptions extends Partial<RankSettings> {
    */
   fallback?: readonly TorrentIndex[];
   bases?: Partial<IndexBases>;
-  /** Ask YTS (films only). Default true. */
-  yts?: boolean;
   /** Per index. Default DEFAULT_INDEX_TIMEOUT_MS; an index's own shorter limit wins. */
   timeoutMs?: number;
   maxCandidates?: number;
@@ -128,19 +122,19 @@ export interface FindOptions extends Partial<RankSettings> {
 }
 
 /**
- * Torrentio, apibay, EZTV, TorrentsDB, Peerflix (it asks only for a title made in Spanish), and YTS unless `yts` is
- * false, all asked by IMDb id; then Knaben, Bitsearch and torrents-csv, asked by title (find/titleSearch.ts).
+ * Torrentio, apibay, EZTV, TorrentsDB and Peerflix (asked only for a title made in Spanish), all asked by IMDb id;
+ * then Knaben, Bitsearch and torrents-csv, asked by title (find/titleSearch.ts). YTS has no index of its own:
+ * Torrentio lists its releases.
  */
-export function defaultIndexes(options: Pick<FindOptions, 'bases' | 'yts'> = {}): TorrentIndex[] {
+export function defaultIndexes(options: Pick<FindOptions, 'bases'> = {}): TorrentIndex[] {
   const bases = options.bases ?? {};
-  const indexes = [
+  const indexes: TorrentIndex[] = [
     torrentioIndex(bases.torrentio ?? DEFAULT_INDEX_BASES.torrentio),
     apibayIndex(bases.apibay ?? DEFAULT_INDEX_BASES.apibay),
     eztvIndex(bases.eztv ?? DEFAULT_INDEX_BASES.eztv),
     torrentsdbIndex(bases.torrentsdb ?? DEFAULT_INDEX_BASES.torrentsdb),
     peerflixIndex(bases.peerflix ?? DEFAULT_INDEX_BASES.peerflix),
   ];
-  if (options.yts !== false) indexes.push(ytsIndex(bases.yts ?? DEFAULT_INDEX_BASES.yts));
   // Asked by title, not by IMDb id (titleSearch.ts); each answers `empty` without a request for a title with no name or a film with no year.
   indexes.push(
     knabenIndex(bases.knaben ?? DEFAULT_INDEX_BASES.knaben),

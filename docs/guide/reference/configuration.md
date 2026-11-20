@@ -179,7 +179,6 @@ A torrent is a source direct streaming downloads from a swarm, described in
 | `NOTESD_TORRENT_TORRENTIO_URL` | the finder's own (Torrentio) | Address of the Torrentio index; `off` never asks it. `verify.sh up --torrent` points it at a fake. |
 | `NOTESD_TORRENT_APIBAY_URL` | the finder's own (apibay) | Address of the apibay index; `off` never asks it. |
 | `NOTESD_TORRENT_EZTV_URL` | the finder's own (EZTV) | Address of the EZTV index (series only); `off` never asks it. |
-| `NOTESD_TORRENT_YTS_URL` | the finder's own (YTS) | Address of the YTS index (films only); `off` never asks it. |
 | `NOTESD_TORRENT_TORRENTSDB_URL` | the finder's own (TorrentsDB) | Address of the TorrentsDB Stremio add-on, asked by IMDb id for every film and episode beside Torrentio; it lists sites Torrentio does not. `off` never asks it. `verify.sh` sets it `off`. |
 | `NOTESD_TORRENT_PEERFLIX_URL` | the finder's own (Peerflix) | Address of the Peerflix Stremio add-on, asked only for a title whose original language is Spanish (it lists Spanish releases, nearly all dubs). `off` never asks it. `verify.sh` sets it `off`. |
 | `NOTESD_TORRENT_KNABEN_URL` | the finder's own (Knaben, `https://api.knaben.org/v1`) | Address of the Knaben index, asked by title (a film by title and year, an episode by title and `SxxEyy`) with one JSON POST; `off` never asks it. `verify.sh` sets it `off`. See [streaming.md](../streaming.md#playing-from-a-torrent). |

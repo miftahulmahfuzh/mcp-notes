@@ -17,7 +17,7 @@ function recording(): { fetch: FetchLike; urls: string[] } {
 
 describe('the Stremio add-on providers and their address settings', () => {
   it('are among the default indexes, in the order they are asked', () => {
-    expect(indexesOf(parseTorrentFinder({})).map((i) => i.name)).toEqual(['torrentio', 'apibay', 'eztv', 'torrentsdb', 'peerflix', 'yts', 'knaben', 'bitsearch', 'torrentscsv']);
+    expect(indexesOf(parseTorrentFinder({})).map((i) => i.name)).toEqual(['torrentio', 'apibay', 'eztv', 'torrentsdb', 'peerflix', 'knaben', 'bitsearch', 'torrentscsv']);
   });
 
   it('are asked at the addresses the settings give', async () => {
@@ -32,10 +32,10 @@ describe('the Stremio add-on providers and their address settings', () => {
     const finder = parseTorrentFinder({ NOTESD_TORRENT_TORRENTSDB_URL: 'off', NOTESD_TORRENT_PEERFLIX_URL: 'OFF' });
     expect(finder.indexes).toEqual({ torrentsdb: null, peerflix: null });
     const indexes = indexesOf(finder);
-    expect(indexes.map((i) => i.name)).toEqual(['torrentio', 'apibay', 'eztv', 'yts', 'knaben', 'bitsearch', 'torrentscsv']);
+    expect(indexes.map((i) => i.name)).toEqual(['torrentio', 'apibay', 'eztv', 'knaben', 'bitsearch', 'torrentscsv']);
     const { fetch, urls } = recording();
     const found = await findCandidates(PAN, { fetch, indexes });
     expect(urls.filter((u) => u.includes('torrentsdb') || u.includes('peerflix'))).toEqual([]);
-    expect(found.indexes.map((a) => a.index)).toEqual(['torrentio', 'apibay', 'yts', 'knaben', 'bitsearch', 'torrentscsv']);
+    expect(found.indexes.map((a) => a.index)).toEqual(['torrentio', 'apibay', 'knaben', 'bitsearch', 'torrentscsv']);
   });
 });

@@ -1922,9 +1922,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   out is an `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the
   background, so they are never counted.
 - **Finding a torrent** (`src/directStream/torrent/find/`). The finder asks the JSON indexes all at once, each by the
-  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series, TorrentsDB, Peerflix for a title made
-  in Spanish, and YTS for a film (each can be turned off or moved with `NOTESD_TORRENT_<NAME>_URL`; YTS, which timed out
-  from this network once, is given 6 s). TorrentsDB and Peerflix are Stremio add-ons that answer in Torrentio's shape.
+  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series, TorrentsDB, and Peerflix for a title
+  made in Spanish (each can be turned off or moved with `NOTESD_TORRENT_<NAME>_URL`). YTS has no index of its own:
+  Torrentio lists its releases. TorrentsDB and Peerflix are Stremio add-ons that answer in Torrentio's shape.
   TorrentsDB lists sites Torrentio does not (knaben, rargb, sktorrent, rutor); a torrent two indexes list is one
   candidate naming both. Peerflix lists Spanish releases, nearly all dubs, so for a title made in any other language it
   gets no request and its attempt is `no_stream`, "not asked". Every request says it is notesd; a bot check is the outcome
@@ -1939,8 +1939,8 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
   (never a sample).
 - **A title with no IMDb id.** TMDB lists none for many small films (Chasing the Moon, 2024), and a play of one used
-  to end before any index was asked. Now the indexes keyed by the id (Torrentio, apibay, EZTV, TorrentsDB, Peerflix,
-  YTS) answer `no_stream`, "not asked: no IMDb id is known for this title, and this index is asked by it", with no
+  to end before any index was asked. Now the indexes keyed by the id (Torrentio, apibay, EZTV, TorrentsDB,
+  Peerflix) answer `no_stream`, "not asked: no IMDb id is known for this title, and this index is asked by it", with no
   request, and the indexes asked by title and the fallback sites are asked as for any title. TMDB is asked twice for
   the id when it does not answer (a timeout, a 5xx, a 429), a failure is logged
   (`could not read the IMDb id of ... from TMDB`), and an id TMDB gave is kept for the daemon's run.

@@ -1073,7 +1073,7 @@ export function indexesOf(finder: NonNullable<Config['torrent']>['finder']): Tor
   const set = finder?.indexes ?? {};
   const bases = Object.fromEntries(Object.entries(set).filter(([, v]) => v !== null && v !== undefined)) as Partial<Record<TorrentIndexName, string>>;
   const off = new Set(TORRENT_INDEX_NAMES.filter((name) => set[name] === null));
-  return defaultIndexes({ bases, yts: !off.has('yts') }).filter((index) => !off.has(index.name as TorrentIndexName));
+  return defaultIndexes({ bases }).filter((index) => !off.has(index.name as TorrentIndexName));
 }
 
 /** The daemon's torrent source, or null when torrents are off (`NOTESD_TORRENT=off`) or phase 1 built no TorrentStreams. */
