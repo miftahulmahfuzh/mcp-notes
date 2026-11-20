@@ -6,20 +6,20 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "a7a075d",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "stream_downloads + DownloadsRepo, stream_torrents.kept_at + setKept, movie_stories + MoviesRepo.story/saveStory(row)/storySlots, migration 0043; typecheck, npm test (4489) and test:int (1046) green; decisions: only phase 1's task minted (P1-NOTES-SD01, index TaskID column left to coordinator); migration0043 test compares written_at as UTC ISO text (raw execute returns text); drift: stream_downloads has nine CHECKs not ten; branch upstream is origin/main, push with explicit origin HEAD:feature/stream-downloads-season-story; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1120-231635-695286/evidence, /home/miftah/.local/state/notesd-verify/1120-231624-694348/evidence",
       "package": "src/db`, repos, `src/movies",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-20T23:23:19+07:00",
       "satisfies": [
         "R1",
         "R6"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD01",
       "title": "Schema and single writers: the download queue, the kept mark, the story store"
     },
     {
@@ -37,7 +37,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "The download engine: queue, source order, kept downloads, offline-ready, play first"
     },
@@ -117,7 +117,7 @@
       "satisfies": [
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Stories from the web: the season story, the episode story web-first"
     },
@@ -188,6 +188,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-20T23:12:31+07:00",
+  "updated": "2026-11-20T23:23:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
