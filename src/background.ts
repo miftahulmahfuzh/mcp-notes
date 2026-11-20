@@ -245,15 +245,30 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
 
   // Torrents (torrent-stream-source phase 1): old downloads are cleared and the tick starts; nothing joins a swarm here.
   const torrents = deps.torrents ?? null;
-  if (torrents !== null) {
-    void torrents.start().then(
-      (cleared) =>
-        console.log(
-          `[notesd] torrents on as ${torrents.host}: downloads in ${torrents.root}, upload capped at ${torrents.uploadKbps} kB/s` +
-            (cleared > 0 ? `, ${cleared} download(s) not played for ${torrents.keepDays} days cleared` : ''),
-        ),
-      (err: unknown) => console.error(`[notesd] torrents: could not start: ${err instanceof Error ? err.message : String(err)}`),
-    );
+  const torrentsStarted: Promise<unknown> =
+    torrents === null
+      ? Promise.resolve()
+      : torrents.start().then(
+          (cleared) =>
+            console.log(
+              `[notesd] torrents on as ${torrents.host}: downloads in ${torrents.root}, upload capped at ${torrents.uploadKbps} kB/s` +
+                (cleared > 0 ? `, ${cleared} download(s) not played for ${torrents.keepDays} days cleared` : ''),
+            ),
+          (err: unknown) => console.error(`[notesd] torrents: could not start: ${err instanceof Error ? err.message : String(err)}`),
+        );
+
+  // Downloads the owner asked for: what the last run left queued, running or paused carries on from what is on disk,
+  // after the torrents' own start (its prune leaves kept downloads alone).
+  const streamDownloads = deps.streamDownloads ?? null;
+  if (streamDownloads !== null) {
+    void torrentsStarted
+      .then(() => streamDownloads.start())
+      .then(
+        (n) => {
+          if (n > 0) console.log(`[notesd] downloads: carrying on ${n} download(s) on ${streamDownloads.host}`);
+        },
+        (err: unknown) => console.error(`[notesd] downloads: could not carry on downloads: ${err instanceof Error ? err.message : String(err)}`),
+      );
   }
 
   // The Cache page: a deletion whose undo window a restart cut short is carried out now.
@@ -280,6 +295,8 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     // The previews' ffmpeg reads the caches' and the torrents' files (and phase 2's loopback gate): it stops, keeping
     // no part of its sheet, before anything it reads closes. Bounded: the running ffmpeg is killed at once.
     await streamPreviews?.close();
+    // Before the torrents and the cache: the torrent a download holds is let go (its row stays running for the next start).
+    await streamDownloads?.close();
     // In parallel: each close is bounded by its grace (5 s), well under main.ts's 10 s exit.
     await Promise.all([
       embeddings?.close(),

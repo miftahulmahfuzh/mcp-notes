@@ -3,7 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { StreamCacheRow } from '../../../src/db/schema.js';
-import { CacheShelf, ShelfError, type LiveSlot, type ShelfCaches, type ShelfTorrents } from '../../../src/directStream/cacheShelf.js';
+import type { CacheActivity } from '../../../src/directStream/cache/service.js';
+import { CacheShelf, ShelfError, type LiveSlot, type ShelfCaches, type ShelfQueued, type ShelfTorrents } from '../../../src/directStream/cacheShelf.js';
+import type { StreamRef } from '../../../src/directStream/types.js';
 import { TorrentStreams } from '../../../src/directStream/torrent/service.js';
 import { TorrentFolder } from '../../../src/directStream/torrent/store.js';
 import { TorrentError } from '../../../src/directStream/torrent/types.js';
@@ -104,14 +106,24 @@ function seasons(finished: number[]): SeasonView[] {
     {
       season: 1,
       trailer_key: null,
+      has_story: false,
       episodes: [1, 2, 3].map((episode) => ({ season: 1, episode, movie_id: `M-E00${episode}`, name: `Episode ${episode}`, state: finished.includes(episode) ? 'finished' : 'unwatched' }) as SeasonView['episodes'][number]),
     },
   ];
 }
 
-function cloudRow(id: string, tmdbId: number): StreamCacheRow {
-  return { id, host: HOST, kind: 'movie', tmdbId, season: 0, episode: 0 } as StreamCacheRow;
+function cloudRow(id: string, tmdbId: number, over: Partial<StreamCacheRow> = {}): StreamCacheRow {
+  return { id, host: HOST, kind: 'movie', tmdbId, season: 0, episode: 0, auto: false, segmentsTotal: 0, segmentsDone: 0, ...over } as StreamCacheRow;
 }
+
+/** A cloud cache as the fake stream cache holds it. */
+interface CloudSeed {
+  row: StreamCacheRow;
+  bytes: number;
+  activity: CacheActivity | null;
+}
+
+const CLOUD = 'c0ffee00-0000-4000-8000-000000000001';
 
 interface Built {
   shelf: CacheShelf;
@@ -123,7 +135,9 @@ interface Built {
   lines: string[];
 }
 
-function build(o: { records?: MemoryTorrentRecords; finished?: number[]; filmWatched?: boolean; filmNotInterested?: boolean; live?: LiveSlot[]; busyHash?: string; busyCache?: string } = {}): Built {
+function build(
+  o: { records?: MemoryTorrentRecords; finished?: number[]; filmWatched?: boolean; filmNotInterested?: boolean; live?: LiveSlot[]; busyHash?: string; busyCache?: string; cloud?: CloudSeed[]; queue?: ShelfQueued[]; ahead?: StreamRef | null } = {},
+): Built {
   const records = o.records ?? new MemoryTorrentRecords();
   const folder = new TorrentFolder(root);
   const lines: string[] = [];
@@ -137,10 +151,11 @@ function build(o: { records?: MemoryTorrentRecords; finished?: number[]; filmWat
     },
   };
   const removedCaches: string[] = [];
-  const cloud = new Map<string, number>([['c0ffee00-0000-4000-8000-000000000001', 40 * KIB]]);
+  const cloud = new Map<string, CloudSeed>((o.cloud ?? [{ row: cloudRow(CLOUD, 88), bytes: 40 * KIB, activity: null }]).map((c) => [c.row.id, c]));
   const caches: ShelfCaches = {
-    diskUsage: async () => [...cloud].map(([id, bytes]) => ({ row: cloudRow(id, 88), bytes })),
-    busy: (id) => id === o.busyCache,
+    diskUsage: async () => [...cloud.values()].map(({ row, bytes }) => ({ row, bytes })),
+    busy: (id) => id === o.busyCache || (cloud.get(id)?.activity ?? null) !== null,
+    activity: (id) => cloud.get(id)?.activity ?? null,
     remove: async (id) => {
       removedCaches.push(id);
       cloud.delete(id);
@@ -151,6 +166,8 @@ function build(o: { records?: MemoryTorrentRecords; finished?: number[]; filmWat
     host: HOST,
     torrents,
     caches,
+    downloads: { list: async () => o.queue ?? [] },
+    ahead: () => o.ahead ?? null,
     titles: async (ids) =>
       new Map<string, { item: TitleListItem; seasons: SeasonView[] }>(
         ids.flatMap((id): [string, { item: TitleListItem; seasons: SeasonView[] }][] =>
@@ -181,6 +198,24 @@ function build(o: { records?: MemoryTorrentRecords; finished?: number[]; filmWat
     await new Promise((r) => setTimeout(r, 30));
   };
   return { shelf, streams, records, folder, fire, removedCaches, lines };
+}
+
+/** tv-500's season pack still on its way: E01 and E02 chosen, 8 KiB of E02's 32 KiB on disk, nothing of E01. */
+async function seedDownloadingPack(records: MemoryTorrentRecords, folder: TorrentFolder): Promise<void> {
+  const files = [
+    { index: 0, path: `${SHOW}/Show.S01E01.mkv`, length: 64 * KIB },
+    { index: 1, path: `${SHOW}/Show.S01E02.mkv`, length: 32 * KIB },
+  ];
+  for (const [episode, video] of [
+    [1, 0],
+    [2, 1],
+  ] as const) {
+    const ref = { kind: 'tv' as const, tmdbId: 500, season: 1, episode };
+    await records.record(HOST, { infoHash: PACK, ref, name: SHOW, release: SHOW, trackers: [] }, MADE);
+    await records.chosen(HOST, { infoHash: PACK, season: 1, episode }, { files: [files[video]!], fileIndex: video, fileLength: files[video]!.length }, MADE);
+  }
+  await records.progress(HOST, { infoHash: PACK, season: 1, episode: 2 }, 8 * KIB, MADE);
+  await put(folder.diskPath(PACK, files[1]!.path)!, 8 * KIB);
 }
 
 beforeEach(async () => {
@@ -341,5 +376,71 @@ describe('deleting with an undo window', () => {
     await b.fire();
     expect(await exists(b.folder.dirOf(FILM))).toBe(true);
     expect(b.lines.some((l) => l.includes('kept the torrent'))).toBe(true);
+  });
+});
+
+describe('what downloads now, and why', () => {
+  it('lists a download asked for with nothing on disk yet, and rolls a series up: count, mean progress, every reason, running first', async () => {
+    const b = build({
+      cloud: [
+        { row: cloudRow('c0ffee00-0000-4000-8000-000000000011', 700, { kind: 'tv', season: 1, episode: 1, auto: true }), bytes: 10 * KIB, activity: { state: 'running', ahead: true, progress: 0.9 } },
+        { row: cloudRow('c0ffee00-0000-4000-8000-000000000012', 700, { kind: 'tv', season: 2, episode: 1, auto: true }), bytes: 10 * KIB, activity: { state: 'queued', ahead: true, progress: null } },
+      ],
+      queue: [
+        { kind: 'tv', tmdbId: 700, season: 1, episode: 1, state: 'running', progress: 0.5 },
+        { kind: 'tv', tmdbId: 700, season: 1, episode: 2, state: 'queued', progress: 0 },
+        { kind: 'movie', tmdbId: 99, season: 0, episode: 0, state: 'paused', progress: 0.1 },
+      ],
+    });
+    const view = await b.shelf.view();
+    const show = view.titles.find((t) => t.title_id === 'tv-700')!;
+    const s1 = show.seasons.find((s) => s.season === 1)!;
+    const s2 = show.seasons.find((s) => s.season === 2)!;
+    // S01E01 is asked for and also a cache fetched ahead: the owner's ask wins, with the queue's progress.
+    expect(s1.episodes.find((e) => e.episode === 1)!.downloading).toEqual({ progress: 0.5, why: 'asked', state: 'running' });
+    // S01E02 has nothing on disk yet: it is listed all the same.
+    expect(s1.episodes.find((e) => e.episode === 2)).toMatchObject({ bytes: 0, kinds: [], downloading: { progress: 0, why: 'asked', state: 'queued' } });
+    expect(s1.downloading).toEqual({ count: 2, progress: 0.25, why: ['asked'], state: 'running' });
+    expect(s2.downloading).toEqual({ count: 1, progress: 0, why: ['ahead'], state: 'queued' });
+    expect(show.downloading).toEqual({ count: 3, progress: 0.167, why: ['asked', 'ahead'], state: 'running' });
+    const film = view.titles.find((t) => t.title_id === 'movie-99')!;
+    expect(film).toMatchObject({ bytes: 0, title: 'TMDB movie 99', downloading: { count: 1, progress: 0.1, why: ['asked'], state: 'paused' } });
+    expect(view.downloading).toBe(4);
+  });
+
+  it('labels a torrent fetched ahead "ahead" with the share of its file on disk, and a torrent that only plays not at all', async () => {
+    const b = build({ busyHash: PACK, ahead: { kind: 'tv', tmdbId: 500, season: 1, episode: 2 }, cloud: [] });
+    await seedDownloadingPack(b.records, b.folder);
+    const view = await b.shelf.view();
+    const season = view.titles.find((t) => t.title_id === 'tv-500')!.seasons[0]!;
+    expect(season.episodes.find((e) => e.episode === 2)!.downloading).toEqual({ progress: 0.25, why: 'ahead', state: 'running' });
+    expect(season.episodes.find((e) => e.episode === 1)!.downloading).toBeNull();
+    expect(season.downloading).toEqual({ count: 1, progress: 0.25, why: ['ahead'], state: 'running' });
+    expect(view.downloading).toBe(1);
+
+    // The same torrent held by a play only: it downloads, but for the play on screen, not for later.
+    const played = build({ records: b.records, busyHash: PACK, cloud: [] });
+    const quiet = await played.shelf.view();
+    expect(quiet.downloading).toBe(0);
+    expect(quiet.titles.find((t) => t.title_id === 'tv-500')!.seasons[0]!.episodes.every((e) => e.downloading === null)).toBe(true);
+  });
+
+  it('labels a cloud cache by who started it: the owner (asked), the next episode (ahead), a pause (pause)', async () => {
+    const b = build({
+      cloud: [
+        { row: cloudRow('c0ffee00-0000-4000-8000-000000000001', 88), bytes: 0, activity: { state: 'queued', ahead: false, progress: null } },
+        { row: cloudRow('c0ffee00-0000-4000-8000-000000000002', 89, { auto: true }), bytes: 40 * KIB, activity: { state: 'running', ahead: false, progress: 0.5 } },
+        { row: cloudRow('c0ffee00-0000-4000-8000-000000000003', 600, { kind: 'tv', season: 1, episode: 2, auto: true, segmentsDone: 30, segmentsTotal: 120 }), bytes: 20 * KIB, activity: { state: 'running', ahead: true, progress: null } },
+        { row: cloudRow('c0ffee00-0000-4000-8000-000000000004', 90, { auto: true }), bytes: 40 * KIB, activity: null },
+      ],
+    });
+    const view = await b.shelf.view();
+    const of = (id: string) => view.titles.find((t) => t.title_id === id)!;
+    expect(of('movie-88').downloading).toEqual({ count: 1, progress: 0, why: ['asked'], state: 'queued' });
+    expect(of('movie-89').downloading).toEqual({ count: 1, progress: 0.5, why: ['pause'], state: 'running' });
+    // No live figure yet: the row's segments say how far it is.
+    expect(of('tv-600').seasons[0]!.episodes[0]!.downloading).toEqual({ progress: 0.25, why: 'ahead', state: 'running' });
+    expect(of('movie-90').downloading).toBeNull();
+    expect(view.downloading).toBe(3);
   });
 });

@@ -209,6 +209,10 @@ the arguments). Work out the title as in step 1 first.
   (`downloading` with its progress, `ready`, `failed` with why) and the quality. A cache made on the
   other laptop answers `available: false` here: say it is on the other laptop and cannot play here.
 - **"clear the cache of X":** clear it. Nothing else removes a cache.
+- **"download X from a torrent", "download season 2 of X":** start with `provider: "torrent"` (a
+  season: `season` and no episode; without `provider` a season comes from the cloud). It queues the
+  same download the title page's Download button does, kept on this laptop until it is deleted on
+  the Cache page; `status` shows its `downloads` with their state and progress.
 
 A play needs nothing extra: `direct_stream_play` uses this laptop's cache of the title by itself.
 

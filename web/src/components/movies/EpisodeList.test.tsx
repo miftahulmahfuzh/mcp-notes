@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { EpisodeList, type EpisodeListProps } from './EpisodeList';
 import { PLAYER_IDLE, SERIES } from '../../testing/movieFixtures';
+import { makeDownload } from '../../testing/downloadFixtures';
 
 afterEach(() => {
   cleanup();
@@ -87,5 +88,66 @@ describe('EpisodeList: a play started from a row', () => {
     expect(lines[0]!.closest('[data-episode]')?.getAttribute('data-episode')).toBe(code);
     expect(lines[0]!.textContent).toBe('asking the cloud providers · 3 s');
     expect(lines[0]!.getAttribute('role')).toBe('status');
+  });
+});
+
+describe('EpisodeList: the season story button', () => {
+  // Stream side lists every season with episodes; a Specials season is added to prove it gets no button.
+  const specials = { ...SERIES.seasons[1]!, season: 0, episodes: SERIES.seasons[1]!.episodes.map((e) => ({ ...e, season: 0 })) };
+  const detail = { ...SERIES, seasons: [specials, { ...SERIES.seasons[0]!, has_story: true }, SERIES.seasons[1]!] };
+
+  it('puts a book icon on each numbered season head, named in the owner\'s words, filled when the season\'s story is stored, and opens that season', () => {
+    const onSeasonStory = vi.fn();
+    render(<EpisodeList {...props({ detail, side: 'stream', onSeasonStory })} />);
+    const s1 = screen.getByRole('button', { name: 'Narrate the full story of S01' });
+    const s2 = screen.getByRole('button', { name: 'Narrate the full story of S02' });
+    expect(s1.closest('.mv-season-head')).toBe(document.querySelector('[data-season="1"] .mv-season-head'));
+    expect(s1.getAttribute('data-stored')).toBe('true');
+    expect(s1.getAttribute('data-tip')).toMatch(/^Narrate the full story of S01 \(stored/);
+    expect(s2.getAttribute('data-stored')).toBeNull();
+    expect(s2.getAttribute('data-tip')).toMatch(/^Narrate the full story of S02 \(full spoilers/);
+    expect(s1.className).toBe('pbtn hov mv-season-story');
+    expect(document.querySelector('[data-season="0"] .mv-season-story')).toBeNull();
+    fireEvent.click(s2);
+    expect(onSeasonStory).toHaveBeenCalledTimes(1);
+    expect(onSeasonStory).toHaveBeenCalledWith(expect.objectContaining({ season: 2 }));
+  });
+
+  it('stays on a folded season and is not there when the page gives no handler', () => {
+    const { unmount } = render(<EpisodeList {...props({ detail, side: 'stream', onSeasonStory: noop })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the episodes of season 1' }));
+    expect(screen.getByRole('button', { name: 'Narrate the full story of S01' })).toBeTruthy();
+    unmount();
+    render(<EpisodeList {...props({ detail, side: 'stream' })} />);
+    expect(screen.queryByRole('button', { name: /Narrate the full story/ })).toBeNull();
+  });
+});
+
+describe('EpisodeList: downloads', () => {
+  const binding = (rows = [] as ReturnType<typeof makeDownload>[]) => ({ rows, onNotice: noop, onChanged: noop });
+  const rowOf = (code: string) => document.querySelector(`[data-episode="${code}"]`) as HTMLElement;
+
+  it('puts a Download button on every season head and episode row only when the page hands it the downloads', () => {
+    render(<EpisodeList {...props({ side: 'stream', streamEnabled: true })} />);
+    expect(screen.queryByRole('button', { name: /^Download / })).toBeNull();
+    cleanup();
+    render(<EpisodeList {...props({ side: 'stream', streamEnabled: true, downloads: binding() })} />);
+    for (const s of SERIES.seasons) expect(screen.getByRole('button', { name: `Download MobLand season ${s.season}` })).toBeTruthy();
+    for (const e of season.episodes) {
+      const code = `S${String(e.season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}`;
+      expect(within(rowOf(code)).getByRole('button', { name: `Download MobLand ${code}` })).toBeTruthy();
+    }
+  });
+
+  it('draws the bar on the season head and on the episode row the download belongs to, and nowhere else', () => {
+    const rows = [makeDownload({ title_id: SERIES.id, kind: 'tv', tmdb_id: SERIES.tmdb_id, season: 1, episode: 2, state: 'running', progress: 0.3 })];
+    render(<EpisodeList {...props({ side: 'stream', streamEnabled: true, downloads: binding(rows) })} />);
+    expect(screen.getByRole('progressbar', { name: 'Download of MobLand season 1' }).getAttribute('aria-valuenow')).toBe('30');
+    // Phase 9's drive finds the season's bar inside the season head.
+    expect(screen.getByRole('progressbar', { name: 'Download of MobLand season 1' }).closest('.mv-season-head')).not.toBeNull();
+    expect(within(rowOf('S01E02')).getByRole('progressbar', { name: 'Download of MobLand S01E02' }).getAttribute('aria-valuenow')).toBe('30');
+    expect(within(rowOf('S01E01')).queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByRole('progressbar', { name: 'Download of MobLand season 2' })).toBeNull();
+    expect(screen.getAllByRole('progressbar')).toHaveLength(2);
   });
 });

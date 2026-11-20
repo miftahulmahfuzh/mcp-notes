@@ -17,5 +17,10 @@ describe('NOTESD_STREAM_PREVIEWS', () => {
     expect(parseDirectStream({ NOTESD_STREAM_PREVIEWS: 'off' }).previews).toBe(false);
     expect(DEFAULT_DIRECT_STREAM_CONFIG.previews).toBe(false);
     expect(() => parseDirectStream({ NOTESD_STREAM_PREVIEWS: 'sometimes' })).toThrow(/NOTESD_STREAM_PREVIEWS must be "on" or "off"/);
+    expect(parseDirectStream({}).downloads).toBe(true);
+    expect(parseDirectStream({ NOTESD_STREAM_DOWNLOADS: 'off' }).downloads).toBe(false);
+    expect(DEFAULT_DIRECT_STREAM_CONFIG.downloads).toBeUndefined();
+    expect(parseDirectStream({}).downloadSsid).toBeNull();
+    expect(parseDirectStream({ NOTESD_STREAM_DOWNLOAD_SSID: ' verify-home ' }).downloadSsid).toBe('verify-home');
   });
 });

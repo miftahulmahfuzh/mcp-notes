@@ -4,8 +4,10 @@ import path from 'node:path';
 import type { StreamCacheRow, StreamTorrentRow } from '../db/schema.js';
 import type { SeasonView, TitleListItem } from '../movies/read.js';
 import { titleId } from '../movies/types.js';
+import type { CacheActivity } from './cache/service.js';
 import { TorrentError } from './torrent/types.js';
 import { slotId, type SlotKey, type TorrentUsage } from './torrent/usage.js';
+import type { StreamRef } from './types.js';
 
 /**
  * The Cache page (`/movies/cache`, GET /api/stream/disk, the `stream_disk` tool): everything this host keeps on disk for
@@ -36,6 +38,50 @@ export const UNDO_MS = 10_000;
 
 export type ShelfKind = 'torrent' | 'cloud';
 
+/**
+ * Why a film or episode downloads now: `asked`, the owner asked for it (a row of the download queue, or a cloud cache
+ * the owner asked for); `ahead`, the next episode fetched while one plays (ahead.ts); `pause`, a cloud cache a pause
+ * in the player started. A torrent that downloads only because it plays is not counted: it is `playing`.
+ */
+export type DownloadWhy = 'asked' | 'ahead' | 'pause';
+/** `queued`: waits its turn; `running`: fetches now; `paused`: a download asked for that gives way to a torrent on screen. */
+export type DownloadState = 'queued' | 'running' | 'paused';
+
+/** A film's or an episode's download. */
+export interface ShelfDownloading {
+  /** 0 to 1. */
+  progress: number;
+  why: DownloadWhy;
+  state: DownloadState;
+}
+
+/** A season's or a title's downloads rolled up (a film: its own, `count` 1). */
+export interface ShelfDownloadRollup {
+  /** Films and episodes downloading. */
+  count: number;
+  /** Their mean progress, 0 to 1. */
+  progress: number;
+  /** Every reason among them, `asked` first. */
+  why: DownloadWhy[];
+  /** `running` when any runs, else `queued` when any waits, else `paused`. */
+  state: DownloadState;
+}
+
+/** One film or episode the download queue (src/directStream/downloads) holds and has not finished. Film: season 0, episode 0. */
+export interface ShelfQueued {
+  kind: 'movie' | 'tv';
+  tmdbId: number;
+  season: number;
+  episode: number;
+  state: DownloadState;
+  progress: number;
+}
+
+/** What the shelf reads of the download queue: this host's downloads not done and not failed. */
+export interface ShelfDownloadQueue {
+  list(): Promise<ShelfQueued[]>;
+}
+
 export interface ShelfEpisode {
   season: number;
   episode: number;
@@ -49,6 +95,8 @@ export interface ShelfEpisode {
   playing: boolean;
   /** Playing, or held by something else (its torrent fetched, its cache downloading): it cannot be deleted now. */
   in_use: boolean;
+  /** Downloading now: how far, why, queued or running; null when it does not. */
+  downloading: ShelfDownloading | null;
 }
 
 export interface ShelfSeason {
@@ -62,6 +110,8 @@ export interface ShelfSeason {
   watched: boolean;
   playing: boolean;
   in_use: boolean;
+  /** Its episodes that download now, rolled up; null when none does. */
+  downloading: ShelfDownloadRollup | null;
   episodes: ShelfEpisode[];
 }
 
@@ -88,6 +138,8 @@ export interface ShelfTitle {
   seasons: ShelfSeason[];
   /** A series: bytes of a torrent whose episodes span several seasons and that no single episode owns. */
   shared_bytes: number;
+  /** A film's download, or a series' episodes downloading, rolled up; null when nothing of it downloads. */
+  downloading: ShelfDownloadRollup | null;
 }
 
 export interface BulkView {
@@ -115,6 +167,8 @@ export interface ShelfView {
   /** NOTESD_TORRENT_BUDGET_GB in bytes; null when torrents are off. */
   budget_bytes: number | null;
   titles: ShelfTitle[];
+  /** Films and episodes downloading now (the Downloading filter's count). */
+  downloading: number;
   bulk: { watched: BulkView; not_interested: BulkView };
   pending: PendingView[];
   undo_ms: number;
@@ -161,6 +215,8 @@ export interface ShelfTorrents {
 export interface ShelfCaches {
   diskUsage(): Promise<{ row: StreamCacheRow; bytes: number }[]>;
   busy(id: string): boolean;
+  /** How the cache downloads now; null while it neither runs nor waits. */
+  activity(id: string): CacheActivity | null;
   remove(id: string): Promise<void>;
 }
 
@@ -175,6 +231,10 @@ export interface CacheShelfOptions {
   host: string;
   torrents: ShelfTorrents | null;
   caches: ShelfCaches | null;
+  /** The download queue (src/directStream/downloads): what the owner asked for and is not done. Null or unset: none. */
+  downloads?: ShelfDownloadQueue | null;
+  /** The episode the fetch-ahead holds a torrent for (DirectStreamService.aheadFetching). Unset: none. */
+  ahead?: () => StreamRef | null;
   /** movies/read.ts titleWatchViews, bound to the database and this host. */
   titles: (ids: readonly string[]) => Promise<Map<string, { item: TitleListItem; seasons: SeasonView[] }>>;
   /** The stream on screen and the plays being started. */
@@ -204,6 +264,33 @@ export function sizeText(bytes: number): string {
 const sxe = (season: number, episode?: number): string =>
   `S${String(season).padStart(2, '0')}${episode === undefined ? '' : `E${String(episode).padStart(2, '0')}`}`;
 
+const WHY_ORDER: readonly DownloadWhy[] = ['asked', 'ahead', 'pause'];
+/** A share kept inside 0..1 and rounded to a tenth of a percent. */
+const unit = (n: number): number => (Number.isFinite(n) ? Math.round(Math.min(1, Math.max(0, n)) * 1000) / 1000 : 0);
+
+/** One slot named by several sources keeps the strongest reason: the owner's ask, then ahead, then a pause. */
+function stronger(was: ShelfDownloading | null, next: ShelfDownloading): ShelfDownloading {
+  return was === null || WHY_ORDER.indexOf(next.why) < WHY_ORDER.indexOf(was.why) ? next : was;
+}
+
+/** Films' and episodes' downloads rolled up for a season or a title; null when there are none. */
+export function rollup(items: readonly ShelfDownloading[]): ShelfDownloadRollup | null {
+  if (items.length === 0) return null;
+  return {
+    count: items.length,
+    progress: unit(items.reduce((n, d) => n + d.progress, 0) / items.length),
+    why: WHY_ORDER.filter((w) => items.some((d) => d.why === w)),
+    state: items.some((d) => d.state === 'running') ? 'running' : items.some((d) => d.state === 'queued') ? 'queued' : 'paused',
+  };
+}
+
+const downloadingOf = (e: ShelfEpisode): ShelfDownloading[] => (e.downloading === null ? [] : [e.downloading]);
+
+/** The fetch-ahead's episode names this torrent row's slot. */
+function sameSlot(ref: StreamRef, row: { kind: 'movie' | 'tv'; tmdbId: number; season: number; episode: number }): boolean {
+  return ref.kind === row.kind && ref.tmdbId === row.tmdbId && (ref.kind === 'movie' || (ref.season === row.season && ref.episode === row.episode));
+}
+
 /** One film or episode on disk: its bytes per torrent and per cache. */
 interface Slot {
   season: number;
@@ -214,6 +301,8 @@ interface Slot {
   byCache: Map<string, number>;
   targets: DeletionTarget[];
   inUse: boolean;
+  /** Downloading now, and why; a slot downloading with nothing on disk yet has no targets. */
+  downloading: ShelfDownloading | null;
 }
 
 /** One title's pieces on disk, before they are named and tagged. */
@@ -294,6 +383,7 @@ export class CacheShelf {
       unnamed_bytes: torrentUsage.unnamedBytes,
       budget_bytes: torrentUsage.budgetBytes,
       titles,
+      downloading: titles.reduce((n, t) => n + (t.downloading?.count ?? 0), 0),
       bulk: {
         watched: bulk((t) => this.watchedTargets(t, holdings.get(t.title_id))),
         not_interested: bulk((t) => (t.not_interested ? this.allTargets(holdings.get(t.title_id)) : null)),
@@ -436,11 +526,18 @@ export class CacheShelf {
       const key = `${season}x${episode}`;
       let s = h.slots.get(key);
       if (s === undefined) {
-        s = { season, episode, torrent: 0, cloud: 0, byHash: new Map(), byCache: new Map(), targets: [], inUse: false };
+        s = { season, episode, torrent: 0, cloud: 0, byHash: new Map(), byCache: new Map(), targets: [], inUse: false, downloading: null };
         h.slots.set(key, s);
       }
       return s;
     };
+    // What the owner asked for and is not done comes first: its slot is listed even before a byte is on disk, and its
+    // progress (the queue's) wins over a cache's for the same slot.
+    for (const q of await this.queued()) {
+      const s = slotOf(holding(q.kind, q.tmdbId), q.season, q.episode);
+      s.downloading = stronger(s.downloading, { progress: unit(q.progress), why: 'asked', state: q.state });
+    }
+    const ahead = this.opts.ahead?.() ?? null;
     let torrentUsage = { unnamedBytes: 0, budgetBytes: null as number | null };
     if (this.opts.torrents !== null) {
       const usage = await this.opts.torrents.diskUsage();
@@ -462,6 +559,10 @@ export class CacheShelf {
           s.byHash.set(t.infoHash, (s.byHash.get(t.infoHash) ?? 0) + own);
           s.targets.push({ type: 'torrent', info_hash: t.infoHash, season: r.season, episode: r.episode, title_id: sh.titleId });
           s.inUse ||= inUse;
+          // The next episode fetched ahead: its share of the file on disk (the swarm's live count, kept in memory).
+          if (r.state === 'downloading' && ahead !== null && sameSlot(ahead, r)) {
+            s.downloading = stronger(s.downloading, { progress: r.fileLength !== null && r.fileLength > 0 ? unit(r.bytesDone / r.fileLength) : 0, why: 'ahead', state: 'running' });
+          }
           slots.add(slotId(r));
         }
         if (rows.length > 1) {
@@ -487,13 +588,29 @@ export class CacheShelf {
         s.byCache.set(row.id, bytes);
         s.targets.push({ type: 'cache', id: row.id, title_id: h.titleId, season: row.season, episode: row.episode });
         s.inUse ||= this.opts.caches.busy(row.id);
+        const activity = this.opts.caches.activity(row.id);
+        if (activity !== null) {
+          const progress = activity.progress ?? (row.segmentsTotal > 0 ? row.segmentsDone / row.segmentsTotal : 0);
+          s.downloading = stronger(s.downloading, { progress: unit(progress), why: !row.auto ? 'asked' : activity.ahead ? 'ahead' : 'pause', state: activity.state });
+        }
       }
     }
     for (const [id, h] of holdings) {
       const total = [...h.slots.values()].reduce((n, s) => n + s.torrent + s.cloud, 0) + [...h.seasonShared.values()].reduce((n, s) => n + s.bytes, 0) + h.titleShared.bytes;
-      if (total <= 0) holdings.delete(id);
+      if (total <= 0 && ![...h.slots.values()].some((s) => s.downloading !== null)) holdings.delete(id);
     }
     return { holdings, torrentUsage };
+  }
+
+  /** The download queue's unfinished rows; none when it is off or cannot be read (the page still lists what is on disk). */
+  private async queued(): Promise<ShelfQueued[]> {
+    if ((this.opts.downloads ?? null) === null) return [];
+    try {
+      return await this.opts.downloads!.list();
+    } catch (err) {
+      this.log(`[notesd] cache page: could not read the download queue: ${messageOf(err)}`);
+      return [];
+    }
   }
 
   private async describe(holdings: Map<string, Holding>): Promise<ShelfTitle[]> {
@@ -530,6 +647,7 @@ export class CacheShelf {
             watched: titleWatched || ev?.state === 'finished',
             playing,
             in_use: playing || s.inUse,
+            downloading: s.downloading,
           };
           bySeason.set(s.season, [...(bySeason.get(s.season) ?? []), ep]);
         }
@@ -548,6 +666,7 @@ export class CacheShelf {
             watched,
             playing: episodes.some((e) => e.playing),
             in_use: shared.inUse || episodes.some((e) => e.in_use),
+            downloading: rollup(episodes.flatMap(downloadingOf)),
             episodes,
           });
         }
@@ -574,6 +693,7 @@ export class CacheShelf {
         in_use: playing || h.titleShared.inUse || [...h.slots.values()].some((s) => s.inUse) || seasons.some((s) => s.in_use) || (film?.inUse ?? false),
         seasons,
         shared_bytes: h.titleShared.bytes,
+        downloading: h.kind === 'movie' ? rollup(film === undefined || film.downloading === null ? [] : [film.downloading]) : rollup(seasons.flatMap((s) => s.episodes.flatMap(downloadingOf))),
       });
     }
     return titles.sort((a, b) => b.bytes - a.bytes || a.title.localeCompare(b.title));

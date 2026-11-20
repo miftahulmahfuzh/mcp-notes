@@ -161,6 +161,11 @@ export class EpisodeAhead {
     this.watches.clear();
   }
 
+  /** The episode a torrent is being fetched for ahead (the Cache page's `ahead` reason), or null. Changes nothing. */
+  fetching(): StreamRef | null {
+    return this.held?.ref ?? null;
+  }
+
   private begin(watch: Watch): void {
     watch.stage = 'busy';
     void this.decide(watch)

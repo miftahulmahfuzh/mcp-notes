@@ -20,11 +20,12 @@ import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type Dir
 import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
 import { readMagnet } from './torrent/origins.js';
-import { namesCloud, namesTorrent, PREFERRED_TORRENT_HEIGHT, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type MagnetReport } from './torrent/source.js';
+import { namesCloud, namesTorrent, PREFERRED_TORRENT_HEIGHT, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type TorrentResolveOptions, type MagnetReport } from './torrent/source.js';
 import type { TorrentCandidateList } from './torrent/candidates.js';
 import type { TorrentMark, TorrentMarks } from './torrent/marks.js';
 import { TORRENT_WARP_AUTO, torrentThroughWarp, WARP_ATTEMPT, WarpHolds, type TorrentWarp } from './torrentWarp.js';
 import type { WarpSwitch } from '../streaming/warp.js';
+import { downloadWarpOf, type DownloadWarp } from './downloads/warp.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
@@ -579,6 +580,31 @@ export class DirectStreamService {
     // A cache holds HLS and plain files: a DASH stream's next episode would most likely resolve to the same provider.
     const cacheable = session.cache !== null || session.source.manifest_kind !== 'dash';
     this.ahead?.watched({ id: session.id, ref: session.ref, via: session.torrent !== null ? 'torrent' : 'cloud', cacheable }, report);
+  }
+
+  /** What a download's torrent search needs of a title (src/directStream/downloads/): its original language, IMDb id, names and year. */
+  async downloadFacts(ref: StreamRef): Promise<Pick<TorrentResolveOptions, 'audioLang' | 'imdbId' | 'names'>> {
+    const namesHook = this.opts.hooks?.titleNames;
+    return {
+      audioLang: await this.audioLang(ref),
+      imdbId: await this.imdbIdOf(ref),
+      names: namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref)),
+    };
+  }
+
+  /**
+   * The info hashes of the torrents stream sessions hold in the swarm now: a play from a torrent, on screen or being
+   * reloaded. A replay from disk holds none (it joins no swarm). Downloads give way to these (play first).
+   */
+  torrentsOnScreen(): string[] {
+    const out: string[] = [];
+    for (const session of this.sessions.live()) if (session.torrent !== null && session.torrent.held) out.push(session.torrent.infoHash);
+    return out;
+  }
+
+  /** The next episode a torrent is fetched for now (ahead.ts), for the Cache page; null without `ahead` or with none held. */
+  aheadFetching(): StreamRef | null {
+    return this.ahead?.fetching() ?? null;
   }
 
   get host(): string {
@@ -1208,6 +1234,18 @@ export class DirectStreamService {
     const added = next.attempts.find((a) => a.provider === WARP_ATTEMPT);
     if (added !== undefined) this.log(`[notesd] direct stream: ${refLabel(ref)}: WARP: ${added.outcome}: ${added.detail}`);
     return next;
+  }
+
+  /**
+   * Cloudflare WARP as a torrent download uses it (downloads/warp.ts): this service's one WarpHolds, so a play and a
+   * download hold WARP together and the last to let go puts back what this service switched on, plus the switch's
+   * status, read only. Never the switch itself: a download cannot `set` WARP. Null with NOTESD_STREAM_WARP=off, or
+   * without the automatic flip.
+   */
+  warpForDownloads(): DownloadWarp | null {
+    const warp = this.opts.warp ?? null;
+    if (warp === null || !warp.auto || this.warpHolds === null) return null;
+    return downloadWarpOf(this.warpHolds, warp.switch);
   }
 
   private async imdbIdOf(ref: StreamRef): Promise<string | null> {

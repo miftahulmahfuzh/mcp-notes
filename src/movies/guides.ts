@@ -1,11 +1,9 @@
-import { mkdir } from 'node:fs/promises';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { QueryFn } from '../chat/agent.js';
-import { claudeEnv } from '../chat/env.js';
 import type { Db } from '../db/client.js';
 import type { GenreGuideItem } from '../db/schema.js';
 import { findClaudeBin } from '../sessions/summarize.js';
+import { runAgentText, type AgentTextRun } from './agentText.js';
 import { listTitlesByIds, type ReadContext, type TitleListItem } from './read.js';
 import type { MoviesRepo } from './repo.js';
 import { posterUrl, yearOf, type TmdbClient, type TmdbDiscovery, type TmdbPersonCredit, type TmdbProfiles, type TmdbSearchHit } from './tmdb.js';
@@ -285,65 +283,30 @@ export interface GuideWriterOptions {
 }
 
 /**
- * Claude through the Agent SDK with WebSearch as its one tool: the owner's login, no MCP servers,
- * no settings, no persisted session (the story writer's setup, src/movies/story.ts, plus the search).
- * Null when the claude binary cannot be found.
+ * Claude through the Agent SDK with WebSearch as its one tool (agentText.ts: the owner's login, no MCP
+ * servers, no settings, no persisted session). Null when the claude binary cannot be found.
  */
 export function createGuideWriter(opts: GuideWriterOptions): GuideWriter | null {
   const baseEnv = opts.baseEnv ?? process.env;
   const claudeBin = findClaudeBin(opts.claudeBin, baseEnv.PATH);
   if (claudeBin === null) return null;
   const query: QueryFn = opts.query ?? sdkQuery;
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_GUIDE_TIMEOUT_MS;
-
-  function optionsFor(abortController: AbortController): Options {
-    return {
-      abortController,
-      cwd: opts.cwd,
-      env: claudeEnv(baseEnv),
-      model: opts.model,
-      pathToClaudeCodeExecutable: claudeBin as string,
-      settingSources: [],
-      strictMcpConfig: true,
-      mcpServers: {},
-      tools: ['WebSearch'],
-      allowedTools: ['WebSearch'],
-      permissionMode: 'dontAsk',
-      maxTurns: GUIDE_MAX_TURNS,
-      thinking: { type: 'disabled' },
-      systemPrompt: GUIDE_SYSTEM_PROMPT,
-      persistSession: false,
-    };
-  }
-
+  const run: AgentTextRun = {
+    query,
+    claudeBin,
+    cwd: opts.cwd,
+    baseEnv,
+    model: opts.model,
+    tools: ['WebSearch'],
+    maxTurns: GUIDE_MAX_TURNS,
+    systemPrompt: GUIDE_SYSTEM_PROMPT,
+    timeoutMs: opts.timeoutMs ?? DEFAULT_GUIDE_TIMEOUT_MS,
+    what: 'guide',
+  };
   return {
     model: opts.model,
     async write(input) {
-      await mkdir(opts.cwd, { recursive: true });
-      const controller = new AbortController();
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        controller.abort('timeout');
-      }, timeoutMs);
-      timer.unref();
-      let result: string | null = null;
-      let failure: string | null = null;
-      try {
-        for await (const message of query({ prompt: buildGuideInput(input), options: optionsFor(controller) })) {
-          if (message.type !== 'result') continue;
-          if (message.subtype === 'success' && !message.is_error) result = message.result;
-          else if (message.subtype === 'success') failure = message.result.trim() || 'the model failed without saying why';
-          else failure = message.errors.join('; ').trim() || `the model failed (${message.subtype})`;
-        }
-      } catch (err) {
-        // A CLI that exits non-zero after its result still produced that result: trust it.
-        if (result === null && failure === null) failure = err instanceof Error ? err.message : String(err);
-      } finally {
-        clearTimeout(timer);
-      }
-      if (result !== null && result.trim() !== '') return parseGuide(result);
-      throw new Error(timedOut ? `no guide within ${Math.round(timeoutMs / 1000)} s` : (failure ?? 'the model answered nothing'));
+      return parseGuide(await runAgentText(run, buildGuideInput(input)));
     },
   };
 }

@@ -126,6 +126,21 @@ describe('stream_torrents', () => {
     expect((await repo.get('host-a', HASH))?.files).toEqual(files);
   });
 
+  it('keeps the owner\'s mark on every episode row of a torrent of this host, and clears it', async () => {
+    const later = new Date(T0.getTime() + 60_000);
+    await repo.record('host-a', { infoHash: HASH, ref: EPISODE, name: NAME, release: null, trackers: [] }, T0);
+    await repo.record('host-a', { infoHash: HASH, ref: { ...EPISODE, episode: 3 }, name: NAME, release: null, trackers: [] }, T0);
+    await repo.record('host-b', { infoHash: HASH, ref: EPISODE, name: NAME, release: null, trackers: [] }, T0);
+    expect((await repo.get('host-a', HASH, EPISODE))?.keptAt).toBeNull();
+    expect(await repo.setKept('host-a', HASH, later)).toBe(2);
+    expect((await repo.slots('host-a', HASH)).map((r) => r.keptAt)).toEqual([later, later]);
+    expect((await repo.get('host-a', HASH, EPISODE))?.updatedAt).toEqual(T0);
+    expect((await repo.get('host-b', HASH, EPISODE))?.keptAt).toBeNull();
+    expect(await repo.setKept('host-a', HASH, null)).toBe(2);
+    expect((await repo.slots('host-a', HASH)).every((r) => r.keptAt === null)).toBe(true);
+    expect(await repo.setKept('host-a', 'f'.repeat(40), later)).toBe(0);
+  });
+
   it('finds what was not played for the window: by played_at, else completed_at, else created_at', async () => {
     const day = 86_400_000;
     await repo.record('host-a', { infoHash: 'a'.repeat(40), ref: REF, name: 'never played', release: null, trackers: [] }, new Date(T0.getTime() - 9 * day));

@@ -79,6 +79,17 @@ export interface CachePreviewView {
   signature(id: string): Promise<string | null>;
 }
 
+/**
+ * How this host's cache downloads now, for the Cache page: `running` or `queued` (waiting its turn, a yielded ahead
+ * download included); `ahead` when it was fetched for the next episode (ahead.ts), which only memory knows;
+ * `progress` the running job's share of its segments, null before it knows its plan or while it waits.
+ */
+export interface CacheActivity {
+  state: 'queued' | 'running';
+  ahead: boolean;
+  progress: number | null;
+}
+
 interface Waiting {
   id: string;
   ref: StreamRef;
@@ -380,6 +391,18 @@ export class StreamCache {
   busy(id: string): boolean {
     const key = id.toLowerCase();
     return this.running.has(key) || this.waiting.some((w) => w.id === key);
+  }
+
+  /** How the cache downloads now (the Cache page's bar and reason); null while it neither runs nor waits. Changes nothing. */
+  activity(id: string): CacheActivity | null {
+    const key = id.toLowerCase();
+    const job = this.running.get(key);
+    if (job !== undefined) {
+      const p = job.progress();
+      return { state: 'running', ahead: this.aheadRunning.has(key), progress: p === null || p.segmentsTotal === 0 ? null : p.segmentsDone / p.segmentsTotal };
+    }
+    const waiting = this.waiting.find((w) => w.id === key);
+    return waiting === undefined ? null : { state: 'queued', ahead: waiting.ahead === true, progress: null };
   }
 
   /** This host's caches with the bytes each takes on disk (blocks), for the Cache page. Never the other host's. */

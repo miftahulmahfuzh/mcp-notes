@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadDialogue } from '../../src/directStream/dialogueStore.js';
 import { moviesApiRoutes } from '../../src/http/moviesApi.js';
 import { MovieStories } from '../../src/movies/story.js';
-import type { FileChangeResponse, MoviesStatusResponse, SyncResponse, TitleListResponse, TmdbSearchResponse, UnmatchedResponse } from '../../src/http/moviesApi.js';
+import type { FileChangeResponse, MoviesStatusResponse, StoryResponse, SyncResponse, TitleListResponse, TmdbSearchResponse, UnmatchedResponse } from '../../src/http/moviesApi.js';
 import type { TitleDetail } from '../../src/movies/read.js';
 import { buildMoviesService, type MoviesService } from '../../src/movies/service.js';
 import { truncateAll } from './setup.js';
@@ -292,21 +292,41 @@ describe('status, sync and the changed stream', () => {
   });
 });
 
-describe('the story of an episode', () => {
-  const storyApp = (written: string[], writer: boolean = true): Hono => {
+describe('the story of a film, an episode and a season', () => {
+  const SOURCE = { url: 'https://en.wikipedia.org/wiki/MobLand', title: 'MobLand', site: 'Wikipedia' };
+  interface Calls {
+    web: string[];
+    dialogue: string[];
+  }
+  /** `told`: the episodes the fake web writer has a recap of; null: no web writer. */
+  const storyApp = (calls: Calls, told: ReadonlySet<number> | null, dialogueWriter = true): Hono => {
     const stories = new MovieStories({
       repo: here.repo,
       // No stream service in this test: only a stored dialogue can be read.
       dialogue: (target) => loadDialogue(here.repo, null, target),
-      writer: writer
+      writer: dialogueWriter
         ? {
             model: 'test-model',
             write: async (input) => {
-              written.push(input.dialogue);
+              calls.dialogue.push(input.dialogue);
               return `The story of ${input.title} ${input.code}.\n\nIt ends.`;
             },
           }
         : null,
+      webWriter:
+        told === null
+          ? null
+          : {
+              model: 'web-model',
+              write: async (input) => {
+                calls.web.push(`${input.scope} ${input.season}: ${input.episodes.map((e) => e.episode).join(',')}`);
+                return {
+                  sections: input.episodes.map((e) => ({ episode: e.episode, name: e.name, text: told.has(e.episode) ? `Recap of ${e.episode}.` : '', found: told.has(e.episode) })),
+                  sources: input.episodes.some((e) => told.has(e.episode)) ? [SOURCE] : [],
+                };
+              },
+            },
+      now: () => new Date('2026-11-20T00:00:00Z'),
       log: () => undefined,
     });
     const app = new Hono();
@@ -315,50 +335,65 @@ describe('the story of an episode', () => {
   };
   const seedDialogue = () =>
     here.repo.saveDialogue({ titleId: 'tv-247718', season: 1, episode: 2, lang: 'en', provider: 'VidNest Anime', cues: 2, lastCueS: 70, body: '00:05\tWho are you?\n01:10\tI am the fixer.', fetchedAt: new Date('2026-11-16T05:00:00Z') });
+  const errorOf = async (res: Response): Promise<[number, string]> => [res.status, ((await res.json()) as { error: string }).error];
 
-  it('is written once from the stored dialogue on POST, kept, and marked on the episode; GET never writes', async () => {
-    const written: string[] = [];
-    const app = storyApp(written);
-    await seedDialogue();
-    const before = await getJson<{ story: unknown }>(app, '/api/movies/tv-247718/story?season=1&episode=2');
-    expect(before).toEqual({ status: 200, body: { story: null, cached: true } });
-    expect(written).toEqual([]);
+  it('writes a season story from the web on POST {season}, keeps it, marks the season, and reads it back without a model', async () => {
+    const calls: Calls = { web: [], dialogue: [] };
+    const app = storyApp(calls, new Set([1, 2]));
+    expect(await getJson<StoryResponse>(app, '/api/movies/tv-247718/story?season=1')).toEqual({ status: 200, body: { story: null, cached: true } });
 
-    const res = await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 2 });
+    const res = await post(app, '/api/movies/tv-247718/story', { season: 1 });
     expect(res.status).toBe(200);
-    const first = (await res.json()) as { story: { text: string; model: string; cues: number; provider: string }; cached: boolean };
-    expect(first).toMatchObject({ cached: false, story: { season: 1, episode: 2, text: 'The story of MobLand (2025) S01E02.\n\nIt ends.', model: 'test-model', cues: 2, provider: 'VidNest Anime' } });
-    expect(written).toEqual(['[00:05] Who are you?\n[01:10] I am the fixer.']);
+    const first = (await res.json()) as StoryResponse;
+    expect(first).toMatchObject({ cached: false, story: { season: 1, episode: 0, origin: 'web', model: 'web-model', sources: [SOURCE], provider: null, cues: null } });
+    expect(first.story?.sections).toEqual([
+      { episode: 1, name: 'Stick or Twist', text: 'Recap of 1.', found: true },
+      { episode: 2, name: 'Episode Two', text: 'Recap of 2.', found: true },
+      { episode: 3, name: 'Episode Three', text: '', found: false },
+    ]);
+    expect(calls).toEqual({ web: ['season 1: 1,2,3'], dialogue: [] });
 
-    const again = (await (await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 2 })).json()) as { cached: boolean; story: { text: string } };
-    expect(again).toMatchObject({ cached: true, story: { text: first.story.text } });
-    expect(written).toHaveLength(1);
-    expect((await getJson<{ story: { text: string } }>(app, '/api/movies/tv-247718/story?season=1&episode=2')).body.story.text).toBe(first.story.text);
+    expect((await (await post(app, '/api/movies/tv-247718/story', { season: 1 })).json()) as StoryResponse).toEqual({ story: first.story, cached: true });
+    expect((await getJson<StoryResponse>(app, '/api/movies/tv-247718/story?season=1')).body).toEqual({ story: first.story, cached: true });
+    expect(calls.web).toHaveLength(1);
 
-    const detail = await getJson<{ has_story: boolean; seasons: Array<{ episodes: Array<{ episode: number; has_story: boolean }> }> }>(app, '/api/movies/tv-247718');
+    const detail = await getJson<TitleDetail>(app, '/api/movies/tv-247718');
+    expect(detail.body.seasons[0]?.has_story).toBe(true);
+    expect(detail.body.seasons[0]?.episodes.map((e) => e.has_story)).toEqual([false, false, false]);
     expect(detail.body.has_story).toBe(false);
-    expect(detail.body.seasons[0]?.episodes.map((e) => [e.episode, e.has_story])).toEqual([[1, false], [2, true], [3, false]]);
-    // A subtitle read again keeps the story that was written.
-    await seedDialogue();
-    expect((await here.repo.dialogue('tv-247718', 1, 2))?.story).toBe(first.story.text);
-    expect(await here.repo.storySlots('tv-247718')).toEqual([{ season: 1, episode: 2 }]);
   });
 
-  it('answers why there is none: no dialogue here, stories off, an unknown title, another origin, a bad slot', async () => {
-    const written: string[] = [];
-    const app = storyApp(written);
-    const none = await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 3 });
-    expect([none.status, ((await none.json()) as { error: string }).error]).toEqual([503, 'no_dialogue']);
-    expect((await post(app, '/api/movies/tv-999999/story', { season: 1, episode: 1 })).status).toBe(404);
-    expect((await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 2 }, {})).status).toBe(403);
-    expect((await post(app, '/api/movies/tv-247718/story', { season: 1 })).status).toBe(400);
-    expect((await app.request('/api/movies/tv-247718/story?season=x')).status).toBe(400);
+  it('writes an episode from the web first, and from its stored subtitle only when the web has none', async () => {
+    const calls: Calls = { web: [], dialogue: [] };
+    const app = storyApp(calls, new Set([1]));
     await seedDialogue();
-    const off = await post(storyApp(written, false), '/api/movies/tv-247718/story', { season: 1, episode: 2 });
-    expect([off.status, ((await off.json()) as { error: string }).error]).toEqual([503, 'story_off']);
+    const web = (await (await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 1 })).json()) as StoryResponse;
+    expect(web).toMatchObject({ cached: false, story: { season: 1, episode: 1, origin: 'web', text: 'Recap of 1.', sections: [], sources: [SOURCE], provider: null } });
+    const sub = (await (await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 2 })).json()) as StoryResponse;
+    expect(sub).toMatchObject({ cached: false, story: { season: 1, episode: 2, origin: 'dialogue', text: 'The story of MobLand (2025) S01E02.\n\nIt ends.', sources: [], provider: 'VidNest Anime', cues: 2 } });
+    expect(calls).toEqual({ web: ['episode 1: 1', 'episode 1: 2'], dialogue: ['[00:05] Who are you?\n[01:10] I am the fixer.'] });
+    expect((await getJson<StoryResponse>(app, '/api/movies/tv-247718/story?season=1&episode=2')).body).toEqual({ story: sub.story, cached: true });
+
+    const detail = await getJson<TitleDetail>(app, '/api/movies/tv-247718');
+    expect(detail.body.seasons[0]?.episodes.map((e) => [e.episode, e.has_story])).toEqual([[1, true], [2, true], [3, false]]);
+    expect(detail.body.seasons[0]?.has_story).toBe(false);
+  });
+
+  it('answers why there is none: no source at all, a season of a film, an unknown title, another origin, a bad slot, stories off', async () => {
+    const calls: Calls = { web: [], dialogue: [] };
+    const app = storyApp(calls, new Set());
+    expect(await errorOf(await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 3 }))).toEqual([404, 'no_story_source']);
+    expect(await errorOf(await post(app, '/api/movies/tv-247718/story', { season: 1 }))).toEqual([404, 'no_story_source']);
+    expect((await getJson<StoryResponse>(app, '/api/movies/tv-247718/story?season=1')).body.story).toBeNull();
+    expect(await errorOf(await post(app, '/api/movies/movie-467905/story', { season: 1 }))).toEqual([404, 'not_found']);
+    expect((await post(app, '/api/movies/tv-999999/story', { season: 1, episode: 1 })).status).toBe(404);
+    expect((await post(app, '/api/movies/tv-247718/story', { season: 1 }, {})).status).toBe(403);
+    expect((await post(app, '/api/movies/tv-247718/story', { season: 1, episode: -1 })).status).toBe(400);
+    expect((await app.request('/api/movies/tv-247718/story?season=x')).status).toBe(400);
+    expect(await errorOf(await post(storyApp(calls, null, false), '/api/movies/tv-247718/story', { season: 1 }))).toEqual([503, 'story_off']);
     // Without the stories service at all (a daemon older than it): 503.
     expect((await post(appFor(here), '/api/movies/tv-247718/story', { season: 1, episode: 2 })).status).toBe(503);
-    expect(written).toEqual([]);
+    expect(calls.dialogue).toEqual([]);
   });
 });
 

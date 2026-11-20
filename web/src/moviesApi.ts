@@ -148,6 +148,8 @@ export interface SeasonView {
   season: number;
   /** YouTube video id of this season's trailer; null when TMDB lists none. */
   trailer_key: string | null;
+  /** The season's whole story is stored: opening it calls no model. Absent from a server older than season stories. */
+  has_story?: boolean;
   episodes: EpisodeView[];
 }
 
@@ -620,28 +622,114 @@ export async function setEpisodesWatched(titleId: string, target: { season: numb
   return list(j?.changed);
 }
 
-/** The story of a film or an episode, written by Claude from its dialogue (`POST /api/movies/:id/story`). */
+/** Where a story was written from: published recaps found on the web, or the episode's subtitle. */
+export type StoryOrigin = 'web' | 'dialogue';
+
+/** A web page a story was written from. */
+export interface StorySource {
+  url: string;
+  title: string;
+  /** The site's name ("Wikipedia", "Vulture"). */
+  site: string;
+}
+
+/** One episode of a season's story. `found: false`: no source told this episode, and its text is empty. */
+export interface StorySection {
+  episode: number;
+  name: string | null;
+  text: string;
+  found: boolean;
+}
+
+/** The story of a film, an episode or a whole season (`POST /api/movies/:id/story`). */
 export interface StoryView {
   season: number;
+  /** 0 for a season's story and a film's. */
   episode: number;
-  /** Plain paragraphs, separated by a blank line. */
+  /** Plain paragraphs, separated by a blank line. A season's story shows its sections instead. */
   text: string;
   model: string | null;
   written_at: string | null;
-  /** The stream provider whose subtitle it was written from, and how many lines that was. */
-  provider: string;
-  cues: number;
+  origin: StoryOrigin;
+  /** The pages it was written from; empty for a story written from a subtitle. */
+  sources: StorySource[];
+  /** A season's story, one per episode in episode order; empty for an episode's or a film's. */
+  sections: StorySection[];
+  /** The stream provider whose subtitle it was written from, and how many lines that was; null for a web story. */
+  provider: string | null;
+  cues: number | null;
+}
+
+/** A story as the daemon sends it: an older daemon leaves out origin, sources and sections. */
+interface StoryWire {
+  season?: number;
+  episode?: number;
+  text?: string | null;
+  model?: string | null;
+  written_at?: string | null;
+  origin?: string | null;
+  sources?: Partial<StorySource>[] | null;
+  sections?: Partial<StorySection>[] | null;
+  provider?: string | null;
+  cues?: number | null;
+}
+
+function webUrl(u: unknown): string | null {
+  if (typeof u !== 'string') return null;
+  try {
+    const p = new URL(u).protocol;
+    return p === 'https:' || p === 'http:' ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Reads a story off the wire once: only http(s) sources, each once; sections in episode order; defaults for what an older daemon leaves out. */
+export function normalizeStory(s: StoryWire): StoryView {
+  const seen = new Set<string>();
+  const sources: StorySource[] = [];
+  for (const x of list(s.sources)) {
+    const url = webUrl(x?.url);
+    if (url === null || seen.has(url)) continue;
+    seen.add(url);
+    const title = typeof x.title === 'string' && x.title.trim() !== '' ? x.title.trim() : url;
+    const site = typeof x.site === 'string' && x.site.trim() !== '' ? x.site.trim() : new URL(url).hostname;
+    sources.push({ url, title, site });
+  }
+  const sections: StorySection[] = list(s.sections)
+    .filter((x): x is Partial<StorySection> & { episode: number } => typeof x?.episode === 'number' && Number.isInteger(x.episode))
+    .map((x) => {
+      const text = typeof x.text === 'string' ? x.text : '';
+      const name = typeof x.name === 'string' && x.name.trim() !== '' ? x.name.trim() : null;
+      return { episode: x.episode, name, text, found: x.found === true && text.trim() !== '' };
+    })
+    .sort((a, b) => a.episode - b.episode);
+  return {
+    season: s.season ?? 0,
+    episode: s.episode ?? 0,
+    text: s.text ?? '',
+    model: s.model ?? null,
+    written_at: s.written_at ?? null,
+    origin: s.origin === 'web' ? 'web' : 'dialogue',
+    sources,
+    sections,
+    provider: s.provider ?? null,
+    cues: typeof s.cues === 'number' ? s.cues : null,
+  };
 }
 
 /**
- * The story of one episode: the stored one, else the daemon reads the dialogue and has it written
- * (a model call, up to a few minutes), then keeps it. `cached` is false only for a story this
- * call had written. Throws ApiError: `story_off`, `no_subtitle`, `no_source`, `story_failed`, ...
+ * The story of one episode (`episode` a number) or of a whole season (`episode` null): the stored
+ * one, else the daemon writes it from published recaps on the web (an episode falls back to its
+ * subtitle when the web has none), a model call of up to a few minutes, then keeps it. `cached` is
+ * false only for a story this call had written. Throws ApiError: `story_off`, `no_story_source`,
+ * `no_subtitle`, `no_source`, `story_failed`, ...
  */
-export async function writeStory(titleId: string, season: number, episode: number): Promise<{ story: StoryView; cached: boolean }> {
-  const j = await postJson<{ story?: StoryView | null; cached?: boolean }>(`/api/movies/${enc(titleId)}/story`, { season, episode });
+export async function writeStory(titleId: string, season: number, episode: number | null): Promise<{ story: StoryView; cached: boolean }> {
+  const body = episode === null ? { season } : { season, episode };
+  const j = await postJson<{ story?: StoryWire | null; cached?: boolean }>(`/api/movies/${enc(titleId)}/story`, body);
   if (j === null || j.story === null || j.story === undefined) throw new ApiError(502, 'story_failed', 'The daemon answered no story.');
-  return { story: j.story, cached: j.cached === true };
+  return { story: normalizeStory(j.story), cached: j.cached === true };
 }
 
 export async function setFileWatched(fileId: number, watched: boolean): Promise<void> {
@@ -863,6 +951,22 @@ export async function ensureTitle(kind: TitleKind, tmdbId: number): Promise<stri
 // ---------- the Cache page (GET /api/stream/disk) ----------
 
 export type DiskKind = 'torrent' | 'cloud';
+/** Why a film or episode downloads now: the owner asked, the next episode fetched ahead, or a pause in the player. */
+export type DiskWhy = 'asked' | 'ahead' | 'pause';
+export type DiskDownloadState = 'queued' | 'running' | 'paused';
+
+export interface DiskDownloading {
+  progress: number;
+  why: DiskWhy;
+  state: DiskDownloadState;
+}
+
+export interface DiskDownloadRollup {
+  count: number;
+  progress: number;
+  why: DiskWhy[];
+  state: DiskDownloadState;
+}
 
 export interface DiskEpisode {
   season: number;
@@ -874,6 +978,7 @@ export interface DiskEpisode {
   watched: boolean;
   playing: boolean;
   in_use: boolean;
+  downloading: DiskDownloading | null;
 }
 
 export interface DiskSeason {
@@ -884,6 +989,7 @@ export interface DiskSeason {
   watched: boolean;
   playing: boolean;
   in_use: boolean;
+  downloading: DiskDownloadRollup | null;
   episodes: DiskEpisode[];
 }
 
@@ -906,6 +1012,7 @@ export interface DiskTitle {
   in_use: boolean;
   seasons: DiskSeason[];
   shared_bytes: number;
+  downloading: DiskDownloadRollup | null;
 }
 
 export interface DiskDeletion {
@@ -924,6 +1031,8 @@ export interface DiskView {
   unnamed_bytes: number;
   budget_bytes: number | null;
   titles: DiskTitle[];
+  /** Films and episodes downloading now. */
+  downloading: number;
   bulk: { watched: { bytes: number; titles: number }; not_interested: { bytes: number; titles: number } };
   pending: DiskDeletion[];
   undo_ms: number;
@@ -931,7 +1040,7 @@ export interface DiskView {
 
 export type DiskScope = { title_id: string; season?: number; episode?: number } | { bulk: 'watched' | 'not_interested' };
 
-/** What this machine keeps on disk for streaming. Throws ApiError `stream_disk_off`. */
+/** What this machine keeps on disk for streaming, and what downloads now. Throws ApiError `stream_disk_off`. */
 export async function fetchStreamDisk(signal?: AbortSignal): Promise<DiskView> {
   const v = await getJson<Partial<DiskView>>('/api/stream/disk', signal);
   return {
@@ -941,7 +1050,12 @@ export async function fetchStreamDisk(signal?: AbortSignal): Promise<DiskView> {
     cloud_bytes: v.cloud_bytes ?? 0,
     unnamed_bytes: v.unnamed_bytes ?? 0,
     budget_bytes: v.budget_bytes ?? null,
-    titles: list(v.titles).map((t) => ({ ...t, seasons: list(t.seasons).map((s) => ({ ...s, episodes: list(s.episodes) })) })),
+    titles: list(v.titles).map((t) => ({
+      ...t,
+      downloading: t.downloading ?? null,
+      seasons: list(t.seasons).map((s) => ({ ...s, downloading: s.downloading ?? null, episodes: list(s.episodes).map((e) => ({ ...e, downloading: e.downloading ?? null })) })),
+    })),
+    downloading: v.downloading ?? 0,
     bulk: v.bulk ?? { watched: { bytes: 0, titles: 0 }, not_interested: { bytes: 0, titles: 0 } },
     pending: list(v.pending),
     undo_ms: v.undo_ms ?? 10_000,
@@ -958,5 +1072,112 @@ export async function deleteStreamDisk(scope: DiskScope): Promise<DiskDeletion> 
 /** Cancels a pending deletion. Throws ApiError `unknown_deletion` once it was carried out. */
 export async function undoStreamDisk(id: string): Promise<void> {
   const res = await fetch(`/api/stream/disk/deletions/${encodeURIComponent(id)}`, { method: 'DELETE', headers: JSON_HEADERS });
+  if (!res.ok) throw await failure(res);
+}
+
+// ---------- downloads (POST, GET, DELETE /api/stream/downloads) ----------
+
+/** How a download was asked for: `auto` (the Download button: a 1080p torrent, then the cloud, then a lower torrent), or one source. */
+export type DownloadVia = 'auto' | 'torrent' | 'cloud';
+export type DownloadState = 'queued' | 'running' | 'paused' | 'done' | 'failed';
+export type DownloadSource = 'torrent' | 'cloud';
+
+/** One download of this machine, as GET /api/stream/downloads lists it (phase 2's DownloadView plus `title_id`). */
+export interface DownloadView {
+  id: string;
+  host: string;
+  available: boolean;
+  /** `movie-<tmdb id>` or `tv-<tmdb id>`, the title's `id`. */
+  title_id: string;
+  kind: TitleKind;
+  tmdb_id: number;
+  /** Null for a film. */
+  season: number | null;
+  /** Null for a film. */
+  episode: number | null;
+  /** `done` only in an answer narrowed to one title (`?title=`): it is on this machine. */
+  state: DownloadState;
+  via: DownloadVia;
+  /** The torrent picked by hand; null otherwise. */
+  info_hash: string | null;
+  /** What it downloads from; null while no source is chosen yet. */
+  source: DownloadSource | null;
+  /** The torrent's info hash or the stream cache's id; null while no source is chosen yet. */
+  source_id: string | null;
+  /** 0 to 1. */
+  progress: number;
+  bytes_done: number;
+  bytes_total: number | null;
+  peers: number | null;
+  down_kbps: number | null;
+  /** Why it failed (`no_source`, ...); null unless `state` is `failed`. */
+  error: string | null;
+  /** What each source it tried saw, when it failed. */
+  detail: string | null;
+  /** Shared by the episodes one season's click queued; null for a single film or episode. */
+  batch: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+export interface DownloadsView {
+  host: string;
+  /** Something is queued, running or paused: read again soon. False: nothing moves, so nothing needs reading again. */
+  active: boolean;
+  downloads: DownloadView[];
+}
+
+/** What the Download button asks for: a film, an episode (a torrent may be named), or a whole season. */
+export type DownloadRequest =
+  | { kind: 'movie'; tmdb_id: number; via?: DownloadVia; info_hash?: string }
+  | { kind: 'tv'; tmdb_id: number; season: number; episode: number; via?: DownloadVia; info_hash?: string }
+  | { kind: 'tv'; tmdb_id: number; season: number; episode?: never; via?: DownloadVia; info_hash?: never };
+
+export interface DownloadQueued {
+  /** Downloads this request made; 0 when everything asked for was queued already or is on this machine. */
+  created: number;
+  whole: number;
+  not_aired: number;
+  downloads: DownloadView[];
+}
+
+function downloadOf(d: DownloadView): DownloadView {
+  const p = typeof d.progress === 'number' && Number.isFinite(d.progress) ? Math.min(1, Math.max(0, d.progress)) : 0;
+  return {
+    ...d,
+    season: d.season ?? null,
+    episode: d.episode ?? null,
+    info_hash: d.info_hash ?? null,
+    source: d.source ?? null,
+    source_id: d.source_id ?? null,
+    progress: p,
+    bytes_done: d.bytes_done ?? 0,
+    bytes_total: d.bytes_total ?? null,
+    peers: d.peers ?? null,
+    down_kbps: d.down_kbps ?? null,
+    error: d.error ?? null,
+    detail: d.detail ?? null,
+    batch: d.batch ?? null,
+    finished_at: d.finished_at ?? null,
+  };
+}
+
+/** Queues a film, an episode or a season; answers at once. Throws ApiError `downloads_off`, `invalid_body`, `unknown_season`. */
+export async function requestDownload(ask: DownloadRequest): Promise<DownloadQueued> {
+  const r = await postJson<Partial<DownloadQueued>>('/api/stream/downloads', ask);
+  return { created: r?.created ?? 0, whole: r?.whole ?? 0, not_aired: r?.not_aired ?? 0, downloads: list(r?.downloads).map(downloadOf) };
+}
+
+/** This machine's queued, running, paused and failed downloads; of one title when `titleId` names it, then with its `done` ones still on this machine. Throws ApiError `downloads_off`. */
+export async function fetchDownloads(titleId: string | null = null, signal?: AbortSignal): Promise<DownloadsView> {
+  const url = titleId === null ? '/api/stream/downloads' : `/api/stream/downloads?title=${enc(titleId)}`;
+  const v = await getJson<Partial<DownloadsView>>(url, signal);
+  return { host: v.host ?? '', active: v.active === true, downloads: list(v.downloads).map(downloadOf) };
+}
+
+/** Cancels a download of this machine. Throws ApiError `unknown_download`. */
+export async function cancelDownload(id: string): Promise<void> {
+  const res = await fetch(`/api/stream/downloads/${enc(id)}`, { method: 'DELETE', headers: JSON_HEADERS });
   if (!res.ok) throw await failure(res);
 }

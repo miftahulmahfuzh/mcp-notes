@@ -26,6 +26,20 @@
   them, then in Playwright open the page, unfold the series, trash E01, Undo, trash again and wait 13 s: E01's
   file and row are gone, E02 and the pack's other files stay. `$V restart` inside a window carries the
   deletion out at start (daemon.log `cache page: carried out 1 deletion(s) left pending by the restart`).
+  What downloads now is listed with what is on disk (a queued download with nothing on disk yet has a 0 B row),
+  each downloading row with a bar (`role="progressbar"`) and why it downloads (`asked`, `ahead`, `pause`); while
+  anything downloads the page reads every 3 s instead of 15 s. The Downloading filter (an icon beside the bulk
+  buttons, its count beside it, `aria-pressed`) lists only the titles, seasons and episodes downloading now,
+  unfolded; a second click goes back. Proof: `web/src/components/movies/CachePage.test.tsx`,
+  `tests/unit/directStream/cacheShelf.test.ts`; on a `TORRENT_SEED_KBPS=20 $V up --web --torrent` run,
+  `direct-stream/downloads.sh RUN season cache` (see `features/direct-streaming.md`, "Downloads asked for").
+- Download buttons (Stream side, direct streaming on): an icon on a film's page beside Play, on each season row
+  and on each episode row (none at a series' head) queues the film, the season's aired episodes or the episode
+  (`POST /api/stream/downloads`); its caret opens "Choose how to download <name>" (Best torrent, Cloud, Pick a
+  torrent… which opens `TorrentsModal` with a download action per row; no pick row on a season). A bar under the
+  button while queued or downloading; filled when on this machine; failed says why. Proof:
+  `web/src/components/movies/DownloadButton.test.tsx web/src/lib/downloads.test.tsx`; on a throwaway run,
+  `direct-stream/downloads.sh RUN title season`.
 - Stream grid upkeep: the grid fills from real plays only (no refresh icon);
   the bookmark icon marks a title "interested" (`interested: true` on `POST /api/movies/:id/user`;
   the Stream side's `interested` pill lists it with no verified source too, as `interested_only`, and
@@ -42,11 +56,14 @@
   without a file has its own, and the notice offers an undo of exactly what changed. The caret
   before a season's name folds its episodes into a count, kept per title in the browser
   (`npx vitest run web/src/components/movies/EpisodeList.test.tsx`). The book icon of an episode
-  opens its story, written once by Claude from the stored dialogue and kept
-  (`POST /api/movies/:id/story`): `npx vitest run tests/unit/movies/story.test.ts web/src/components/movies/StoryModal.test.tsx`,
-  `npm run test:int -- tests/integration/movies.api.int.test.ts` ("the story of an episode"). A
-  throwaway daemon never writes one (`NOTESD_MOVIES_STORY_MODEL=off` is pinned): seed a dialogue row
-  with a story through `$V exec` and open it on the page. Proof:
+  opens its story, written once by Claude from published recaps found with WebSearch (the episode's dialogue only
+  when no recap covers it) and kept in `movie_stories`; the book icon of a season row ("Narrate the full story of
+  S01") opens the season's story, one section per episode, an episode no recap covers saying so, its sources as
+  links (`POST /api/movies/:id/story` with `{season}` alone). Proof: `npx vitest run tests/unit/movies/story.test.ts
+  tests/unit/movies/webStory.test.ts web/src/components/movies/StoryModal.test.tsx web/src/components/movies/EpisodeList.test.tsx`,
+  `npm run test:int -- tests/integration/movies.api.int.test.ts` ("the story of an episode"). A throwaway daemon
+  never writes one (`NOTESD_MOVIES_STORY_MODEL=off` is pinned): seed a `movie_stories` row through `$V exec` and
+  open it on the page, as `direct-stream/downloads.sh RUN story` does. Proof:
   `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`.
 - Names and the play menu (a title's page). A person, a studio or a genre clicked opens a pop-up
   (`EntityModal`): `GET /api/movies/people/:id` and `/companies/:id` read TMDB at each request;

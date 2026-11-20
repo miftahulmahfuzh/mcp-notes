@@ -234,3 +234,18 @@
 .mv-menu-side { all: unset; box-sizing: border-box; display: grid; place-items: center; cursor: pointer; font-size: 17px; color: var(--soft); border-left: 1px solid var(--line); }
 .mv-menu-side:hover, .mv-menu-side:focus-visible { background: var(--hover); color: var(--fg); }
 .mv-menu-side:disabled { opacity: .4; cursor: default; background: transparent; }
+
+/* The Download button (Stream side): the icon, its caret (the play menu's), an X while it downloads, and a thin bar under them. */
+.mv-dl { position: relative; display: inline-flex; align-items: center; }
+.mv-dl-bar { position: absolute; left: 6px; right: 6px; bottom: -2px; height: 2px; background: var(--chip-bg); pointer-events: none; }
+.mv-dl.page .mv-dl-bar { bottom: -4px; height: 3px; }
+.mv-dl-bar > span { display: block; height: 100%; background: var(--fg); transition: width .4s; }
+.mv-dl-bar.queued, .mv-dl-bar.paused { background: repeating-linear-gradient(90deg, var(--chip-bg) 0 4px, transparent 4px 8px); }
+.mv-dl-bar.paused > span { background: var(--soft); }
+.mv-dl-failed { color: var(--band-red); }
+.mv-dl .mv-dl-cancel { color: var(--soft); }
+.mv-dl .mv-dl-cancel:hover { color: var(--fg); }
+.mv-dl.season .mv-dl-cancel, .mv-dl.row .mv-dl-cancel { width: 26px; font-size: 13px; }
+.mv-dl.page .mv-dl-cancel { width: 32px; font-size: 16px; }
+.mv-actions .mv-dl .ibtn:disabled, .mv-season-head .mv-dl .pbtn:disabled { opacity: .35; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .mv-dl-bar > span { transition: none; } }

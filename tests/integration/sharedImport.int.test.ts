@@ -231,6 +231,22 @@ describe('the copy of the old shared database', () => {
     expect(await rows(local, `select 1 from movie_ids where title_id = 'movie-10'`)).toHaveLength(1)
   })
 
+  it('brings a story the shared side kept on a dialogue row into movie_stories', async () => {
+    await title(shared, 'tv-2')
+    await run(
+      shared,
+      `insert into movie_dialogues (title_id, season, episode, provider, cues, last_cue_s, body, fetched_at, story, story_model, story_at)
+       values ('tv-2', 1, 1, 'VidNest', 1, 5, 'Hi.', '2026-01-04T10:00:00Z', 'The pilot.', 'sonnet', '2026-01-04T11:00:00Z'),
+              ('tv-2', 1, 2, 'VidNest', 1, 5, 'Bye.', '2026-01-04T10:00:00Z', null, null, null)`,
+    )
+    await stageSharedImport(shared, local)
+    const written = await mergeStagedImport(local)
+    expect(written.movie_stories).toBe(1)
+    expect(await rows(local, `select title_id, season, episode, text, origin, model from movie_stories`)).toEqual([
+      { title_id: 'tv-2', season: 1, episode: 1, text: 'The pilot.', origin: 'dialogue', model: 'sonnet' },
+    ])
+  })
+
   it('throws and stages nothing more while the old database cannot be read', async () => {
     const broken = createDb('postgres://nobody:nothing@127.0.0.1:1/none')
     try {

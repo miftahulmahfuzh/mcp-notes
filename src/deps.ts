@@ -14,6 +14,7 @@ import type { WarpSwitch } from './streaming/warp.js';
 import type { DirectStreamService } from './directStream/service.js';
 import type { StreamCache } from './directStream/cache/service.js';
 import type { TorrentStreams } from './directStream/torrent/service.js';
+import type { StreamDownloads } from './directStream/downloads/service.js';
 import type { CacheShelf } from './directStream/cacheShelf.js';
 import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import type { TorrentRemux } from './directStream/torrent/remux.js';
@@ -96,6 +97,12 @@ export interface AppDeps {
    * NOTESD_TORRENT=off. startBackground starts its tick and closes it.
    */
   torrents?: TorrentStreams | null;
+  /**
+   * Downloads the owner asks for (src/directStream/downloads/): the queue in stream_downloads, a 1080p torrent first,
+   * then the cloud cache, kept until deleted on the Cache page. Null or absent with NOTESD_STREAM_DOWNLOADS=off or neither
+   * torrents nor the stream cache. startBackground carries on what the last run left and closes it.
+   */
+  streamDownloads?: StreamDownloads | null;
   /**
    * The Cache page (src/directStream/cacheShelf.ts): this host's torrents and cloud caches on disk, and their deletion
    * after an undo window. Built next to `torrents` and `streamCache`; null or absent with both off (the routes and the

@@ -43,6 +43,8 @@ const GIB = 1024 ** 3;
 const gb = (bytes: number): string => (bytes >= GIB ? `${(bytes / GIB).toFixed(1)} GB` : `${Math.round(bytes / 1_048_576)} MB`);
 /** A ready download played (or finished) within this long goes last in the budget's order. */
 export const TORRENT_RECENT_MS = 86_400_000;
+/** The torrents the owner keeps as downloads (any row of it has `kept_at`): neither prune deletes them. */
+const keptHashes = (rows: readonly StreamTorrentRow[]): Set<string> => new Set(rows.filter((r) => r.keptAt !== null).map((r) => r.infoHash));
 /** ` S01E02` for an episode's row, nothing for a film's. */
 const episodeOf = (row: Pick<StreamTorrentRow, 'kind' | 'season' | 'episode'>): string =>
   row.kind === 'tv' ? ` S${String(row.season).padStart(2, '0')}E${String(row.episode).padStart(2, '0')}` : '';
@@ -245,19 +247,50 @@ export class TorrentStreams {
     if (hash === null) throw new TorrentError('invalid_hash', 'An info hash is 40 hexadecimal characters.');
     const live = this.active.get(hash);
     if (live === undefined) {
-      for (const row of await this.repo.slots(this.host, hash)) {
-        if (row.state === 'ready' && fileIndexes.every((i) => row.files.some((f) => f.index === i)) && (await this.diskHandle(row)) !== null) return;
-      }
+      if (await this.readyOnDisk(hash, fileIndexes)) return;
       throw new TorrentError('not_open', 'Open the torrent before using its files.');
     }
+    await this.useIn(hash, live, fileIndexes, null);
+  }
+
+  /**
+   * `use` for one named episode of a torrent in the swarm (a season download takes every wanted episode of a pack this
+   * way, one hold each): that episode's row, made now when there is none, takes the files, whatever episode was opened
+   * last. Two episodes on one file (a double episode) each keep their own row. On a finished download read from disk
+   * it does nothing. Throws not_open, not_media, invalid_hash.
+   */
+  async useSlot(pick: TorrentPick, fileIndexes: readonly number[]): Promise<void> {
+    const hash = normalizeInfoHash(pick.infoHash);
+    if (hash === null) throw new TorrentError('invalid_hash', 'An info hash is 40 hexadecimal characters.');
+    const live = this.active.get(hash);
+    if (live === undefined) {
+      if (await this.readyOnDisk(hash, fileIndexes)) return;
+      throw new TorrentError('not_open', 'Open the torrent before using its files.');
+    }
+    live.lastRequestAt = this.nowMs();
+    await this.takeSlot(live, { ...pick, infoHash: hash });
+    await this.useIn(hash, live, fileIndexes, slotKey(slotOf(hash, pick.ref)));
+  }
+
+  /** A ready row of this host that chose every one of these files, whole on disk: nothing to join. */
+  private async readyOnDisk(hash: string, fileIndexes: readonly number[]): Promise<boolean> {
+    for (const row of await this.repo.slots(this.host, hash)) {
+      if (row.state === 'ready' && fileIndexes.every((i) => row.files.some((f) => f.index === i)) && (await this.diskHandle(row)) !== null) return true;
+    }
+    return false;
+  }
+
+  /** `use` on a torrent in the swarm. `key`: the episode's row that takes the files; null: as `use` has always chosen. */
+  private async useIn(hash: string, live: Active, fileIndexes: readonly number[], key: string | null): Promise<void> {
     const chosen = this.mediaFiles(live.handle, fileIndexes);
     // A video that lives as its remux is never fetched again: its original was deleted on purpose.
     const remuxed = new Set([...live.rows.values()].flatMap((r) => r.files.filter((f) => f.remuxed === true).map((f) => f.index)));
     live.handle.select(chosen.filter((f) => !remuxed.has(f.index)).map((f) => f.index));
     live.users += 1;
     live.lastRequestAt = this.nowMs();
-    // The episode whose row already holds these files (a reload takes its torrent again), else the one last opened.
-    const row = [...live.rows.values()].find((r) => chosen.every((c) => r.files.some((f) => f.index === c.index))) ?? this.current(live);
+    // The episode named; else the one whose row already holds these files (a reload takes its torrent again), else the one last opened.
+    const named = key === null ? undefined : live.rows.get(key);
+    const row = named ?? [...live.rows.values()].find((r) => chosen.every((c) => r.files.some((f) => f.index === c.index))) ?? this.current(live);
     const files: StreamTorrentFile[] = row.files.map((f) => ({ ...f }));
     for (const f of chosen) if (!files.some((m) => m.index === f.index)) files.push({ index: f.index, path: f.path, length: f.length });
     const fileIndex = row.fileIndex ?? chosen.find((f) => mediaOf(f.name) === 'video')?.index ?? null;
@@ -299,6 +332,31 @@ export class TorrentStreams {
       }
       await this.settle(hash, live);
     }
+  }
+
+  /**
+   * Gives back the hold one episode took with `useSlot` and stops fetching that episode's own files (the ones no other
+   * episode of the torrent chose, and not whole yet): a season download whose episode was cancelled. The episode's row
+   * and what is on disk stay. With no hold left the torrent goes as after `release`. Unknown or not in the swarm: ignored.
+   */
+  async releaseSlot(infoHash: string, ref: StreamRef): Promise<void> {
+    const hash = normalizeInfoHash(infoHash);
+    const live = hash === null ? undefined : this.active.get(hash);
+    if (hash === null || live === undefined) return;
+    const key = slotKey(slotOf(hash, ref));
+    const row = live.rows.get(key);
+    if (row !== undefined) {
+      const others = new Set([...live.rows.values()].filter((r) => slotKey(r) !== key).flatMap((r) => r.files.map((f) => f.index)));
+      const stop = row.files.map((f) => f.index).filter((i) => !others.has(i) && !live.handle.done(i));
+      if (stop.length > 0) {
+        try {
+          live.handle.deselect?.(stop);
+        } catch (err) {
+          this.log(`[notesd] torrent: could not stop ${row.name}${episodeOf(row)}: ${messageOf(err)}`);
+        }
+      }
+    }
+    await this.release(hash);
   }
 
   /**
@@ -364,6 +422,13 @@ export class TorrentStreams {
     if (hash === null) return null;
     const row = await this.repo.get(this.host, hash);
     return row === null ? null : (row.release ?? row.name ?? null);
+  }
+
+  /** The trackers this host's row of a torrent keeps; [] without a row (a download opened again by its info hash). */
+  async trackersOf(infoHash: string): Promise<string[]> {
+    const hash = normalizeInfoHash(infoHash);
+    if (hash === null) return [];
+    return (await this.repo.get(this.host, hash))?.trackers ?? [];
   }
 
   /** Bytes the torrent received from peers since it was opened; null when it is not in the swarm or its handle cannot say. */
@@ -517,6 +582,24 @@ export class TorrentStreams {
   }
 
   /**
+   * How much of one chosen file is on this machine's disk now, for a download's progress: its whole length once it is
+   * ready (or lives as its remux), else the verified bytes the swarm holds (the row's last count when not in the swarm).
+   * Null for an unknown hash, the other machine's, or a file no episode chose.
+   */
+  async fileProgress(infoHash: string, fileIndex: number): Promise<{ bytesDone: number; length: number } | null> {
+    const hash = normalizeInfoHash(infoHash);
+    if (hash === null) return null;
+    const found = await this.rowHere(hash, fileIndex);
+    if (found instanceof Response) return null;
+    const file = found.files.find((f) => f.index === fileIndex);
+    if (file === undefined) return null;
+    if (found.state === 'ready' || file.remuxed === true) return { bytesDone: file.length, length: file.length };
+    const live = this.active.get(hash);
+    const bytes = live !== undefined ? sumRanges(live.handle.ranges(fileIndex)) : found.bytesDone;
+    return { bytesDone: Math.min(bytes, file.length), length: file.length };
+  }
+
+  /**
    * The video's length in seconds, once a caller knows it (phase 3's probe): the map turns bytes into seconds with it.
    * `fileIndex` names the episode's video in a season pack; without it, the episode last opened (or on screen).
    */
@@ -545,6 +628,19 @@ export class TorrentStreams {
     const hash = normalizeInfoHash(infoHash);
     if (hash === null) return false;
     return this.opening.has(hash) || (this.active.get(hash)?.users ?? 0) > 0;
+  }
+
+  /**
+   * The owner's mark on a torrent of this host (a download they asked for): kept, the age prune and the budget leave
+   * it alone until it is deleted on the Cache page; not kept, it prunes like any other. Every row of the torrent.
+   */
+  async keep(infoHash: string, kept: boolean): Promise<void> {
+    const hash = normalizeInfoHash(infoHash);
+    if (hash === null) return;
+    const at = kept ? this.now() : null;
+    await this.repo.setKept(this.host, hash, at);
+    const live = this.active.get(hash);
+    if (live !== undefined) for (const [key, row] of live.rows) live.rows.set(key, { ...row, keptAt: at });
   }
 
   /** A file of the torrent as `TorrentFolder.usage` names it (relative, `/` between names); null when it would leave the folder. */
@@ -756,10 +852,12 @@ export class TorrentStreams {
     let cleared = 0;
     const held = (hash: string): boolean => this.held(hash);
     try {
-      // A torrent goes when none of its episodes was played (else finished, else made) within keepDays.
+      // A torrent goes when none of its episodes was played (else finished, else made) within keepDays; never one the owner keeps.
       const before = this.nowMs() - this.opts.keepDays * 86_400_000;
-      for (const [hash, { touched, name }] of this.lastActivity(await this.hostRows())) {
-        if (touched >= before || held(hash)) continue;
+      const rows = await this.hostRows();
+      const kept = keptHashes(rows);
+      for (const [hash, { touched, name }] of this.lastActivity(rows)) {
+        if (touched >= before || held(hash) || kept.has(hash)) continue;
         await this.folder.remove(hash);
         await this.repo.delete(this.host, hash);
         cleared += 1;
@@ -798,9 +896,10 @@ export class TorrentStreams {
 
   /**
    * Deletes whole torrents (folder with its remux and cue files, and every row) until the torrent folder takes less
-   * than `budgetBytes`. Never one in use. First the downloads of titles the owner marked watched or not interested
-   * (`marked`), then the never played ones, oldest first, then the played ones, least recently played first; a
-   * download played or finished within TORRENT_RECENT_MS goes only when that was not enough (within each group).
+   * than `budgetBytes`. Never one in use, and never one the owner keeps as a download (its bytes still count). First
+   * the downloads of titles the owner marked watched or not interested (`marked`), then the never played ones, oldest
+   * first, then the played ones, least recently played first; a download played or finished within TORRENT_RECENT_MS
+   * goes only when that was not enough (within each group).
    */
   private async keepBudget(held: (hash: string) => boolean): Promise<number> {
     const budget = this.opts.budgetBytes;
@@ -811,6 +910,7 @@ export class TorrentStreams {
     if (total <= budget) return 0;
     const recentFrom = this.nowMs() - TORRENT_RECENT_MS;
     const rows = await this.hostRows();
+    const kept = keptHashes(rows);
     // The titles the owner marked watched or not interested go first, whatever their age.
     const titleOf = (r: Pick<StreamTorrentRow, 'kind' | 'tmdbId'>): string => `${r.kind}-${r.tmdbId}`;
     let marked: ReadonlySet<string> = new Set();
@@ -821,7 +921,7 @@ export class TorrentStreams {
     }
     const dismissed = new Set(rows.filter((r) => marked.has(titleOf(r))).map((r) => r.infoHash));
     const order = [...this.lastActivity(rows)]
-      .filter(([hash]) => !held(hash) && (sizes.get(hash) ?? 0) > 0)
+      .filter(([hash]) => !held(hash) && !kept.has(hash) && (sizes.get(hash) ?? 0) > 0)
       .map(([hash, last]) => ({ hash, ...last, recent: last.touched >= recentFrom, dismissed: dismissed.has(hash) }))
       .sort(
         (a, b) =>
@@ -841,7 +941,15 @@ export class TorrentStreams {
       const why = `${t.dismissed ? 'watched or not interested, ' : ''}${t.played !== null ? `last played ${new Date(t.played).toISOString().slice(0, 10)}` : 'never played'}`;
       this.log(`[notesd] torrent: cleared ${t.name} (${gb(size)}, ${why}): the downloads took more than the ${gb(budget)} budget, ${gb(total)} now`);
     }
-    if (total > budget) this.log(`[notesd] torrent: the downloads take ${gb(total)}, over the ${gb(budget)} budget, and what is left is in use`);
+    if (total > budget) {
+      const keptOnDisk = [...kept].filter((hash) => (sizes.get(hash) ?? 0) > 0);
+      const keptBytes = keptOnDisk.reduce((n, hash) => n + (sizes.get(hash) ?? 0), 0);
+      this.log(
+        keptOnDisk.length === 0
+          ? `[notesd] torrent: the downloads take ${gb(total)}, over the ${gb(budget)} budget, and what is left is in use`
+          : `[notesd] torrent: the downloads take ${gb(total)}, over the ${gb(budget)} budget, and what is left is in use or kept by the owner (${keptOnDisk.length} kept download${keptOnDisk.length === 1 ? '' : 's'}, ${gb(keptBytes)})`,
+      );
+    }
     return cleared;
   }
 

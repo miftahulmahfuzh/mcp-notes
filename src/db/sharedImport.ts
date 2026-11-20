@@ -334,6 +334,17 @@ export async function mergeStagedImport(local: Db, options: MergeOptions = {}): 
       ]
       await fill('movie_titles', { tail: keep.length > 0 ? `on conflict (id) do update set ${keep.join(', ')}` : 'on conflict do nothing' })
     }
+    // A story the shared side wrote sits on its dialogue row (it predates migration 0043): stories live in movie_stories now.
+    if (has('movie_dialogues') && colsOf('movie_dialogues').includes('story')) {
+      const res = await client.query(
+        `insert into movie_stories (title_id, season, episode, text, origin, model, written_at)
+         select s.title_id, s.season, s.episode, s.story, 'dialogue', s.story_model, coalesce(s.story_at, s.fetched_at)
+         from ${stage('movie_dialogues')} s
+         where s.story is not null and ${exists('movie_titles', 'p.id = s.title_id')}
+         on conflict do nothing`,
+      )
+      written.movie_stories = res.rowCount ?? 0
+    }
     if (has('movie_credits')) {
       await client.query('create temp table _credit_titles on commit drop as select distinct title_id from movie_credits')
       await fill('movie_credits', { omit: ['id'], where: 's.title_id not in (select title_id from _credit_titles)', order: 's.id' })

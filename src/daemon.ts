@@ -33,6 +33,7 @@ import { PICTURE_VERDICTS_FILE, PictureCheck, PictureVerdicts, createPictureJudg
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createGuideWriter, GenreGuides } from './movies/guides.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
+import { createWebStoryWriter } from './movies/webStory.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
 import { buildTorrentRemux, remuxAudioInput } from './directStream/torrent/remux.js';
@@ -56,6 +57,7 @@ import { buildWhisperTier, ffmpegCutter, sharedTranscriber, WHISPER_IDLE_STOP_MS
 import { AUDIO_VERDICTS_FILE, AudioLangCheck, AudioVerdicts, streamAudioGrabber } from './directStream/audioLang.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { buildStreamPreviews } from './directStream/previews/service.js';
+import { buildStreamDownloads } from './directStream/downloads/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
 import { CACHE_PENDING_FILE, CacheShelf, liveSlots } from './directStream/cacheShelf.js';
@@ -510,17 +512,17 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             return { url: cueFeedUrl(infoHash, track), append: (cues) => feed.append(cues), complete: () => feed.complete() };
           },
         });
-  // The story of an episode, written from its dialogue when the owner asks (one model call, then kept).
+  // The story of a film, an episode or a whole season: from published recaps found with WebSearch first; an
+  // episode or a film the web has none of, from its dialogue (one model run, then kept in movie_stories).
+  const storyModel = config.movies.storyModel ?? null;
   const movieStories =
     movies === null
       ? null
       : new MovieStories({
           repo: movies.repo,
           dialogue: (target) => loadDialogue(movies.repo, directStream, target),
-          writer:
-            config.movies.storyModel === null || config.movies.storyModel === undefined
-              ? null
-              : createStoryWriter({ claudeBin: config.chat.claudeBin, model: config.movies.storyModel, cwd: join(config.dataDir, 'movies-story') }),
+          writer: storyModel === null ? null : createStoryWriter({ claudeBin: config.chat.claudeBin, model: storyModel, cwd: join(config.dataDir, 'movies-story') }),
+          webWriter: storyModel === null ? null : createWebStoryWriter({ claudeBin: config.chat.claudeBin, model: storyModel, cwd: join(config.dataDir, 'movies-web-story') }),
         });
   // What a genre means for one title, collated with web search when the owner clicks it (one model run, then kept).
   const genreGuides =
@@ -562,7 +564,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     streamEvidence,
   };
   // The Cache page (src/directStream/cacheShelf.ts): this host's torrents and cloud caches on disk, deleted after an undo
-  // window. Null with neither torrents nor the stream cache. startBackground carries out what a restart left pending.
+  // window, and what downloads now and why. Null with neither torrents nor the stream cache. startBackground carries out
+  // what a restart left pending.
   deps.cacheShelf =
     (torrents === null && streamCache === null) || movies === null
       ? null
@@ -570,6 +573,19 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           host: movies.host,
           torrents,
           caches: streamCache,
+          // The download queue's unfinished rows (StreamDownloads.list(): this host's only), as `asked` downloads.
+          downloads: {
+            list: async () => {
+              const queue = deps.streamDownloads ?? null;
+              if (queue === null) return [];
+              return (await queue.list()).flatMap((d) =>
+                d.state === 'queued' || d.state === 'running' || d.state === 'paused'
+                  ? [{ kind: d.kind, tmdbId: d.tmdb_id, season: d.season ?? 0, episode: d.episode ?? 0, state: d.state, progress: d.progress }]
+                  : [],
+              );
+            },
+          },
+          ahead: () => deps.directStream?.aheadFetching() ?? null,
           titles: (ids) => titleWatchViews(db, ids, { host: movies.host, imageBase: config.movies.tmdb.imageBase }),
           live: () => liveSlots(streamLive, deps.directStream ?? null),
           pendingFile: join(config.dataDir, 'movies', CACHE_PENDING_FILE),
@@ -577,6 +593,20 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Seek previews (src/directStream/previews/): sheets made by one niced ffmpeg from what is on this machine, the
   // session on screen first. Null with NOTESD_STREAM_PREVIEWS=off or without direct streaming.
   deps.streamPreviews = buildStreamPreviews(config, { directStream, streamCache, torrents });
+  // Downloads the owner asks for (src/directStream/downloads/): one at a time, a 1080p torrent first, then the cloud
+  // cache, kept until deleted on the Cache page. It reads the SSID through warp's status; on the office network it
+  // holds WARP through the stream service's WarpHolds (directStream.warpForDownloads) to reach a torrent's peers.
+  // A finished download's seek previews are queued at once. Null with NOTESD_STREAM_DOWNLOADS=off or neither source.
+  deps.streamDownloads = buildStreamDownloads(config, {
+    db,
+    directStream,
+    torrentSource: torrentSourceOf,
+    torrents,
+    streamCache,
+    warp,
+    afterDone: () => void deps.streamPreviews?.sweep(),
+    movieStreams,
+  });
   // True while a VLC play, a stream on screen or a stream being started exists.
   const playing = (): boolean => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0;
   // The daily stream canary: each cloud provider asked for one known film, for its health only; nothing while a play exists.

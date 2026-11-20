@@ -23,6 +23,14 @@
 .mm-story-text .mm-story-foot { margin: 22px 0 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
 .mm-story-wait { display: flex; align-items: flex-start; gap: 12px; line-height: 1.5; }
 .mm-story-wait svg { flex: none; font-size: 16px; margin-top: 1px; }
+.mm-story-sec + .mm-story-sec { margin-top: 26px; }
+.mm-story-text .mm-story-h { margin: 0 0 10px; font-size: 16px; font-weight: 500; line-height: 1.35; letter-spacing: -.005em; color: var(--text); }
+.mm-story-text .mm-story-none { font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--muted); }
+.mm-story-sources { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--line); }
+.mm-story-sources .mm-story-h { font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: .03em; color: var(--muted); }
+.mm-story-sources ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.mm-story-sources a { color: var(--text); font-size: 13.5px; text-decoration: underline; text-decoration-color: var(--line-14); text-underline-offset: 3px; }
+.mm-story-sources a:hover { text-decoration-color: currentColor; }
 .mm-spin { animation: mm-spin 0.9s linear infinite; }
 @keyframes mm-spin { to { transform: rotate(360deg); } }
 @media (max-width: 560px) {

@@ -200,10 +200,10 @@ export interface DirectStreamConfig {
    */
   ahead?: boolean
   /**
-   * `NOTESD_STREAM_WARP`, default on: a torrent play that found no peer at all on the office network
-   * (SSID Employee) with Cloudflare WARP off switches it on and asks again
-   * (src/directStream/torrentWarp.ts); the streaming command's site retry reads the same variable.
-   * `off` or unset in a literal: the daemon never reads or switches WARP for a play.
+   * `NOTESD_STREAM_WARP`, default on: a torrent play or a torrent download that found no peer at all on the office
+   * network (SSID Employee) with Cloudflare WARP off switches it on and asks again
+   * (src/directStream/torrentWarp.ts, src/directStream/downloads/warp.ts); the streaming command's site retry reads
+   * the same variable. `off` or unset in a literal: the daemon never switches WARP for a play or a download.
    */
   warp?: boolean
   /**
@@ -226,6 +226,18 @@ export interface DirectStreamConfig {
    * `off`, or unset in a literal: nothing is made and GET /api/stream/sessions/:id/previews answers no frame.
    */
   previews?: boolean
+  /**
+   * `NOTESD_STREAM_DOWNLOADS`, default on: films and episodes the owner asks to download (src/directStream/downloads/),
+   * a 1080p torrent first, then the cloud cache, kept on this machine until deleted on the Cache page. It also needs
+   * torrents or the stream cache. `off`, or unset in a literal: nothing is downloaded and what was queued waits.
+   */
+  downloads?: boolean
+  /**
+   * `NOTESD_STREAM_DOWNLOAD_SSID`: the Wi-Fi network a download's office rule (downloads/plan.ts) takes this machine to
+   * be on. Unset (null): read from WARP's status (warp.mjs), once a minute at most. Set: that value is the SSID and
+   * nothing is read; verify.sh pins it, so a throwaway daemon never reads the machine's real network.
+   */
+  downloadSsid?: string | null
 }
 
 /** Direct streaming off. Tests build `Config` literals with it (or leave `directStream` out, which is the same). */
@@ -508,7 +520,7 @@ export const DEFAULT_VLC_HEALTH_MS = 30_000
 /** A non-zero NOTESD_VLC_HEALTH_MS below this is rejected: one PowerShell detail read takes ~0.5 s. */
 export const MIN_VLC_HEALTH_MS = 5_000
 export const DEFAULT_MOVIES_FALLBACK_MODEL = 'haiku'
-/** The model that writes an episode's story from its dialogue (src/movies/story.ts). */
+/** The model that writes a story (src/movies/story.ts, webStory.ts) and a genre's guide (guides.ts). */
 export const DEFAULT_MOVIES_STORY_MODEL = 'sonnet'
 
 /** TMDB credentials and hosts (src/movies/tmdb.ts). Secrets are never logged. */
@@ -569,9 +581,10 @@ export interface MoviesConfig {
    */
   fallbackModel: string | null
   /**
-   * `NOTESD_MOVIES_STORY_MODEL`: Agent SDK alias or model id that writes an episode's story from its
-   * dialogue when the owner presses the book icon (src/movies/story.ts). `off` gives null: no story
-   * is written (stored ones are still shown; verify.sh pins it off).
+   * `NOTESD_MOVIES_STORY_MODEL`: Agent SDK alias or model id that writes a story when the owner asks for one
+   * (src/movies/story.ts): a season's from published recaps found with WebSearch (webStory.ts), an episode's or a
+   * film's from the web first and from its dialogue when the web has none. `off` gives null: no story is written
+   * (stored ones are still shown; verify.sh pins it off).
    */
   storyModel?: string | null
 }
@@ -975,6 +988,8 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     audioCheck: parseSwitch('NOTESD_STREAM_AUDIO_CHECK', env.NOTESD_STREAM_AUDIO_CHECK),
     canary: parseSwitch('NOTESD_STREAM_CANARY', env.NOTESD_STREAM_CANARY),
     previews: parseSwitch('NOTESD_STREAM_PREVIEWS', env.NOTESD_STREAM_PREVIEWS),
+    downloads: parseSwitch('NOTESD_STREAM_DOWNLOADS', env.NOTESD_STREAM_DOWNLOADS),
+    downloadSsid: env.NOTESD_STREAM_DOWNLOAD_SSID?.trim() || null,
     trending: parseTrending(env),
   }
 }

@@ -24,7 +24,8 @@
 #                                       NOTESD_STREAM_PREVIEWS=on, which passes through (this machine's ffmpeg).
 #                                       --torrent (implies --direct-stream) turns torrents on against a loopback
 #                                       seeder of a generated film and pack (scripts/torrent/; TORRENT_FIXTURE_FILE=
-#                                       <path> seeds that file as the film); without it NOTESD_TORRENT=off is pinned
+#                                       <path> seeds that file as the film; TORRENT_SEED_KBPS=<kB/s> caps its upload,
+#                                       default 200); without it NOTESD_TORRENT=off is pinned
 #                                       --trending (implies --torrent) lets the daily trending list read the fake index's apibay and EZTV top lists
 #                                       (scripts/trending/journey.sh); without it NOTESD_TRENDING=off is pinned
 #   verify.sh doctor RUN                is this instance worth driving? (read-only)
@@ -213,8 +214,10 @@ EOF
       mkdir -p "$film"
       cp "$TORRENT_FIXTURE_FILE" "$film/$film_name.${TORRENT_FIXTURE_FILE##*.}"
     fi
+    local seed_kbps="${TORRENT_SEED_KBPS:-200}"
+    [[ $seed_kbps =~ ^[1-9][0-9]*$ ]] || die "--torrent: TORRENT_SEED_KBPS=$seed_kbps is not a whole number of kB/s"
     setsid node "$HERE/torrent/seed.mjs" seed --film "$film" --pack "$fixture/Fixture.Show.S01.1080p.WEB-DL.x264-NOTESD" \
-      --state "$dir/torrent" --upload-kbps 200 </dev/null >"$dir/torrent/seeder.out" 2>&1 &
+      --state "$dir/torrent" --upload-kbps "$seed_kbps" </dev/null >"$dir/torrent/seeder.out" 2>&1 &
     echo $! >"$dir/seeder.pid"
     for _ in $(seq 1 80); do [ -s "$dir/torrent/fixture.json" ] && [ -s "$dir/torrent/pack.json" ] && break; sleep 0.25; done
     [ -s "$dir/torrent/pack.json" ] || die "--torrent: the loopback seeder did not start (log: $dir/torrent/seeder.out; verify.sh down $run)"
@@ -259,6 +262,9 @@ EOF
     NOTESD_TORRENT_TRACKER_LISTS=off
     # A throwaway daemon never reads or switches the machine's Cloudflare WARP for a torrent play (torrentWarp.ts).
     NOTESD_STREAM_WARP=off
+    # A throwaway daemon never reads the machine's Wi-Fi name for a download's office rule (downloads/plan.ts): the run
+    # is "not the office", so a torrent download is tried wherever the run happens to be.
+    NOTESD_STREAM_DOWNLOAD_SSID=verify-home
     # Every run's tmux is the recording fake: the report button and resume never open a window in
     # the owner's tmux. TMUX_FAKE (printed below) is where its calls.log and switches live.
     NOTESD_TMUX_BIN="$HERE/stream/fake-tmux.sh"

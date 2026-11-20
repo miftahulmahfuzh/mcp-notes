@@ -91,7 +91,8 @@ change behaviour:
 | What last played it, per method | `movie_title_methods` | Per host | One row per title and method (`cloud`, `torrent`, or a streaming site by name): the cloud provider, the torrent's info hash or the title's page on the site, with the season and episode of that play. Written with the row above, and kept when another method plays the title later, so a play that names its method goes back to the same provider, torrent or page ([the play menu](#the-play-menu)). |
 | What a genre means for a title | `movie_genre_guides` | Shared | One row per title and genre: the short description and the list of titles Claude collated with web search when you first clicked that genre on the title's page ([Names you can click](#names-you-can-click)). No watch state: the marks are read when it is shown. |
 | Title TMDB does not list | `movie_site_titles` | Per host | A title played on a streaming site that has no TMDB entry, so no row in `movie_titles`: its name, year, and the poster, synopsis, country, status and genres its page on the site gives, with the episode last played. Removed only by its button on the Stream side. |
-| Dialogue and story | `movie_dialogues` | Shared | One row per film or episode: the lines of its English subtitle as a stream source carried them ([streaming.md](streaming.md#what-a-title-says-its-dialogue)), and the story Claude wrote from them when you pressed the book icon. Read once and kept. |
+| Dialogue | `movie_dialogues` | Shared | One row per film or episode: the lines of its English subtitle as a stream source carried them, read when an episode's story has no published recap ([streaming.md](streaming.md#what-a-title-says-its-story)). Read once and kept. |
+| Story | `movie_stories` | Shared | One row per film, season or episode: the story Claude wrote when you pressed a book icon, its sections per episode, the sources it was written from and whether it came from the web or the dialogue. Written once and kept. |
 | Movie id | `movie_ids` | Shared | The `M-23T4` id of every title and every episode. See [Movie ids](#movie-ids). |
 
 `MoviesRepo` (`src/movies/repo.ts`) is the only writer of these tables. Watch state is not in any of
@@ -395,13 +396,32 @@ characters (the first 18, with an icon for the rest).
   series that match no episode are listed last, under Other files.
 - **An episode's story.** The book icon between an episode's code and its name opens the whole
   story of that episode, every spoiler included, in a pop-up. The first press has it written:
-  the daemon reads the episode's dialogue (the stored one, else the English subtitle of a stream
-  source, resolved out of sight; see [streaming.md](streaming.md#what-a-title-says-its-dialogue))
-  and Claude retells it in one call (`NOTESD_MOVIES_STORY_MODEL`), which takes about a minute. The
-  story is kept with the dialogue, so it is written once: after that the icon is filled and the
-  story opens at once on this machine. Nothing is written until you press. When there is no
-  English subtitle, or no source has the episode, the pop-up says so. Closing the pop-up while it
-  is being written does not stop it.
+  Claude searches the web for published recaps of the episode and retells it from them, with the
+  sources as links under it; only an episode no recap covers is retold from its English subtitle
+  (see [streaming.md](streaming.md#what-a-title-says-its-story)). That takes a minute or two
+  (`NOTESD_MOVIES_STORY_MODEL`). The story is kept, so it is written once: after that the icon is
+  filled and the story opens at once on this machine. Nothing is written until you press. When
+  neither the web nor a subtitle tells it, the pop-up says so. Closing the pop-up while it is being
+  written does not stop it.
+- **A season's story.** The book icon on each season's row ("Narrate the full story of S01"; none on
+  Specials) opens the story of the whole season, one section per episode under its code and name,
+  written once from the web the same way and kept, its sources as links. An episode no recap covers
+  says so, and nothing is made up for it. A season's story never reads a subtitle.
+- **Download** (the Stream side, with direct streaming on). An arrow icon beside Play on a film's
+  page, on each season's row and on each episode row puts the film, the season's aired episodes or
+  the episode on this machine to watch later: a 1080p torrent first, else a cloud source at 1080p
+  or lower, else a smaller torrent (on the office network a torrent that reaches no peer is asked
+  once more through Cloudflare WARP before the cloud). A series has no button at the
+  top: its seasons carry it. The caret beside the icon opens "Choose how to download <name>": Best
+  torrent (1080p), Cloud, or Pick a torrent… from [every torrent of it](#the-torrents-of-a-title).
+  While it is queued or downloading a thin bar under the icon fills and its tooltip says how far;
+  a season's bar is the mean of its episodes'. The page reads it again every 2.5 s while something
+  of the title downloads and the tab is visible, and not otherwise. Done, the icon is filled and
+  its tooltip names torrent or cloud and the size; failed, the tooltip says why and a click asks
+  again. While it is queued, downloading or paused an X beside the caret ("Cancel the download of <name>")
+  cancels it; what it already fetched stays, and is deleted on the Cache page. A download is kept until you
+  delete it on the [Cache page](#the-cache-page). How it chooses, what it keeps and the pictures are
+  in [streaming.md](streaming.md#downloading-a-title).
 - **Folding a season.** The caret before a season's name hides its episodes and shows a count in
   their place ("56 episodes, 12 finished"); another press shows them again. The season's trailer
   and "finished" buttons stay. The fold is kept per title in this browser, so a long series opens
@@ -703,6 +723,17 @@ other laptop's rows are never listed.
 - **Playing.** A title or episode on screen or being started, a torrent held (a play, the next episode
   being fetched ahead) and a cloud cache downloading show a `playing` (or `in use`) tag and a disabled
   trash; every episode of a pack that is held is in use. The daemon refuses them too (`in_use`).
+- **Downloading.** What is downloading now is listed with what is on disk: a download you asked for
+  on a title's page, the next episode [fetched ahead](streaming.md#the-next-episode-fetched-ahead)
+  and a cloud cache a [pause](streaming.md#a-pause-caches-the-film) started. A thin bar on its row
+  shows how far it is (on a season's and a title's row, the mean of what downloads under it), and a
+  tag says why it downloads: `asked` (the Download button, `direct_stream_cache`), `ahead` (the next
+  episode, fetched while one plays) or `pause` (a pause in the player). A download with nothing on
+  disk yet has a row of 0 B. While anything downloads the page reads the disk every 3 s instead of
+  every 15 s.
+- **The Downloading filter** (the arrow icon beside the bulk buttons, with how many download) lists
+  only the titles, seasons and episodes downloading now, unfolded, with their bars; another click
+  goes back to the full list. A picture of it is in [streaming.md](streaming.md#downloading-a-title).
 - **Trash** deletes at once, with no confirmation window: the row goes, and a toast says `Deleted
   Barbie · 154 MB · Undo` for 10 seconds. Undo brings the row back untouched. The files go when the
   window closes, which is when the disk space returns.
@@ -1192,7 +1223,7 @@ at all.
   TMDB; rate or review one episode.
 - **What a title is about:** `movies_get` has TMDB's synopsis of a title and of each episode.
   An episode's whole story is the wall's book icon
-  ([streaming.md](streaming.md#what-a-title-says-its-dialogue)).
+  ([streaming.md](streaming.md#what-a-title-says-its-story)); a season's is its row's book icon.
 - **Titles you do not have:** the watch list is the "interested" mark (`movies_mark` with
   `interested: true`, by title key for a title not stored yet), shown under the Stream side's
   `interested` filter; no tool lists it on its own. `movies_person` lists a person's films
@@ -1207,6 +1238,7 @@ at all.
 | --- | --- |
 | `NOTESD_MOVIES=off` | Every `/api/movies*` route: 503 `movies_off` (`GET /api/movies/player` answers `{available: false, reason: "movies_off"}`). Every tool: `movies_off: the movie library is not running on this server ...`. The page says how to turn it on. |
 | `NOTESD_DIRECT_STREAM=off` | `GET /api/movies/stream` answers `{enabled: false, reason: "direct_stream_off", titles: []}`; the Stream side says how to turn it on and its stream buttons are disabled; `POST /api/stream/play` answers 503 `direct_stream_off`. |
+| `NOTESD_STREAM_DOWNLOADS=off` | `POST /api/stream/downloads` answers 503 `downloads_off`; the Download buttons still show, and a click says downloads are off on this daemon. |
 | `NOTESD_TRENDING=off`, or torrents, direct streaming, movies or TMDB off | `GET /api/movies/trending` answers `{enabled: false, reason, titles: []}` and the section says so; no index, TMDB or swarm is asked. |
 | No provider streams a title when Play is pressed | `POST /api/stream/play` answers 502 `no_source` with each provider's outcome; the source is marked stale and the title leaves the Stream grid, unless it is on the `interested` list or was last played here from a torrent or a site. |
 | No `NOTESD_MOVIES_ROOTS` | Nothing is scanned and the health log is off. The page, tools and playback of known files still work. An empty library says which setting to add. |
@@ -1277,7 +1309,8 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position, and how a title was last streamed (`channel`, `channelFailed`, `recordSitePlay`) |
 | `src/movies/streamLive.ts` | The stream on screen, in memory, for `GET /api/movies/player` |
 | `src/directStream/cacheShelf.ts`, `src/directStream/torrent/usage.ts`, `src/http/streamDiskApi.ts`, `src/mcp/streamDiskTool.ts`, `web/src/components/movies/CachePage.tsx` | The Cache page: the reading per title, season and episode, the pending deletions and their undo; how a torrent's folder is split between its episodes; the routes; `stream_disk`; the page |
-| `src/movies/story.ts` | An episode's story |
+| `src/movies/story.ts`, `src/movies/webStory.ts` | The story of an episode, a season or a film: written from the web first, from the dialogue only when no recap covers an episode, kept in `movie_stories` |
+| `web/src/components/movies/DownloadButton.tsx`, `web/src/lib/downloads.ts` | The Download button, its menu and bar on the title page, and the polling of `GET /api/stream/downloads` |
 | `src/streaming/sitePlays.ts`, `src/http/sitePlayApi.ts` | A play reported by a streaming site, and the titles TMDB does not list |
 | `src/movies/guides.ts` | The pop-ups of a person, a studio and a genre: TMDB's profile and titles with the owner's marks, and `GenreGuides`, the genre guide collated once with web search |
 | `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule, the video-stall rule |
@@ -1317,7 +1350,11 @@ $V vlc RUN quit                                              # VLC "exits"; the 
 $V down RUN
 ```
 
-- Unit tests: `tests/unit/movies/` (parsing, matching, state, continue, guides and the VLC pieces), `web/src/App.movies.test.tsx` and `web/src/App.stream.test.tsx`. The Cache page: `tests/unit/directStream/cacheShelf.test.ts`, `tests/unit/mcp.streamDiskTool.test.ts`, `web/src/components/movies/CachePage.test.tsx`.
+- Unit tests: `tests/unit/movies/` (parsing, matching, state, continue, guides and the VLC pieces), `web/src/App.movies.test.tsx` and `web/src/App.stream.test.tsx`. The Cache page: `tests/unit/directStream/cacheShelf.test.ts`, `tests/unit/mcp.streamDiskTool.test.ts`, `web/src/components/movies/CachePage.test.tsx`. Downloads, the Cache page's Downloading view and the season story end to end:
+  `TORRENT_SEED_KBPS=20 verify.sh up --web --torrent` and
+  `.claude/skills/verify-notesd/scripts/direct-stream/downloads.sh RUN` (see
+  [streaming.md](streaming.md#proving-a-change)). The real-library pictures never show a download:
+  no live run starts one for a picture.
 - Integration tests: `tests/integration/movies.*.int.test.ts` (schema, repo, sync, API, stream,
   streams, channels, guides, marks, play, continue, recents, MCP, health, health crash) and
   `tests/integration/trending.int.test.ts`.

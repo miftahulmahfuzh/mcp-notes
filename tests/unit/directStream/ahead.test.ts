@@ -210,6 +210,19 @@ describe('the next episode, fetched ahead', () => {
     expect(stopped.calls).toEqual(['fetch', 'release']);
   });
 
+  it('says which episode it fetches from a torrent, until it lets it go', async () => {
+    vi.useFakeTimers();
+    const t = setup({ onDisk: true });
+    expect(t.ahead.fetching()).toBeNull();
+    t.ahead.watched(torrentSession, PLAYING);
+    await t.watch(torrentSession, 120);
+    expect(t.ahead.fetching()).toEqual(E789);
+    t.state.torrentReady = true;
+    await vi.advanceTimersByTimeAsync(AHEAD_TORRENT_POLL_MS);
+    expect(t.calls).toEqual(['fetch', 'release']);
+    expect(t.ahead.fetching()).toBeNull();
+  });
+
   it('a torrent play fetches nothing with torrents off, with the next episode on disk, or when no torrent opens', async () => {
     for (const fakes of [{ torrent: false }, { torrentHas: true }] as Fakes[]) {
       const t = setup({ onDisk: true, ...fakes });

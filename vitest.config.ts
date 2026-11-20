@@ -24,6 +24,8 @@ import { defineConfig } from 'vitest/config'
  * - `npm run test:live:imageEmbeddings` sets IMAGE_EMBEDDINGS_LIVE_TEST=1 (no Docker, no
  *   database), which runs only `tests/live/imageEmbeddings.live.test.ts`: a few real, billed
  *   google/gemini-embedding-2 calls that document the request shapes and check the width. Opt-in.
+ * - `npm run test:live:webStory` sets WEB_STORY_LIVE_TEST=1 (no Docker, no database), which runs only
+ *   `tests/live/webStory.live.test.ts`: one real, billed web story run with WebSearch. Opt-in.
  * None of the live files is ever part of `npm test` or `test:int`.
  *
  * Do not add a second config file.
@@ -32,13 +34,16 @@ const chatLive = process.env.CHAT_LIVE_TEST === '1'
 const connectorsLive = process.env.CONNECTORS_LIVE_TEST === '1'
 const embeddingsLive = process.env.EMBEDDINGS_LIVE_TEST === '1'
 const imageEmbeddingsLive = process.env.IMAGE_EMBEDDINGS_LIVE_TEST === '1'
+const webStoryLive = process.env.WEB_STORY_LIVE_TEST === '1'
 const integration =
+  !webStoryLive &&
   !connectorsLive &&
   !embeddingsLive &&
   !imageEmbeddingsLive &&
   (chatLive || process.env.VITEST_INTEGRATION === '1')
 
 function includeFor(): string[] {
+  if (webStoryLive) return ['tests/live/webStory.live.test.ts']
   if (imageEmbeddingsLive) return ['tests/live/imageEmbeddings.live.test.ts']
   if (embeddingsLive) return ['tests/live/embeddings.live.test.ts']
   if (connectorsLive) return ['tests/live/connectors.live.test.ts']
@@ -48,13 +53,14 @@ function includeFor(): string[] {
 }
 
 function globalSetupFor(): string[] {
-  if (embeddingsLive || connectorsLive || imageEmbeddingsLive) return []
+  if (webStoryLive || embeddingsLive || connectorsLive || imageEmbeddingsLive) return []
   if (chatLive) return ['tests/integration/globalSetup.ts']
   if (integration) return ['tests/integration/globalSetup.ts', 'tests/integration/connectors/globalSetup.ts']
   return []
 }
 
 function testTimeoutFor(): number {
+  if (webStoryLive) return 600_000
   if (chatLive) return 300_000
   if (connectorsLive || embeddingsLive || imageEmbeddingsLive) return 60_000
   if (integration) return 30_000
@@ -70,6 +76,6 @@ export default defineConfig({
     globalSetup: globalSetupFor(),
     fileParallelism: !integration,
     testTimeout: testTimeoutFor(),
-    hookTimeout: chatLive || connectorsLive || embeddingsLive || imageEmbeddingsLive || integration ? 60_000 : 10_000,
+    hookTimeout: webStoryLive || chatLive || connectorsLive || embeddingsLive || imageEmbeddingsLive || integration ? 60_000 : 10_000,
   },
 })

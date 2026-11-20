@@ -6,6 +6,8 @@ import { CacheError, type StreamCacheView } from '../../src/directStream/cache/t
 import type { StreamTarget, TitleCandidate, TitleLibrary } from '../../src/directStream/lookup.js';
 import { DIRECT_STREAM_OFF, type DirectStreamToolDeps } from '../../src/mcp/directStreamTools.js';
 import { registerStreamCacheTool, type StreamCacheApi, type StreamCacheToolDeps } from '../../src/mcp/streamCacheTools.js';
+import { streamDownloadsRoutes } from '../../src/http/streamDownloadsApi.js';
+import { DL_ID, dview, fakeDownloads } from './directStream/downloadsFakes.js';
 
 type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> };
 const text = (r: ToolResult): string => r.content.map((c) => c.text ?? '').join('\n');
@@ -78,7 +80,7 @@ function fakeCache(over: Partial<StreamCacheApi> = {}) {
   const request = vi.fn<StreamCacheApi['request']>(async () => ({ cache: view(), started: true }));
   const remove = vi.fn<StreamCacheApi['remove']>(async () => undefined);
   const forRef = vi.fn<StreamCacheApi['forRef']>(async () => [view()]);
-  const cache: StreamCacheApi = { host: 'here', request, list: async () => [view()], get: async () => view(), forRef, remove, ...over };
+  const cache: StreamCacheApi = { host: 'here', request, list: async () => [view()], get: async (id) => (id === ID ? view() : null), forRef, remove, ...over };
   return { cache, request, remove, forRef };
 }
 
@@ -119,11 +121,13 @@ describe('direct_stream_cache', () => {
 
   it('starts a film with its max_height', async () => {
     const f = fakeCache();
-    const c = await connect({ lookup: lookup(), cache: f.cache });
+    const dl = fakeDownloads();
+    const c = await connect({ lookup: lookup(), cache: f.cache, downloads: dl.port });
     const r = await c.call({ action: 'start', title: 'saltburn', max_height: 720 });
     expect(r.isError).toBeFalsy();
     expect(f.request).toHaveBeenCalledWith({ kind: 'movie', tmdbId: 930564 } satisfies StreamTarget, { maxHeight: 720 });
     expect(json(r)).toMatchObject({ started: true, title: { title: 'Saltburn', tmdb_id: 930564 }, cache: { id: ID, state: 'downloading' } });
+    expect(dl.request).not.toHaveBeenCalled();
     await c.close();
   });
 
@@ -176,6 +180,95 @@ describe('direct_stream_cache', () => {
     const f = fakeCache();
     const c = await connect({ lookup: lookup(), cache: f.cache });
     expect(json(await c.call({ action: 'list' }))).toMatchObject({ host: 'here', count: 1, caches: [{ id: ID }] });
+    await c.close();
+  });
+
+  it('queues with provider torrent the same download the Download button queues with via torrent', async () => {
+    const f = fakeCache();
+    const dl = fakeDownloads();
+    const c = await connect({ lookup: lookup(), cache: f.cache, downloads: dl.port });
+    const r = await c.call({ action: 'start', title: 'saltburn', provider: 'torrent' });
+    expect(r.isError).toBeFalsy();
+    expect(json(r)).toMatchObject({ started: true, provider: 'torrent', created: 1, title: { tmdb_id: 930564 }, downloads: [{ id: DL_ID }] });
+    const route = streamDownloadsRoutes({ streamDownloads: dl.port as never });
+    const posted = await route.fetch(
+      new Request('http://localhost/api/stream/downloads', { method: 'POST', headers: { origin: 'http://localhost', 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'movie', tmdb_id: 930564, via: 'torrent' }) }),
+    );
+    expect(posted.status).toBe(202);
+    expect(dl.request).toHaveBeenCalledTimes(2);
+    expect(dl.request.mock.calls[0]).toEqual([{ kind: 'movie', tmdbId: 930564 }, { via: 'torrent' }]);
+    expect(dl.request.mock.calls[1]).toEqual(dl.request.mock.calls[0]);
+    expect(f.request).not.toHaveBeenCalled();
+    await c.close();
+  });
+
+  it('downloads exactly the torrent named by info_hash', async () => {
+    const dl = fakeDownloads();
+    const c = await connect({ lookup: lookup(), cache: fakeCache().cache, downloads: dl.port });
+    await c.call({ action: 'start', title: 'the bear', season: 1, episode: 3, provider: 'torrent', info_hash: 'ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD' });
+    expect(dl.request).toHaveBeenCalledWith({ kind: 'tv', tmdbId: 136315, season: 1, episode: 3 }, { via: 'torrent', infoHash: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd' });
+    await c.close();
+  });
+
+  it('downloads a whole season named without an episode: from the cloud by default, from torrents with provider torrent', async () => {
+    const dl = fakeDownloads();
+    const f = fakeCache();
+    const c = await connect({ lookup: lookup(), cache: f.cache, downloads: dl.port });
+    const r = await c.call({ action: 'start', title: 'the bear', season: 1 });
+    expect(dl.requestSeason).toHaveBeenLastCalledWith(136315, 1, { via: 'cloud' });
+    expect(json(r)).toMatchObject({ started: true, provider: 'cloud', season: 1, created: 3, not_aired: 0 });
+    await c.call({ action: 'start', title: 'the bear', season: 1, provider: 'torrent' });
+    expect(dl.requestSeason).toHaveBeenLastCalledWith(136315, 1, { via: 'torrent' });
+    expect(dl.request).not.toHaveBeenCalled();
+    expect(f.request).not.toHaveBeenCalled();
+    await c.close();
+  });
+
+  it('refuses arguments that do not go together, and queues nothing', async () => {
+    const dl = fakeDownloads();
+    const f = fakeCache();
+    const c = await connect({ lookup: lookup(), cache: f.cache, downloads: dl.port });
+    for (const args of [
+      { action: 'start', title: 'saltburn', info_hash: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd' },
+      { action: 'start', title: 'saltburn', provider: 'torrent', max_height: 720 },
+      { action: 'status', title: 'saltburn', provider: 'torrent' },
+      { action: 'start', title: 'the bear', season: 1, provider: 'torrent', info_hash: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd' },
+    ]) {
+      const r = await c.call(args);
+      expect(r.isError, JSON.stringify(args)).toBe(true);
+      expect(text(r)).toMatch(/^invalid_input:/);
+    }
+    expect(dl.request).not.toHaveBeenCalled();
+    expect(dl.requestSeason).not.toHaveBeenCalled();
+    expect(f.request).not.toHaveBeenCalled();
+    await c.close();
+  });
+
+  it('answers downloads_off for a torrent or a season when the queue is off', async () => {
+    const c = await connect({ lookup: lookup(), cache: fakeCache().cache, downloads: null });
+    for (const args of [{ action: 'start', title: 'saltburn', provider: 'torrent' }, { action: 'start', title: 'the bear', season: 1 }]) {
+      const r = await c.call(args);
+      expect(r.isError).toBe(true);
+      expect(json(r)).toMatchObject({ error: 'downloads_off' });
+    }
+    await c.close();
+  });
+
+  it("carries this machine's downloads in status and list", async () => {
+    const rows = [
+      dview({ id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', state: 'running', source: 'torrent', progress: 0.5 }),
+      dview({ id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', kind: 'tv', tmdb_id: 136315, season: 1, episode: 2, state: 'failed', error: 'no_source' }),
+      dview({ id: 'aaaaaaab-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state: 'done' }),
+    ];
+    const dl = fakeDownloads(rows);
+    const c = await connect({ lookup: lookup(), cache: fakeCache().cache, downloads: dl.port });
+    const status = json(await c.call({ action: 'status', title: 'saltburn' }));
+    expect(status.downloads.map((d: { id: string }) => d.id)).toEqual(['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee']);
+    const listed = json(await c.call({ action: 'list' }));
+    expect(listed.downloads.map((d: { id: string }) => d.id)).toEqual(['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'ffffffff-ffff-4fff-8fff-ffffffffffff']);
+    expect(listed.count).toBe(1);
+    const byId = await c.call({ action: 'status', id: 'ffffffff-ffff-4fff-8fff-ffffffffffff' });
+    expect(json(byId)).toMatchObject({ downloads: [{ state: 'failed', error: 'no_source' }] });
     await c.close();
   });
 });

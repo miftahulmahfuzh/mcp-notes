@@ -22,6 +22,232 @@
 
 ### [P1] High
 
+- [x] **P1-NOTES-SD01** Phase 1: Schema and single writers: the download queue, the kept mark, the story store
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns migration `drizzle/0043_stream_downloads_stories.sql` and `src/db/schema.ts` for `stream_downloads` (one writer: `DownloadsRepo`, `src/directStream/downloads/repo.ts`), `stream_torrents.kept_at` (`TorrentsRepo.setKept`) and `movie_stories` (`MoviesRepo.story`/`saveStory`/`storySlots`); `MovieStories.get`/`writeNew` and `read.ts`' `has_story` read the new store; one merge statement in `src/db/sharedImport.ts`; the fakes `MemoryDownloadRecords`, `MemoryTorrentRecords.setKept` and the shared `downloadRecordsContract`. Exit: the migration applies on a fresh and on a populated database; the three writers pass unit and integration tests; `npm run typecheck` and `npm test` pass; existing stories are still served by `GET`/`POST /api/movies/:id/story` without a model.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 1 of 9)
+  - **Satisfies**: R1, R6 — the Download button with torrent-first source order and the "Choose how to download" menu (R1); "Narrate the full story of SXX" from web sources (R6) · criteria: R1.7, R6.5
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-SD01.md`
+  - **Completed**: 2026-11-20 23:20
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD01.md, src/db/schema.ts, drizzle/0043_stream_downloads_stories.sql, drizzle/meta/0043_snapshot.json, drizzle/meta/_journal.json, src/db/sharedImport.ts, src/directStream/downloads/repo.ts, src/directStream/torrent/repo.ts, src/movies/repo.ts, src/movies/story.ts, src/movies/read.ts, tests/helpers/memoryTorrentRecords.ts, tests/helpers/memoryDownloadRecords.ts, tests/helpers/downloadRecordsContract.ts, tests/unit/directStream/downloads/repo.test.ts, tests/unit/movies/story.test.ts, tests/integration/setup.ts, tests/integration/directStream.downloads.int.test.ts, tests/integration/directStream.torrents.int.test.ts, tests/integration/movies.stories.int.test.ts, tests/integration/movies.api.int.test.ts, tests/integration/migration0043.int.test.ts, tests/integration/sharedImport.int.test.ts, .claude/skills/verify-notesd/features/movies.md
+  - **Proof**: verified-after-fix — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-231635-695286/evidence (J2), /home/miftah/.local/state/notesd-verify/1120-231624-694348/evidence (J3); J1 and J4 are integration tests
+  - **Drift**:
+    - Plan says stream_downloads has ten CHECKs; its own code block and the generated SQL have nine. Generated DDL otherwise exactly as the plan lists.
+    - Plan calls read.ts' has_story query the fourth of the Promise.all; it is the sixth. Same lines, same edit.
+    - tests/integration/migration0043.int.test.ts: the plan compared written_at to a Date, but a raw db.execute returns timestamptz as text here; the test now selects the instant as UTC ISO text and asserts the same two instants.
+  - **Decided**:
+    - Step 3 in a swarm sharing one todos counter → created only phase 1's task, with the non-counter id P1-NOTES-SD01; the index's TaskID column left to the coordinator (rung 6: convention of SP04/TS02/F902/H202/C506)
+    - migration0043 test's written_at comparison (Date vs the text a raw execute returns) → assert the same instant as UTC ISO text; code unchanged (rung 2: exit criterion 'copied stories keep their time')
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent; the coordinator's integrator reconciles them. No successor to unblock: phase 2's task is minted by its own session.
+
+- [x] **P1-NOTES-SD02** Phase 2: The download engine: queue, source order, kept downloads, offline-ready, play first
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/directStream/downloads/` (`types.ts`, `plan.ts`, `service.ts`): `StreamDownloads` (`deps.streamDownloads`), source order for `auto` (1080p torrent with live seeds, then cloud at 1080p or lower, then a torrent below 1080p), the office rule on SSID `Employee`, kept torrents skipped by both prunes, offline-ready finished downloads, play first. Exit: unit tests with fake swarm, cache, clock and SSID show the order, the office rule, the pinned SSID, a dub skipped, a restart resumed, a kept torrent surviving both prunes, pause while a torrent plays and resume after, a finished download playable from disk with no index asked; `npm test` and `npm run typecheck` pass; a throwaway daemon carries a seeded running row to `done` with its torrent kept.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 2 of 9)
+  - **Satisfies**: R1 — a Download icon button on the title page: by default the 1080p magnet, else NT cloud sources, with a "Choose how to download <name>" dropdown · criteria: R1.2, R1.4, R1.5, R1.6, R1.7, R1.8, R1.9, R1.11
+  - **Depends on**: P1-NOTES-SD01
+  - **Plan**: `.workflows/plan/P1-NOTES-SD02.md`
+  - **Completed**: 2026-11-20 23:55
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/remux.ts, src/directStream/torrent/source.ts, src/directStream/torrent/service.ts, src/directStream/service.ts, src/directStream/downloads/types.ts, src/directStream/downloads/plan.ts, src/directStream/downloads/service.ts, src/config.ts, src/deps.ts, src/daemon.ts, src/background.ts, docs/guide/reference/configuration.md, .claude/skills/verify-notesd/scripts/verify.sh, tests/unit/config.test.ts, tests/unit/config.streamCache.test.ts, tests/unit/directStream/downloads/fakes.ts, tests/unit/directStream/downloads/plan.test.ts, tests/unit/directStream/downloads/service.test.ts, tests/unit/directStream/torrent/keptFetch.test.ts, tests/unit/directStream/torrent/keptPrune.test.ts, tests/integration/streamDownloads.engine.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-SD02.md
+  - **Proof**: verified-first-pass — 8 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-232925-755027/evidence
+  - **Drift**:
+    - None in code: every anchor matched the plan's quotes; the plan's code blocks were applied verbatim.
+    - origin/feature/stream-downloads-season-story did not move since the base (a7a075d): nothing to rebase onto.
+  - **Decided**:
+    - Worktree differs from the index (…-p2 on phase-2-…) → proceeded (the swarm ledger names this wave worktree for phase 2)
+    - Step 3 minted only phase 2's task (P1-NOTES-SD02), not all nine → follows phase 1's recorded ledger decision; the index's TaskID column is left to the coordinator
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phase 1 of this set, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. No successor to unblock: phase 3 mints its own task in its own worktree.
+
+- [x] **P1-NOTES-SD03** Phase 3: Season downloads: aired episodes, the season pack, a row per episode
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/directStream/downloads/season.ts` (`SeasonDownloads`, `SeasonPackJob`, `airedEpisodes`, `seasonRowsOf`, `packSwarmOf`, `finishFromDisk`), `src/directStream/torrent/seasonPack.ts`, `TorrentSource.fetchPack`, `TorrentStreams.useSlot`/`releaseSlot`, `MovieStreams.seasonEpisodes`, and its own edits to phase 2's `service.ts` (`requestSeason`, the tick-less `enqueue`, a `pack` job beside `job`, the batch hook at the top of `run`, the pack's branches in play first, cancel, close and the list's progress; `buildStreamDownloads` builds `seasonEpisodes`, `packs`, `packSwarm`, `finishEpisode`). Exit: unit tests: a pack found → one swarm open, N rows, N kept, each episode `onDisk`; no pack → N single downloads in order; an unaired episode left out; an episode already whole left out; a pack missing one episode → that one alone falls back; a pack let go for a play is reopened by its hash; `finishFromDisk` waits for the remux and subtitle. `npm test` and the season integration test pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 3 of 9)
+  - **Satisfies**: R2 — for Series, a download button in the Season row (downloads the whole season) and the episode row (that episode only) · criteria: R2.1, R2.3, R2.4
+  - **Depends on**: P1-NOTES-SD02
+  - **Plan**: `.workflows/plan/P1-NOTES-SD03.md`
+  - **Completed**: 2026-11-20 23:46
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/service.ts, src/directStream/torrent/seasonPack.ts, src/directStream/torrent/source.ts, src/movies/streams.ts, src/directStream/downloads/season.ts, src/directStream/downloads/service.ts, src/daemon.ts, tests/unit/directStream/torrent/useSlot.test.ts, tests/unit/directStream/torrent/seasonPack.test.ts, tests/unit/directStream/downloads/season.test.ts, tests/integration/directStream.seasonDownloads.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-SD03.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-234456-sd03/evidence
+  - **Drift**:
+    - Every code anchor matched; the plan's code blocks were applied verbatim. source.ts: TorrentSwarm.useSlot? went after phase 2's trackersOf? (the interface's last member), not directly after downloadsOf?.
+    - tests/integration/directStream.seasonDownloads.int.test.ts: the plan named the batch 'batch-int', but phase 1's stream_downloads.batch is a uuid column (Postgres 22P02); the test now uses a fixed uuid constant BATCH with the same assertions. Production code already mints randomUUID(). This is the one fix behind verified-after-fix (J3).
+    - origin/feature/stream-downloads-season-story did not move since the base (407ee5e): nothing to rebase onto.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p3 on phase-3-… → proceeded there (rung 6: the swarm's per-phase worktree convention, as phases 2 and 6)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 3's task as P1-NOTES-SD03, index TaskID column left to the coordinator (rung 6: precedent of SD01/SD02/SD06)
+    - Integration test batch 'batch-int' vs the uuid column → a fixed uuid in the test, code unchanged (rung 3: phase 1's schema is the reconciled row shape)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2 and 6 of this set, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. No successor to unblock: phase 4 mints its own task in its own worktree.
+
+- [x] **P1-NOTES-SD04** Phase 4: Routes and the tool: `/api/stream/downloads`, `direct_stream_cache`
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/http/streamDownloadsApi.ts` (POST/GET/DELETE `/api/stream/downloads`, mounted after the stream cache routes), the "Stream downloads" group of `scripts/docs/httpRoutes.ts` with `npm run docs:gen`, `direct_stream_cache`'s `provider`/`info_hash`/season start and downloads in `status`/`list`, one sentence in `src/mcp/instructions.ts`, one bullet in the `direct-stream` skill, the client functions `requestDownload`/`fetchDownloads`/`cancelDownload` in `web/src/moviesApi.ts`, and `tests/integration/streamDownloads.routes.int.test.ts`. Exit: route unit tests for every status; the MCP tool's tests; `tests/unit/docs/reference.test.ts` passes; the integration test queues through the route on Postgres and reads it back, and one host never lists or cancels the other's row.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 4 of 10)
+  - **Satisfies**: R1, R2, R3 — the Download button's server side (film, episode, season, a chosen source), the season and episode row downloads, and the live progress the title page reads · criteria: R1.1, R1.3, R1.10, R1.11, R2.1, R2.2, R3.2
+  - **Depends on**: P1-NOTES-SD02, P1-NOTES-SD03
+  - **Plan**: `.workflows/plan/P1-NOTES-SD04.md`
+  - **Completed**: 2026-11-21 00:10
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD04.md, src/http/streamDownloadsApi.ts, src/http/app.ts, src/mcp/streamCacheTools.ts, src/mcp/instructions.ts, claude/skills/direct-stream/SKILL.md, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, web/src/moviesApi.ts, web/src/moviesApi.downloads.test.tsx, tests/unit/directStream/downloadsFakes.ts, tests/unit/directStream/downloadsRoutes.test.ts, tests/unit/mcp.streamCacheTools.test.ts, tests/integration/streamDownloads.routes.int.test.ts
+  - **Proof**: verified-first-pass — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-000528-921728/evidence (90-phase4-journeys.txt; J1-J7), neighbor check cache.sh PASS in /home/miftah/.local/state/notesd-verify/1121-000638-927268/evidence
+  - **Drift**:
+    - web/src/moviesApi.ts was 1050 lines, not 962 (phase 7 landed first); the downloads section was appended at the end as planned
+    - the plan's code blocks were applied verbatim; no other drift
+  - **Decided**:
+    - Step 3 in a swarm sharing one todos counter → minted only phase 4's task as P1-NOTES-SD04, index TaskID column left to the coordinator (rung 6: precedent of SD01/SD02/SD03/SD06, and the coordinator's note)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2, 3 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 5 mints its own task in its own worktree.
+
+- [x] **P1-NOTES-SD05** Phase 5: The Cache page: Downloading filter, progress bars, why a row downloads
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `cacheShelf.ts` (`downloading: {progress, why, state} | null` on episodes and films, roll-ups on seasons and titles, `ShelfView.downloading`), read-only getters `StreamCache.activity`, `EpisodeAhead.fetching`, `DirectStreamService.aheadFetching`, the daemon's shelf reading `deps.streamDownloads.list()`, `stream_disk` / `GET /api/stream/disk` descriptions with `npm run docs:gen`, and `CachePage.tsx`/`.css`/`.test.tsx` (the `Downloading · N` toggle, progress bars, reason chips, 3 s refresh while anything downloads). Exit: `cacheShelf` unit tests for the three reasons and the roll-ups; `CachePage.test.tsx` for the filter, the bars in both views and the faster refresh; `npm test` passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 5 of 10)
+  - **Satisfies**: R4, R5 — R4: "i think we need to improve Cache page: add "Downloading" filter : by default (cache-default-view), we show all files that are being downloaded together with the downloaded files in the cache list. but we can click this Downloading filter and the list will only show the files that are currently being downloaded only (cache-downloading-view)."; R5: "show live download progress bar in the files in Cache page (both in cache-default-view and cache-downloading-view)" · criteria: R4.1, R4.2, R4.3, R5.1
+  - **Depends on**: P1-NOTES-SD04
+  - **Plan**: `.workflows/plan/P1-NOTES-SD05.md`
+  - **Completed**: 2026-11-21 00:50
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD05.md, src/directStream/cache/service.ts, src/directStream/ahead.ts, src/directStream/service.ts, src/directStream/cacheShelf.ts, src/daemon.ts, src/mcp/streamDiskTool.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, web/src/moviesApi.ts, web/src/components/movies/CachePage.tsx, web/src/components/movies/CachePage.css, web/src/components/movies/CachePage.test.tsx, tests/unit/directStream/cacheShelf.test.ts, tests/unit/directStream/ahead.test.ts, tests/unit/mcp.streamDiskTool.test.ts, tests/integration/directStream.cache.int.test.ts
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-004324-1072468/evidence
+  - **Drift**:
+    - scripts/docs/httpRoutes.ts: the 'GET /api/stream/disk' entry sat at line 342, not 329 (phase 4's group above it); found by its key as the plan says.
+    - src/daemon.ts: the CacheShelf block sat at 568, not 566; the plan's block applied unchanged.
+    - Proof neighbour check: the fixture host's delay was raised to 9000 ms just before it, so movie-990005 was still downloading at the final read (with the plan's 4000 ms it finishes inside the 13 s wait). Assertions unchanged. The journeys were run twice (an earlier run 1121-001439-973876 also passed J1-J3).
+  - **Decided**:
+    - Index names the set worktree; this session ran in its swarm phase worktree …-p5 on phase-5-… → proceeded there (rung 6: the swarm's per-phase worktree convention, and the coordinator's note)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 5's task as P1-NOTES-SD05, index TaskID column left to the coordinator (rung 6: precedent SD01-SD06, and the coordinator's note)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-4 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: the swarm coordinator dispatches later phases.
+
+- [x] **P1-NOTES-SD06** Phase 6: Stories from the web: the season story, the episode story web-first
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns Step 0 (settle from the installed Agent SDK's types whether a run's WebSearch results reach `onMessage` with their URLs: `SEARCH_RESULTS_CARRY_URLS`), the opt-in live test `tests/live/webStory.live.test.ts` (`npm run test:live:webStory`, `WEB_STORY_LIVE_TEST`), `src/movies/agentText.ts` (`runAgentText`), `src/movies/webStory.ts` (`createWebStoryWriter`, `parseWebStory`), `MovieStories` web-first (a season from the web only; an episode or a film from the web, its dialogue only on `found: false`), `StoryView` with `origin`, `sources`, `sections`, error `no_story_source` (404) replacing `no_dialogue`, the story routes accepting `{season}` alone, per-season `has_story`, route descriptions and `npm run docs:gen`. Exit: Step 0 settled; unit tests with a fake writer: season story stored once and served cached; episode web-first; fallback to dialogue only on `found: false`; an invented episode dropped; the no-cross-check branch; `story_off`; the docs test passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 6 of 9)
+  - **Satisfies**: R6 — "Narrate the full story of SXX" on the Season row, written from websites that tell full stories instead of from subtitles · criteria: R6.1, R6.2, R6.4, R6.5, R6.6
+  - **Depends on**: P1-NOTES-SD01
+  - **Plan**: `.workflows/plan/P1-NOTES-SD06.md`
+  - **Completed**: 2026-11-20 23:35
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD06.md, src/movies/agentText.ts, src/movies/webStory.ts, src/movies/story.ts, src/movies/guides.ts, src/movies/read.ts, src/http/moviesApi.ts, src/daemon.ts, src/config.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/configuration.md, vitest.config.ts, package.json, tests/live/webStory.live.test.ts, tests/unit/movies/webStory.test.ts, tests/unit/movies/story.test.ts, tests/unit/directStream/cacheShelf.test.ts, tests/integration/movies.api.int.test.ts
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-232817-746632/evidence
+  - **Drift**:
+    - Step 0 settled: SEARCH_RESULTS_CARRY_URLS = true. @anthropic-ai/claude-agent-sdk 0.3.311: sdk.d.ts:6563 (SDKUserMessage.tool_use_result, 'the tool's full Output object') and sdk-tools.d.ts:3758-3789 (WebSearchOutput.results[].content[].url). Settled from the types only; the billed live test was not run.
+    - Plan's J4 assumed tv-247718 is stored on a `verify.sh up --movies` daemon; it is not (GET answered 404 for 60 s, the seed insert failed its FK). Re-run on a fresh daemon with `POST /api/movies/ensure {kind:'tv', tmdb_id:247718}` first; every step then passed. Phase 9's downloads.sh story stage needs the same step. First run's evidence: /home/miftah/.local/state/notesd-verify/1120-232641-731957/evidence.
+    - web/src/components/movies/StoryModal.tsx still switches on 'no_dialogue' and reads provider/cues as non-null in its foot: phase 7's, as the plan's Handoffs say; typecheck passes.
+    - guides.ts import block is 12 lines, not 11; same edit.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p6 on phase-6-… → proceed there (rung 6: the swarm's per-phase worktree convention)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 6's task as P1-NOTES-SD06, index TaskID column left to the coordinator (rung 6: phase 1's precedent P1-NOTES-SD01)
+    - J4 with no stored title → add the harness's own `POST /api/movies/ensure` before the seed; code unchanged (rung 2: exit criterion 'J1 to J5 pass'; features/movies.md names ensure for tv-247718)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phase 1 of this set (P1-NOTES-SD01); the coordinator's integrator reconciles them. No successor to unblock: phase 7's task is minted by its own session.
+
+- [x] **P1-NOTES-SD07** Phase 7: The story on the page: the season row's button, sections and sources in the modal
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `EpisodeList.tsx` (a book icon on each season head, season > 0, named exactly `Narrate the full story of S02`, filled when stored), `MovieDetail.tsx` (opening `StoryModal` for a season), `StoryModal.tsx` (dialog `Story of <title> S02`, sections headed `S02E03 · name`, the not-found line, a `Sources` region of links, web wait text, `no_story_source`, foot by origin), `MovieModal.css`, `web/src/moviesApi.ts` story types and `writeStory`'s season form, `seasonCode`. Exit: `StoryModal.test.tsx` and `EpisodeList.test.tsx` cover the season button, sections, the not-found line and the source links; `npm test` passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 7 of 9)
+  - **Satisfies**: R6 — we need to add "Narrate the full story of SXX" on the Season row in title page (written from web sources, not from a subtitle) · criteria: R6.1, R6.3
+  - **Depends on**: P1-NOTES-SD06
+  - **Plan**: `.workflows/plan/P1-NOTES-SD07.md`
+  - **Completed**: 2026-11-20 23:48
+  - **Method**: /implement
+  - **Files**: web/src/moviesApi.ts, web/src/lib/movies.ts, web/src/components/movies/StoryModal.tsx, web/src/components/movies/StoryModal.test.tsx, web/src/components/movies/MovieModal.css, web/src/components/movies/EpisodeList.tsx, web/src/components/movies/EpisodeList.test.tsx, web/src/components/movies/MovieDetail.tsx, .workflows/todos.md, .workflows/plan/P1-NOTES-SD07.md
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-234319-819505/evidence
+  - **Drift**:
+    - None in the code: every anchor the plan quotes matched the tree as phase 6 left it.
+    - origin/feature/stream-downloads-season-story has not moved past this branch's base (407ee5e): nothing to rebase onto.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p7 on phase-7-… → proceed there (rung 6: the swarm's per-phase worktree convention)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 7's task as P1-NOTES-SD07, index TaskID column left to the coordinator (rung 6: precedent of P1-NOTES-SD01/SD02/SD06)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 8's task is minted by its own session.
+
+- [x] **P1-NOTES-SD10** Phase 10: Office network: a torrent download through WARP before the cloud
+  - **Difficulty**: HARD
+  - **Type**: Update
+  - **Context**: Owns `src/directStream/downloads/warp.ts` (`DownloadWarp`, `WarpRounds`, `WarpHold`), `DirectStreamService.warpForDownloads()` over the one `WarpHolds` plays use, the removal of the office branches from `plan.ts`, `service.ts` and `season.ts`, `no_peers_here` meaning "no peer on the office network even after WARP", the texts and tests of phases 2, 3 and 4 that state the old rule, `docs:gen`. Exit: its R1.4 and R1.12 tests pass with a fake switch over the real `WarpHolds`; the play WARP tests pass unchanged; `torrentWarp.ts` and `warp.mjs` show no diff; `npm test`, `npm run typecheck` and `docs:check` pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 10 of 10)
+  - **Satisfies**: R1 — i am just thinking , why not add an icon button Download as well? add it to title page. from my experince using Stream subsystem, Torrent always gives higher image quality (if it is a 1080p magnet) compared to Non Torrent sources. i am thinking, by default, clicking download will download the 1080p magnet version, but if it is not available, then download (or cache, if you prefer to call it that way) from NT cloud sources. you know what, just add a small dropdown "Choose how to download <movie/series name>" , so user can manually select NT source if he wanted to. · criteria: R1.4, R1.12
+  - **Depends on**: P1-NOTES-SD02, P1-NOTES-SD03, P1-NOTES-SD04
+  - **Plan**: `.workflows/plan/P1-NOTES-SD10.md`
+  - **Completed**: 2026-11-21 00:43
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-SD10.md, src/directStream/downloads/warp.ts, src/directStream/downloads/plan.ts, src/directStream/downloads/types.ts, src/directStream/downloads/service.ts, src/directStream/downloads/season.ts, src/directStream/service.ts, src/streaming/warp.ts, src/config.ts, src/daemon.ts, docs/guide/reference/configuration.md, docs/guide/reference/http-api.md, scripts/docs/httpRoutes.ts, .claude/skills/verify-notesd/features/direct-streaming.md, tests/unit/directStream/downloads/fakes.ts, tests/unit/directStream/downloads/plan.test.ts, tests/unit/directStream/downloads/service.test.ts, tests/unit/directStream/downloads/season.test.ts, tests/integration/directStream.seasonDownloads.int.test.ts
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-0013-sd10/evidence
+  - **Drift**:
+    - No code drift: every anchor in phases 2, 3 and 4's files matched the plan.
+    - origin/feature/stream-downloads-season-story did not move since the base (2a665d9): nothing to rebase onto.
+    - docs:gen also rewrote docs/guide/reference/mcp-tools.md with no diff.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p10 on phase-10-… → proceeded there (rung 6: the swarm's per-phase worktree convention, and the coordinator's note)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 10's task as P1-NOTES-SD10, index TaskID column left to the coordinator (rung 6: precedent SD01–SD07)
+    - Proof evidence is vitest output, not a throwaway daemon → as the plan's Proof says (verify.sh pins NOTESD_STREAM_WARP=off and the SSID to verify-home, and no test may switch the real WARP)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1–7 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 9's task is minted by its own session.
+
+- [x] **P1-NOTES-SD08** Phase 8: The title page: Download buttons, the choose menu, progress bars
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/movies/DownloadButton.tsx` (+ test): an icon button (Phosphor `DownloadSimple`, named `Download <name>`) with a caret named `Choose how to download <name>` opening a `role="menu"` of Best torrent (1080p), Cloud, Pick a torrent… (`TorrentsModal` with a download action per candidate, sending `info_hash`; none for a season), a cancel icon while queued, running or paused, a thin `role="progressbar"` bar named `Download of <name>`; states idle, active, on this machine (from the title's `done` rows), failed. `MovieDetail.tsx` (a film's head button; none at a series' head), `EpisodeList.tsx` (season head and each episode row), `TorrentsModal.tsx` (the download action), `Movies.css`. `web/src/lib/downloads.ts` (+ test): `useDownloads(titleId)` asks `GET /api/stream/downloads?title=` once and with the page's refresh, and every 2.5 s only while `active` (queued, running or paused) and the tab is visible; season progress is the mean of its rows; `downloadBody` builds phase 4's `DownloadRequest` variants; the notice reads `requestDownload`'s `created` and, for a season, says how many episodes `not_aired` left out (not aired, or no air date). Exit: component tests for the three placements, the menu's three choices and what each sends, the bar while downloading or paused, no polling when nothing is active, cancel; `npm test` and `npm run typecheck` pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 8 of 10)
+  - **Satisfies**: R1, R2, R3 — an icon button Download on the title page (the 1080p magnet by default, else NT cloud sources) with a small dropdown "Choose how to download <movie/series name>", the download button in Season row (the whole season) and episode row (only that episode), and a live progress bar of the download the title page can see · criteria: R1.1, R1.3, R2.1, R2.2, R3.1, R3.3
+  - **Depends on**: P1-NOTES-SD04, P1-NOTES-SD07
+  - **Plan**: `.workflows/plan/P1-NOTES-SD08.md`
+  - **Completed**: 2026-11-21 00:35
+  - **Method**: /implement
+  - **Files**: web/src/lib/downloads.ts, web/src/lib/downloads.test.tsx, web/src/testing/downloadFixtures.ts, web/src/components/movies/DownloadButton.tsx, web/src/components/movies/DownloadButton.test.tsx, web/src/components/movies/TorrentsModal.tsx, web/src/components/movies/TorrentsModal.test.tsx, web/src/components/movies/EpisodeList.tsx, web/src/components/movies/EpisodeList.test.tsx, web/src/components/movies/MovieDetail.tsx, web/src/components/movies/Movies.css, .claude/skills/verify-notesd/scripts/stream/download-buttons.steps.mjs, .workflows/todos.md, .workflows/plan/P1-NOTES-SD08.md
+  - **Proof**: verified-after-fix — 9 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-002021-1002627/evidence (J1-J7 + neighbor check via download-buttons.steps.mjs PASS; J8, J9 the vitest files). First run failed J6 (a season click sent no POST while S01E02 was downloading), fixed in DownloadButton.tsx; second run failed only the neighbor check, the drive's fixture choice corrected.
+  - **Drift**:
+    - Line numbers differ from the plan (phase 7 landed, moviesApi.ts longer); every anchor was found by text. No behavioural drift.
+    - Remote branch phase-8-... did not exist at fetch time: nothing to rebase onto.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p8 on phase-8-… → proceeded there (rung 6: the swarm's per-phase worktree convention)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 8's task as P1-NOTES-SD08, index TaskID column left to the coordinator (rung 6: precedent SD01–SD07, and the coordinator's note)
+    - A season button click while one of its episodes is already queued/running/paused → still POSTs the season (the daemon leaves out what is queued or whole) instead of only re-reading, as the plan's `click` did; a film or an episode that downloads is only read again. With a unit test (rung 1/2: criterion R2.1 and Proof journey J6 over the plan's code block)
+    - The drive's neighbor check opens The Dog Stars (movie-990002) instead of Oldboy (movie-990004) → same assertions on a page that is the Library side: `detailSide` shows a title no machine holds a file of as the Stream page whatever the address says, and the fixture library has a file record of The Dog Stars (rung 6: the app's existing rule; changing it is outside this phase's Owns)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1–7 of this set; the coordinator's integrator reconciles them. readme-updater not run, matching phase 7 (web-only). No successor to unblock: phase 9's task is minted by its own session.
+
+- [x] **P1-NOTES-SD09** Phase 9: Guides, pictures, the feature map and the end-to-end proof
+  - **Difficulty**: NORMAL
+  - **Type**: Update
+  - **Context**: Owns `docs/guide/streaming.md` ("Downloading a title"; "What a title says: its story"; the rules in the code), `docs/guide/movies.md` (Download buttons, season story, Cache page), `docs/guide/architecture.md` (writer table: `stream_downloads`/`DownloadsRepo`; data model: `stream_downloads`, `movie_stories`, `kept_at`), `docs/guide/reference/configuration.md` (the `NOTESD_MOVIES_STORY_MODEL` row only if still stale), `CLAUDE.md`, `README.md` only if a line changes. Pictures: fixture pictures for the streaming guide (`docs:shots -- streaming`); for the movies guide only read-only `--live` retakes, never a fixture picture. `verify.sh`'s `TORRENT_SEED_KBPS` knob (the SSID pin is phase 2's). `.claude/skills/verify-notesd/features/{movies,direct-streaming,README}.md` entries and the `direct-stream/downloads.sh` driver with its steps files (stages story, title, season, cache), run with evidence kept. Exit: `npm run docs:check` and `npm test` pass; no `[[CHECK` is left; `downloads.sh RUN` passes on a throwaway daemon with evidence saved.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 9 of 10)
+  - **Satisfies**: R3, R4, R6 — a live progress bar of the download the title page can see, the Cache page's "Downloading" filter (by default the files being downloaded together with the downloaded files; clicked, only the files currently being downloaded), and "Narrate the full story of SXX" on the Season row in title page, from websites that tell full stories / full spoilers instead of inferring it from the subtitle · criteria: R3.1, R4.2, R6.1
+  - **Depends on**: P1-NOTES-SD05, P1-NOTES-SD08, P1-NOTES-SD10
+  - **Plan**: `.workflows/plan/P1-NOTES-SD09.md`
+  - **Completed**: 2026-11-21 01:17
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/README.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/features/movies.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/direct-stream/downloads.sh, .claude/skills/verify-notesd/scripts/stream/downloads-bars.mjs, .claude/skills/verify-notesd/scripts/stream/downloads-title.steps.mjs, .claude/skills/verify-notesd/scripts/stream/downloads-season.steps.mjs, .claude/skills/verify-notesd/scripts/stream/downloads-cache.steps.mjs, .claude/skills/verify-notesd/scripts/stream/season-story.steps.mjs, scripts/docs/shots/streaming.mjs, docs/guide/streaming.md, docs/guide/movies.md, docs/guide/architecture.md, docs/guide/reference/configuration.md, CLAUDE.md, docs/guide/img/streaming/download-bars.png, docs/guide/img/streaming/download-menu.png, docs/guide/img/streaming/season-story.png, docs/guide/img/streaming/cache-downloading.png, docs/guide/img/streaming/player-fetching.png, docs/guide/img/streaming/player-preview.png, docs/guide/img/streaming/player.gif, .workflows/todos.md, .workflows/plan/P1-NOTES-SD09.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1121-011132-1184415/evidence
+  - **Drift**:
+    - A `--movies`/`--torrent` throwaway daemon does not hold tv-247718 or movie-467905: downloads.sh's wait_title and the shots module's seed store them with POST /api/movies/ensure.
+    - Phase 5 landed the Cache page's roll-up as `downloading: {count, progress, why[], state}`; the shots module's fakes use the landed shapes, not the plan's `downloading_count`/`downloading_progress`.
+    - Office rule written as phase 10 built it everywhere the plan still held the old rule (CLAUDE.md, streaming.md, features/direct-streaming.md, downloads.sh's INCONCLUSIVE reason, movies.md Download bullet).
+    - Play first is written as landed (a paused download lets go of its swarm and is reopened by its info hash), not the plan's 'files deselected'.
+    - configuration.md: NOTESD_MOVIES_STORY_MODEL row was still stale and was replaced; NOTESD_STREAM_DOWNLOADS's link now points at #downloading-a-title.
+    - No product defect was found by the proof, so the index's Reconciliation Log got no 'phase 9 proof' line.
+    - Owed after the set lands and the live daemon runs the new build (coordinator's job): `npm run docs:shots -- --live movies` to retake episodes.png, stream-title.png, film.png and cache.png. No fixture picture was put in docs/guide/movies.md.
+  - **Decided**:
+    - J1 first failed with 'the page went 4373 ms without asking' while the page polled steadily at 2.5 s: this WSL machine's wall clock is stepped forward ~1.9 s every ~34 s → downloads-bars.mjs times the asks with performance.now(); the 3 s bound is unchanged (tie-break: a failing verification is never settled by relaxing the check; the instrument was wrong, the product was not)
+    - The streaming guide's [[CHECK]] log line → the landed line of service.ts: `downloads: TMDB movie 467905 downloads from the torrent <name>, 1080p, kept until it is deleted on the Cache page` (rung 3: Step 1, landed names replace the marks)
+    - architecture.md Movies row gains only `movie_stories` (rung 2: do exactly what the plan's Step 12 names)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching phases 1–8 of this set; the coordinator's integrator reconciles them. Phase 9 ticked in the coordinator's plan index. No successor to unblock: the swarm coordinator lands the set.
+
 - [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
   - **Difficulty**: NORMAL
   - **Type**: Feature

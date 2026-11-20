@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpenText, CaretDown, CaretRight, CheckCircle, Checks } from '@phosphor-icons/react';
-import type { EpisodeView, FileView, PlayerState, TitleDetail } from '../../moviesApi';
-import { episodeAction, episodeCode, episodeLive, filePlayLabel, primaryFile, seasonsShown, streamLabel, streamSourceText, TILE_LIVE_LABEL, trailerTarget, type MoviesSide, type PlayButtonState, type StreamTarget, type TrailerTarget } from '../../lib/movies';
+import type { EpisodeView, FileView, PlayerState, SeasonView, TitleDetail } from '../../moviesApi';
+import { episodeAction, episodeCode, episodeLive, filePlayLabel, primaryFile, seasonCode, seasonsShown, streamLabel, streamSourceText, TILE_LIVE_LABEL, trailerTarget, type MoviesSide, type PlayButtonState, type StreamTarget, type TrailerTarget } from '../../lib/movies';
 import { FileFlags, FileRow, Meter, PlayButton, StreamAltButton, TrailerButton, WatchedButton } from './parts';
 import { PlayMenu, type PlayMenuProps } from './PlayMenu';
+import { DownloadButton, type DownloadsBinding } from './DownloadButton';
 
 export interface EpisodeListProps {
   detail: TitleDetail;
@@ -30,6 +31,10 @@ export interface EpisodeListProps {
   onTrailer: (t: TrailerTarget) => void;
   /** Opens an episode's story (StoryModal). Left out, the rows have no book icon. */
   onStory?: (e: EpisodeView) => void;
+  /** Opens a season's whole story (StoryModal, one section per episode). Left out, the season heads have no book icon. */
+  onSeasonStory?: (s: SeasonView) => void;
+  /** The title's downloads (the Stream side with streaming on): each season head and episode row gets a Download button. Left out, none. */
+  downloads?: DownloadsBinding | undefined;
 }
 
 /** A play menu's run, with the code of the row it was chosen on. */
@@ -46,6 +51,18 @@ function SeasonWatchedButton({ name, episodes, busy, onChange }: { name: string;
   return (
     <button type="button" className={on ? 'pbtn on' : 'pbtn hov'} data-tip={label} aria-label={label} aria-pressed={on} disabled={busy} onClick={() => onChange(!on)}>
       <Checks weight="duotone" />
+    </button>
+  );
+}
+
+function SeasonStoryButton({ season, onOpen }: { season: SeasonView; onOpen: () => void }) {
+  const code = seasonCode(season.season);
+  const stored = season.has_story === true;
+  const label = `Narrate the full story of ${code}`;
+  const tip = stored ? `${label} (stored; full spoilers)` : `${label} (full spoilers; written once from published recaps on the web)`;
+  return (
+    <button type="button" className="pbtn hov mv-season-story" data-tip={tip} aria-label={label} data-stored={stored ? 'true' : undefined} onClick={onOpen}>
+      <BookOpenText weight={stored ? 'fill' : 'duotone'} />
     </button>
   );
 }
@@ -88,7 +105,7 @@ function SeasonFoldButton({ name, folded, onToggle }: { name: string; folded: bo
 }
 
 /** A series' seasons (Library: those with a file on any machine; Stream: all), each with its trailer and every episode with its progress, flags and play icons; then files with no episode. */
-export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onRun, starting = null, onWatched, onSeasonWatched, onEpisodeWatched, onTrailer, onStory }: EpisodeListProps) {
+export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onRun, starting = null, onWatched, onSeasonWatched, onEpisodeWatched, onTrailer, onStory, onSeasonStory, downloads }: EpisodeListProps) {
   const { seasons, hidden } = seasonsShown(detail, focus, side);
   const list = useRef<HTMLElement>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => readCollapsed(detail.id));
@@ -122,7 +139,9 @@ export function EpisodeList({ detail, player, focus = null, busy, side, streamEn
             <SeasonFoldButton name={s.season === 0 ? 'Specials' : `season ${s.season}`} folded={isFolded(s)} onToggle={() => toggleSeason(s.season)} />
             <h3 className="mv-season-h">{s.season === 0 ? 'Specials' : `Season ${s.season}`}</h3>
             {s.season > 0 && <TrailerButton target={trailerTarget(detail, s.season)} onWatch={onTrailer} />}
+            {s.season > 0 && onSeasonStory !== undefined && <SeasonStoryButton season={s} onOpen={() => onSeasonStory(s)} />}
             <SeasonWatchedButton name={s.season === 0 ? 'Specials' : `season ${s.season}`} episodes={s.episodes} busy={busy} onChange={(watched) => onSeasonWatched(s.season, watched)} />
+            {downloads !== undefined && <DownloadButton detail={detail} scope={{ kind: 'season', season: s.season }} rows={downloads.rows} size="season" onNotice={downloads.onNotice} onChanged={downloads.onChanged} />}
             {isFolded(s) && <span className="mv-dim mv-season-sum">{foldedSummary(s.episodes)}</span>}
           </div>
           <ol className="mv-eps" hidden={isFolded(s)}>
@@ -143,6 +162,7 @@ export function EpisodeList({ detail, player, focus = null, busy, side, streamEn
                 onWatched={onWatched}
                 onEpisodeWatched={onEpisodeWatched}
                 onStory={onStory}
+                downloads={downloads}
               />
             ))}
           </ol>
@@ -179,9 +199,10 @@ interface EpisodeItemProps {
   onWatched: (f: FileView) => void;
   onEpisodeWatched: (e: EpisodeView, watched: boolean) => void;
   onStory?: ((e: EpisodeView) => void) | undefined;
+  downloads?: DownloadsBinding | undefined;
 }
 
-function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEnabled, onPlay, onStream, onRun, starting, onWatched, onEpisodeWatched, onStory }: EpisodeItemProps) {
+function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEnabled, onPlay, onStream, onRun, starting, onWatched, onEpisodeWatched, onStory, downloads }: EpisodeItemProps) {
   const code = episodeCode(e.season, e.episode);
   const file = primaryFile(e);
   const act = episodeAction(detail, e, side);
@@ -209,7 +230,7 @@ function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEn
         <button
           type="button"
           className="pbtn hov mv-story"
-          data-tip={e.has_story === true ? `The story of ${code} (stored; full spoilers)` : `Write the story of ${code} from its subtitle (full spoilers; Claude writes it once)`}
+          data-tip={e.has_story === true ? `The story of ${code} (stored; full spoilers)` : `Write the story of ${code} from published recaps on the web (full spoilers; Claude writes it once)`}
           aria-label={e.has_story === true ? `The story of ${code}` : `Write the story of ${code}`}
           data-stored={e.has_story === true ? 'true' : undefined}
           onClick={() => onStory(e)}
@@ -268,6 +289,9 @@ function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEn
         {alt !== null && <StreamAltButton state={streamLabel(alt, streamEnabled)} busy={busy} onClick={() => onStream(alt, code)} />}
         {onRun !== undefined && (
           <PlayMenu detail={detail} episode={e} player={player} busy={busy} streamEnabled={streamEnabled} onRun={(act, failed, what) => onRun(act, failed, what, code)} />
+        )}
+        {downloads !== undefined && (
+          <DownloadButton detail={detail} scope={{ kind: 'episode', season: e.season, episode: e.episode }} rows={downloads.rows} size="row" onNotice={downloads.onNotice} onChanged={downloads.onChanged} />
         )}
       </span>
     </li>
