@@ -52,7 +52,7 @@ const SUBTITLE_PARALLEL = 8;
 export const DEFAULT_SEED_FILE = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'providers.seed.json');
 /**
  * The anime embeds (`id_kind: "anilist"`), loaded into the same table. They are kept apart from the
- * provider seed because the probe campaign and its findings are about that file's 24 TMDB templates.
+ * provider seed, which holds the TMDB and IMDb templates.
  */
 export const DEFAULT_ANIME_SEED_FILE = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'anime.seed.json');
 

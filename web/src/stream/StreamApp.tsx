@@ -31,8 +31,8 @@ import type { CachedInfo, EpisodeNumber, TimeRange } from './session';
 import { pickDefaultSubtitle } from './subtitles';
 
 /**
- * window.notesdStream: the player's state for scripts (phase 6's playcheck reads `kind`, `levels`,
- * `level`, `errors`, `refreshes` beside the <video>), and `start()`, which phase 1's
+ * window.notesdStream: the player's state for scripts (`kind`, `levels`, `level`, `errors`,
+ * `refreshes` beside the <video>), and `start()`, which phase 1's
  * `open --fullscreen` evaluates as a user gesture so the film starts with sound.
  */
 export interface NotesdStream extends StreamState {

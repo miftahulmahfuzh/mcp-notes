@@ -298,8 +298,7 @@ EOF
     env+=(NOTESD_MOVIES=off)
   fi
   # NOTESD_DIRECT_STREAM=off unless --direct-stream: a --movies run never runs the real resolver.
-  # Under --direct-stream the resolver is the fake, unless the caller set NOTESD_DIRECT_STREAM_CLI
-  # (phase 6's playcheck wrapper, run only when the owner expects the streaming Chrome to move).
+  # Under --direct-stream the resolver is the fake, unless the caller set NOTESD_DIRECT_STREAM_CLI.
   if [ "$direct" = 1 ]; then
     env+=(
       NOTESD_DIRECT_STREAM=on

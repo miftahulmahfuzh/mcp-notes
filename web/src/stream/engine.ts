@@ -110,7 +110,7 @@ export function reportRefusal(handlers: EngineHandlers, status: unknown, upstrea
 export const BUFFER_AHEAD_S = 120;
 
 /**
- * The same under `?muted=1`: the expiry checks (playcheck.mjs, player.steps.mjs J3) need segments
+ * The same under `?muted=1`: the expiry check (player.steps.mjs J3) needs segments
  * that are not loaded yet when the token expires.
  */
 export const MUTED_BUFFER_AHEAD_S = 30;

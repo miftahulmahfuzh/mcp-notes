@@ -41,7 +41,7 @@ export function createHlsEngine({ video, src, startAt, handlers, audioTrack, buf
   }
   // hls.js sizes its forward buffer from maxBufferLength and the bitrate, capped at
   // maxMaxBufferLength (up to 600 s by default). Both are bufferAheadS, so a play keeps exactly that
-  // much loaded ahead (R1.8): 120 s, or 30 s under ?muted=1 so the expiry checks (playcheck.mjs,
+  // much loaded ahead (R1.8): 120 s, or 30 s under ?muted=1 so the expiry check (verify's
   // player.steps.mjs J3) still find segments not yet loaded when the token expires.
   const growing = growingPlaylist(src);
   const hls = new Hls({

@@ -155,7 +155,7 @@ export default async ({ page, base, shot, log }) => {
   }, 60, { timeout: 30_000 })
   const ahead = await page.evaluate(aheadS)
 
-  // J3 (R2.5) runs on ?muted=1, as playcheck's expiry check does: there the page keeps 30 s ahead,
+  // J3 (R2.5) runs on ?muted=1, so the page keeps 30 s ahead,
   // so the segments past the seek are not loaded yet when the token expires.
   await page.goto(`${base}/stream/S1?muted=1`)
   await page.waitForFunction(() => window.notesdStream?.stage === 'ready', null, { timeout: 30_000 })

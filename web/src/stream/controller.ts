@@ -185,7 +185,7 @@ export interface StreamState {
   cachedRanges: TimeRange[];
   /** A torrent session (torrent-stream-source phase 4): the mark beside the title and the wait for a part not on disk. Null: not a torrent. */
   torrent: TorrentView | null;
-  /** The player's error messages, oldest first (phase 6's playcheck reads them). */
+  /** The player's error messages, oldest first. */
   errors: string[];
   /** Recent notes for scripts and people: refreshes, subtitle failures, errors. */
   log: string[];

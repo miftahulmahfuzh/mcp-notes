@@ -79,7 +79,7 @@ describe('the provider seed', () => {
     expect(names(seed)).toEqual(['VidNest', 'Smashy', 'VidUp', 'VidFast', 'VidLink', 'VidRock', 'Movies111', 'HyperLink', 'NexaStream', 'MovieVault']);
     for (const p of seed) {
       expect(p.movie).toMatch(/^https:\/\/[^/]+\/.*\{id\}/);
-      // The values of tv, browser_only, en_subtitle and notes are measured (campaign.mjs apply-seed).
+      // The values of tv, browser_only, en_subtitle and notes were measured by hand.
       expect(p.id_kind).toBe('tmdb');
       if (p.tv !== null) expect(p.tv).toMatch(/^https:\/\/[^/]+\/.*\{id\}.*\{season\}.*\{episode\}/);
       expect(typeof p.browser_only).toBe('boolean');
@@ -358,7 +358,7 @@ describe('resolving a title (R1.1, R1.3)', () => {
 });
 
 describe('the command', () => {
-  // The seed as phase 1 wrote it: the order these tests expect must not move with what a campaign measured.
+  // The seed as phase 1 wrote it: the order these tests expect must not move with what was measured since.
   const unlearned = (file: string): string => {
     const text = readFileSync(file, 'utf8');
     if (file !== SEED_PATH) return text;

@@ -9,9 +9,8 @@
 - Episode addresses in the seed, and the whole-series fallback: an episode's stream that a nested
   frame given the series alone loaded (`seriesPlayerFrame` in `resolve.mjs`) is `no_stream`. Proven by
   `npx vitest run tests/unit/scripts/directResolve.test.ts -t "whole-series"`, and live (owner's
-  machine, providers are live) by `node claude/streaming/direct/campaign.mjs run --only Smashy,VidRock,NexaStream --out <dir>`
-  (each row's episode `resolved`, control `no_stream`), `node claude/streaming/direct/cli.mjs resolve tv 1396 1 99 --only NexaStream`
-  (`no_stream`, "a whole-series player") and the live playback probe below with `--check subtitle --provider <name> tv 1396 2 3`.
+  machine, providers are live) by `node claude/streaming/direct/cli.mjs resolve tv 1396 1 99 --only NexaStream`
+  (`no_stream`, "a whole-series player").
 - Play: `POST /api/stream/play` (same-origin) resolves through the resolver CLI and opens
   `http://localhost:<port>/stream/<session id>` full screen in the streaming Chrome (the page itself
   is phase 4's). Sessions live in memory: a 32-character random id, 4 hours idle, 24 hours at most.
@@ -160,10 +159,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   page's `refresh after 403` and `error: session_over` lines). The steps set
   `<run>/direct/mode` to `dash_film` and raise `<run>/direct/token`; the host serves
   `<run>/direct/film` only under the current token. Engine logic:
-  `npx vitest run web/src/stream/dashEngine.test.tsx`; the live gate's DASH path:
-  `npx vitest run tests/unit/scripts/playcheck.test.ts`.
-- The player against a real provider is phase 6's `playcheck.mjs` (muted, normal window).
-  `--check expiry` takes an HLS or a DASH provider (`--provider VidLink` for DASH).
+  `npx vitest run web/src/stream/dashEngine.test.tsx`.
 - Live template read, free, no browser:
   `node claude/streaming/direct/cli.mjs templates https://ww6-fmovies.com/ --no-chrome` prints
   `ok: true` and the 24 providers. Without `--no-chrome`, a site whose scripts hold no template is
@@ -171,7 +167,6 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   asked. Never run `direct_stream_update_source` against the live daemon for a
   site with new providers unless the owner asked: it writes the shared registry and probes in
   the streaming Chrome.
-- Live playback probe (owner's machine only; providers are live): `node claude/streaming/direct/playcheck.mjs setup --dir ~/.local/state/notesd-playcheck`, then `NOTESD_DIRECT_STREAM_CLI=$HOME/.local/state/notesd-playcheck/cli.mjs $V up --web --direct-stream`, then `node claude/streaming/direct/playcheck.mjs run --daemon <URL> --dir ~/.local/state/notesd-playcheck --check play|dash|vidnest|subtitle|expiry --provider <name> movie 550`. It prints one JSON report with a verdict. It brings the streaming Chrome to the front in a normal window, muted: say so before running it. Results go into the Playback section of `docs/plans/2026-11-15-direct-streaming-findings.md` with `playcheck.mjs findings`, and `playcheck.mjs audit` checks that section against the seed.
 
 ## /direct-stream (find and play)
 - `direct_stream_find`, `direct_stream_play` (MCP, chat bar, `/direct-stream` skill): one film
@@ -700,8 +695,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
-  The live resolve is phase 1's check, run when the owner expects it; the live playback probe is
-  `playcheck.mjs` (phase 6), which passes its own wrapper as `NOTESD_DIRECT_STREAM_CLI` under `--direct-stream`.
+  The live resolve is phase 1's check, run when the owner expects it.
 - A session lives in memory: restarting the daemon ends it (403 `unknown_session`).
 - A 403 that carries `X-Notesd-Upstream` is the stream host's (an expired token: refresh); one
   without it is notesd's refusal (`unknown_session`, `forbidden_host`).

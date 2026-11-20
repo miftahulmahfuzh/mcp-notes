@@ -4,6 +4,10 @@
 **Plan:** `.workflows/plan/DIRECT_STREAMING_PLAN.md` (phase 2 writes everything above **Playback**; phase 6 writes **Playback**)
 **Brief:** `docs/plans/2026-11-15-direct-streaming-design.md`
 
+> `campaign.mjs`, `playcheck.mjs` and `playgate.mjs`, which wrote this file, were deleted on
+> 2026-11-20 (nothing ran them any more); they are in git history before that date. This file is
+> a record now.
+
 The brief left these untested: the other 18 providers, why three providers returned nothing,
 series episodes, how long a manifest's token lives, and playback (DASH, VidNest, subtitles in our
 player). This file holds what was measured on the owner's laptop through the streaming Chrome.

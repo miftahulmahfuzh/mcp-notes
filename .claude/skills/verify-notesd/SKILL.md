@@ -57,7 +57,7 @@ host (`tests/fixtures/direct-stream/upstream.mjs`) under `<run>/direct/`: `mode`
 next answer (`hls`, `dash`, `dash_film`, `hls_film`, `hls_token`, `no_source`, `no_chrome`; a file `no_subtitle` there makes the stream name no subtitle), `calls.jsonl` records every resolve and open,
 `upstream.jsonl` every request the host got. `scripts/direct-stream/journey.sh RUN` drives it; see
 `features/direct-streaming.md`. A `NOTESD_DIRECT_STREAM_CLI` in the caller's environment replaces the
-fake under `--direct-stream` (phase 6's `playcheck.mjs` wrapper uses this).
+fake under `--direct-stream`.
 
 Every run also pins `NOTESD_TORRENT=off` and `NOTESD_TORRENT_DIR` under the run, so a throwaway daemon never
 joins a real swarm. `--torrent` (implies `--direct-stream`) turns torrents on with discovery off (no DHT, no
@@ -171,9 +171,7 @@ not implementation.
 - Never drive Play or `movies_continue` on the live daemon, and never give a run a `/mnt/c` root: both
   reach the owner's real VLC or folders. `up --movies` is the only way to drive Movies.
 - Never give a throwaway daemon the real `claude/streaming/direct/cli.mjs`: it opens tabs in the owner's
-  streaming Chrome. `up --direct-stream` is the only way to drive direct streaming; the one exception is
-  `playcheck.mjs`'s wrapper (`NOTESD_DIRECT_STREAM_CLI=<dir>/cli.mjs`), which records `open` and is run
-  only when the owner expects the streaming Chrome to come forward, muted.
+  streaming Chrome. `up --direct-stream` is the only way to drive direct streaming.
 - Every run pins the daily stream canary off (`NOTESD_STREAM_CANARY=off`); it is proven by
   `tests/unit/directStream/canary.test.ts`.
 - Never give a throwaway daemon the real `claude/streaming/torrent/cli.mjs` (1337x and ext.to): it opens a

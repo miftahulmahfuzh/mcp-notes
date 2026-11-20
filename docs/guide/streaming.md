@@ -491,7 +491,7 @@ bot check), it is not asked at all, whatever it gave before: its attempt is `ski
 `it shows a bot check`, `it gave no stream`), and its health is left as it was. It is asked again a day after its
 last failure, then after two days, four, up to a week, so a provider that came back is found by an ordinary
 resolve, and one stream resets its count; `--only` (a provider the owner names, `/update-cloud-source`'s probe,
-the campaign) asks it at any time. An `error` (the sniffer or Chrome failed on this machine) says nothing of the
+the daily canary) asks it at any time. An `error` (the sniffer or Chrome failed on this machine) says nothing of the
 provider and never starts a rest (`order.mjs` `restingUntil`).
 
 **Side by side once the play goes badly.** The providers are asked one after another, and a provider that
@@ -585,8 +585,8 @@ audio, an English subtitle file).
   choose its order.
 - A provider skipped because it only plays in its own page (`browser_only`), or because it has no
   episode address, is not a failure: its health is left alone.
-- An episode address is kept in the seed only when it passed the campaign's control check
-  (`claude/streaming/direct/campaign.mjs run --only <names>`): the provider resolves a real
+- An episode address is kept in the seed only when it passed a control check
+  (`cli.mjs resolve tv <id> <season> <episode> --only <name>`, by hand): the provider resolves a real
   episode and does not resolve one the series does not have (Breaking Bad S01E99), so it cannot
   be an address that ignores the episode. Nine seed providers have one (2026-11-19): VidNest,
   VidUp, VidFast and VidLink without an English subtitle, HyperLink, Smashy, VidRock and
@@ -2598,10 +2598,7 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
   `NOTESD_TORRENT_SUBTITLE_WAIT_MS=1500 verify.sh up --torrent`; see the feature map entry.
 - An expired token, per engine: HLS in `scripts/stream/player.steps.mjs` (J3), DASH in
   `scripts/stream/dash-expiry.steps.mjs`, which plays an ffmpeg-made DASH film from the fixture
-  stream host through the real pass-through and expires its token mid-film. Against a real
-  provider it is `playcheck.mjs run --check expiry --provider <name>`, whose gate takes an HLS or
-  a DASH source; that one brings the streaming Chrome to the front, muted, so it is run when you
-  expect it.
+  stream host through the real pass-through and expires its token mid-film.
 - The player page on a torrent: `torrent-player.steps.mjs` on `verify.sh up --web` (the session and
   the torrent routes faked, a 300 s film made with ffmpeg) and `torrent-live.steps.mjs` on
   `verify.sh up --web --direct-stream --torrent` (a real torrent session); see the feature map entry.
