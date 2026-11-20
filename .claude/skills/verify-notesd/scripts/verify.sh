@@ -259,6 +259,9 @@ EOF
     NOTESD_TORRENT_TRACKER_LISTS=off
     # A throwaway daemon never reads or switches the machine's Cloudflare WARP for a torrent play (torrentWarp.ts).
     NOTESD_STREAM_WARP=off
+    # A throwaway daemon never reads the machine's Wi-Fi name for a download's office rule (downloads/plan.ts): the run
+    # is "not the office", so a torrent download is tried wherever the run happens to be.
+    NOTESD_STREAM_DOWNLOAD_SSID=verify-home
     # Every run's tmux is the recording fake: the report button and resume never open a window in
     # the owner's tmux. TMUX_FAKE (printed below) is where its calls.log and switches live.
     NOTESD_TMUX_BIN="$HERE/stream/fake-tmux.sh"

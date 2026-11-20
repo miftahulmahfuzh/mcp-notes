@@ -44,6 +44,27 @@
     - migration0043 test's written_at comparison (Date vs the text a raw execute returns) → assert the same instant as UTC ISO text; code unchanged (rung 2: exit criterion 'copied stories keep their time')
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent; the coordinator's integrator reconciles them. No successor to unblock: phase 2's task is minted by its own session.
 
+- [x] **P1-NOTES-SD02** Phase 2: The download engine: queue, source order, kept downloads, offline-ready, play first
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/directStream/downloads/` (`types.ts`, `plan.ts`, `service.ts`): `StreamDownloads` (`deps.streamDownloads`), source order for `auto` (1080p torrent with live seeds, then cloud at 1080p or lower, then a torrent below 1080p), the office rule on SSID `Employee`, kept torrents skipped by both prunes, offline-ready finished downloads, play first. Exit: unit tests with fake swarm, cache, clock and SSID show the order, the office rule, the pinned SSID, a dub skipped, a restart resumed, a kept torrent surviving both prunes, pause while a torrent plays and resume after, a finished download playable from disk with no index asked; `npm test` and `npm run typecheck` pass; a throwaway daemon carries a seeded running row to `done` with its torrent kept.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 2 of 9)
+  - **Satisfies**: R1 — a Download icon button on the title page: by default the 1080p magnet, else NT cloud sources, with a "Choose how to download <name>" dropdown · criteria: R1.2, R1.4, R1.5, R1.6, R1.7, R1.8, R1.9, R1.11
+  - **Depends on**: P1-NOTES-SD01
+  - **Plan**: `.workflows/plan/P1-NOTES-SD02.md`
+  - **Completed**: 2026-11-20 23:55
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/remux.ts, src/directStream/torrent/source.ts, src/directStream/torrent/service.ts, src/directStream/service.ts, src/directStream/downloads/types.ts, src/directStream/downloads/plan.ts, src/directStream/downloads/service.ts, src/config.ts, src/deps.ts, src/daemon.ts, src/background.ts, docs/guide/reference/configuration.md, .claude/skills/verify-notesd/scripts/verify.sh, tests/unit/config.test.ts, tests/unit/config.streamCache.test.ts, tests/unit/directStream/downloads/fakes.ts, tests/unit/directStream/downloads/plan.test.ts, tests/unit/directStream/downloads/service.test.ts, tests/unit/directStream/torrent/keptFetch.test.ts, tests/unit/directStream/torrent/keptPrune.test.ts, tests/integration/streamDownloads.engine.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-SD02.md
+  - **Proof**: verified-first-pass — 8 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-232925-755027/evidence
+  - **Drift**:
+    - None in code: every anchor matched the plan's quotes; the plan's code blocks were applied verbatim.
+    - origin/feature/stream-downloads-season-story did not move since the base (a7a075d): nothing to rebase onto.
+  - **Decided**:
+    - Worktree differs from the index (…-p2 on phase-2-…) → proceeded (the swarm ledger names this wave worktree for phase 2)
+    - Step 3 minted only phase 2's task (P1-NOTES-SD02), not all nine → follows phase 1's recorded ledger decision; the index's TaskID column is left to the coordinator
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phase 1 of this set, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. No successor to unblock: phase 3 mints its own task in its own worktree.
+
 - [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
   - **Difficulty**: NORMAL
   - **Type**: Feature

@@ -226,6 +226,18 @@ export interface DirectStreamConfig {
    * `off`, or unset in a literal: nothing is made and GET /api/stream/sessions/:id/previews answers no frame.
    */
   previews?: boolean
+  /**
+   * `NOTESD_STREAM_DOWNLOADS`, default on: films and episodes the owner asks to download (src/directStream/downloads/),
+   * a 1080p torrent first, then the cloud cache, kept on this machine until deleted on the Cache page. It also needs
+   * torrents or the stream cache. `off`, or unset in a literal: nothing is downloaded and what was queued waits.
+   */
+  downloads?: boolean
+  /**
+   * `NOTESD_STREAM_DOWNLOAD_SSID`: the Wi-Fi network a download's office rule (downloads/plan.ts) takes this machine to
+   * be on. Unset (null): read from WARP's status (warp.mjs), once a minute at most. Set: that value is the SSID and
+   * nothing is read; verify.sh pins it, so a throwaway daemon never reads the machine's real network.
+   */
+  downloadSsid?: string | null
 }
 
 /** Direct streaming off. Tests build `Config` literals with it (or leave `directStream` out, which is the same). */
@@ -975,6 +987,8 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     audioCheck: parseSwitch('NOTESD_STREAM_AUDIO_CHECK', env.NOTESD_STREAM_AUDIO_CHECK),
     canary: parseSwitch('NOTESD_STREAM_CANARY', env.NOTESD_STREAM_CANARY),
     previews: parseSwitch('NOTESD_STREAM_PREVIEWS', env.NOTESD_STREAM_PREVIEWS),
+    downloads: parseSwitch('NOTESD_STREAM_DOWNLOADS', env.NOTESD_STREAM_DOWNLOADS),
+    downloadSsid: env.NOTESD_STREAM_DOWNLOAD_SSID?.trim() || null,
     trending: parseTrending(env),
   }
 }

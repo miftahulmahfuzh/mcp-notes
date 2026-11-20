@@ -20,7 +20,7 @@ import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type Dir
 import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
 import { readMagnet } from './torrent/origins.js';
-import { namesCloud, namesTorrent, PREFERRED_TORRENT_HEIGHT, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type MagnetReport } from './torrent/source.js';
+import { namesCloud, namesTorrent, PREFERRED_TORRENT_HEIGHT, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type TorrentResolveOptions, type MagnetReport } from './torrent/source.js';
 import type { TorrentCandidateList } from './torrent/candidates.js';
 import type { TorrentMark, TorrentMarks } from './torrent/marks.js';
 import { TORRENT_WARP_AUTO, torrentThroughWarp, WARP_ATTEMPT, WarpHolds, type TorrentWarp } from './torrentWarp.js';
@@ -579,6 +579,26 @@ export class DirectStreamService {
     // A cache holds HLS and plain files: a DASH stream's next episode would most likely resolve to the same provider.
     const cacheable = session.cache !== null || session.source.manifest_kind !== 'dash';
     this.ahead?.watched({ id: session.id, ref: session.ref, via: session.torrent !== null ? 'torrent' : 'cloud', cacheable }, report);
+  }
+
+  /** What a download's torrent search needs of a title (src/directStream/downloads/): its original language, IMDb id, names and year. */
+  async downloadFacts(ref: StreamRef): Promise<Pick<TorrentResolveOptions, 'audioLang' | 'imdbId' | 'names'>> {
+    const namesHook = this.opts.hooks?.titleNames;
+    return {
+      audioLang: await this.audioLang(ref),
+      imdbId: await this.imdbIdOf(ref),
+      names: namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref)),
+    };
+  }
+
+  /**
+   * The info hashes of the torrents stream sessions hold in the swarm now: a play from a torrent, on screen or being
+   * reloaded. A replay from disk holds none (it joins no swarm). Downloads give way to these (play first).
+   */
+  torrentsOnScreen(): string[] {
+    const out: string[] = [];
+    for (const session of this.sessions.live()) if (session.torrent !== null && session.torrent.held) out.push(session.torrent.infoHash);
+    return out;
   }
 
   get host(): string {
