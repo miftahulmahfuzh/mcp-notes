@@ -24,22 +24,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "661a0e3",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": null,
+      "note": "torrent preview source (whole file, remux, partial via loopback gate), ownersOf gives notesd-previews/<i>/ to its episode; ffmpeg tests given 60 s limits; J4 and J5's pack half each ran on a fresh run (offer-remux makes the MKV the only index answer), assertions unchanged; TaskID minted by hand (todos.py mint collides), phases 3/5 may also pick A140; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/phase2-seek-preview-evidence",
       "package": "src/directStream/torrent`, `src/directStream/previews",
       "plan": ".workflows/plan/seek-preview-thumbnails/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-20T21:05:31+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A140",
       "title": "Torrent previews: file, remux, partial download"
     },
     {
@@ -106,6 +106,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/seek-preview-thumbnails/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seek-preview-thumbnails",
-  "updated": "2026-11-20T20:56:30+07:00",
+  "updated": "2026-11-20T21:05:31+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seek-preview-thumbnails"
 }
