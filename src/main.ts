@@ -1,5 +1,15 @@
+import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 import { loadConfig } from './config.js';
 import { startDaemon } from './daemon.js';
+
+/**
+ * Node gives each address of a host 250 ms to connect before it moves on to the next (happy eyeballs), and fails the
+ * request when none made it. On this machine's Wi-Fi a connect takes longer while a torrent downloads: the torrent
+ * indexes and TMDB failed together with `fetch failed: ETIMEDOUT, ENETUNREACH` (IPv4 too slow, no IPv6 route) at
+ * the start of plays, and answered when asked again a second later. A connect now gets 2.5 s per address.
+ */
+const CONNECT_ATTEMPT_MS = 2_500;
+setDefaultAutoSelectFamilyAttemptTimeout(CONNECT_ATTEMPT_MS);
 
 async function main(): Promise<void> {
   const config = loadConfig();
