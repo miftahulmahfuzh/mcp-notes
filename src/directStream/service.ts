@@ -19,6 +19,7 @@ import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
+import { readMagnet } from './torrent/origins.js';
 import { namesCloud, namesTorrent, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource , type MagnetReport } from './torrent/source.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
@@ -283,9 +284,19 @@ export interface DirectStreamServiceOptions {
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** One play in flight per title (a film, an episode) and named provider. */
-function playKey(ref: StreamRef, provider: string | null): string {
-  return `${ref.kind}-${ref.tmdbId}${ref.kind === 'tv' ? `-${ref.season}-${ref.episode}` : ''}|${(provider ?? '').trim().toLowerCase()}`;
+/** A pasted magnet as a play's key reads it: its info hash, or the text itself when it names none (the play then fails by itself). */
+function magnetKey(magnet: string): string {
+  try {
+    return readMagnet(magnet)?.infoHash ?? magnet.trim().toLowerCase();
+  } catch {
+    return magnet.trim().toLowerCase();
+  }
+}
+
+/** One play in flight per title (a film, an episode), named provider and pasted magnet: another magnet for the same title is another play. */
+export function playKey(ref: StreamRef, provider: string | null, magnet: string | null = null): string {
+  const title = `${ref.kind}-${ref.tmdbId}${ref.kind === 'tv' ? `-${ref.season}-${ref.episode}` : ''}`;
+  return `${title}|${(provider ?? '').trim().toLowerCase()}${magnet === null ? '' : `|${magnetKey(magnet)}`}`;
 }
 
 /** True when what is remembered was a play of this very film or episode: its torrent holds the file asked for. */
@@ -486,7 +497,7 @@ export class DirectStreamService {
    */
   async playWithin(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, waitMs: number): Promise<{ pending: false; result: PlayResult } | PendingPlay> {
     const ref = toStreamRef(input);
-    const key = playKey(ref, options.provider ?? null);
+    const key = playKey(ref, options.provider ?? null, options.magnet ?? null);
     const kept = this.outcomes.get(key);
     if (kept !== undefined && !this.inFlightNow(key)) {
       this.outcomes.delete(key);
@@ -558,7 +569,7 @@ export class DirectStreamService {
   /** The play of `ref` in flight, or a new one. Its promise is the play's answer; a rejection nobody waits for is logged, not thrown away. */
   private begin(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }): PlayInFlight {
     const provider = options.provider ?? null;
-    const key = playKey(ref, provider);
+    const key = playKey(ref, provider, options.magnet ?? null);
     const running = this.inFlight.get(key);
     if (running !== undefined && this.inFlightNow(key)) return running;
     const entry: PlayInFlight = {

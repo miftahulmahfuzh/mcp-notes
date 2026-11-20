@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { DirectStreamRepo } from '../../../src/directStream/repo.js';
-import { DirectStreamService, PLAY_PAGE_GRACE_MS } from '../../../src/directStream/service.js';
+import { DirectStreamService, PLAY_PAGE_GRACE_MS, playKey } from '../../../src/directStream/service.js';
 import type { CacheSubtitleView } from '../../../src/directStream/cachePlay.js';
 import { parseRelease, type TorrentCandidate } from '../../../src/directStream/torrent/find/index.js';
 import type { MediaProbe } from '../../../src/directStream/torrent/probe.js';
@@ -215,6 +215,35 @@ describe('playWithin: the caller is answered before it gives up', () => {
     expect(lines[0]).toBe('[notesd] direct stream: play of TMDB movie 818647 started nothing after 0 s: no_source, 5 attempt(s)');
     expect(lines[1]).toBe('[notesd] direct stream:   attempt Alpha: no_stream after 2 s (nothing)');
     expect(lines).toHaveLength(6);
+  });
+});
+
+describe('one play in flight per title, named provider and pasted magnet', () => {
+  const A = 'a'.repeat(40);
+  const B = 'b'.repeat(40);
+
+  it('keys a pasted magnet by its info hash, however it is written', () => {
+    expect(playKey(FILM, null, A)).toBe(playKey(FILM, null, `magnet:?xt=urn:btih:${A.toUpperCase()}&dn=Film&tr=udp%3A%2F%2Ft.example%3A1337`));
+    expect(playKey(FILM, null, A)).not.toBe(playKey(FILM, null, B));
+    expect(playKey(FILM, null, A)).not.toBe(playKey(FILM, null));
+    expect(playKey(FILM, 'Torrent')).toBe(playKey(FILM, ' torrent '));
+    expect(playKey({ kind: 'tv', tmdbId: 1, season: 1, episode: 2 }, null)).not.toBe(playKey({ kind: 'tv', tmdbId: 1, season: 1, episode: 3 }, null));
+  });
+
+  it('a second pasted magnet for the same title is its own play; the same magnet again joins the first', async () => {
+    const held = gate();
+    const t = setup({ hold: held.wait });
+    const first = t.svc.play(FILM, { magnet: A });
+    const same = t.svc.play(FILM, { magnet: `magnet:?xt=urn:btih:${A}` });
+    const other = t.svc.play(FILM, { magnet: B });
+    await t.tick();
+    expect(t.svc.starting()).toHaveLength(2);
+    held.open();
+    const [one, again, two] = await Promise.all([first, same, other]);
+    expect(again).toBe(one);
+    expect(one.session.torrent?.info_hash).toBe(A);
+    expect(two.session.torrent?.info_hash).toBe(B);
+    expect(t.runs).toEqual(['open', 'open']);
   });
 });
 
