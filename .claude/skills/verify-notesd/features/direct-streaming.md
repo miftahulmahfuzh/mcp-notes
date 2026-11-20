@@ -245,21 +245,13 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `resume one piece from episode 730` in Claude Code plays it: the owner's to run.
 
 ## The dialogue of a film or an episode
-- `direct_stream_dialogue` (MCP, chat bar): the English subtitle of a stream source as lines with
-  their minute, resolved out of sight (no player opens), stored in `movie_dialogues` and answered
-  from there afterwards; a series needs its episode (`needs_episode`), a long film comes in pages
-  (`next_from_minute`), and `no_subtitle` / `no_source` say why there is none. Proven by
-  `npx vitest run tests/unit/directStream/dialogue.test.ts tests/unit/mcp.directStreamTools.test.ts`
+- No tool reads it (`direct_stream_dialogue` was removed on 2026-11-20). It is read only for an
+  episode's story on the wall (`POST /api/movies/:id/story`, see movies.md): the English subtitle of
+  a stream source as lines with their minute, resolved out of sight and stored in `movie_dialogues`.
+  Proven by `npx vitest run tests/unit/directStream/dialogue.test.ts tests/unit/movies/story.test.ts`
   and `npm run test:int -- tests/integration/directStream.api.int.test.ts tests/integration/movies.streams.int.test.ts`
   ("the dialogue": the fixture's `.srt` through the pass-through, a subtitle playlist's segments,
   the stored row).
-- Throwaway daemon: `$V up --direct-stream`, then
-  `$V mcp RUN direct_stream_dialogue '{"title":"movie-990004"}'` answers the fixture's one line
-  (`[00:01] Hello.`) with `cached: false`, and the same call again with `cached: true`; the fake
-  resolver's `calls.jsonl` holds one resolve and no `open`.
-- Live (owner's machine, out of sight, plays nothing):
-  `direct_stream_dialogue {"title":"one piece","absolute_episode":760}` reads about 290 lines
-  through "VidNest Anime".
 
 ## Previous and next episode in the player
 - A series' session carries `prev_episode` and `next_episode`; the player shows a button for each
@@ -656,7 +648,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `<data dir>/movies/stream-subs/`, reused by every later play of the title, asked for at most 4 s inline
   (later: `subtitle_rev` goes up). It is synced the same way, its audio cut from the stream (the captured
   headers) or from this machine's cache of it; the synced file is `synced.vtt`. A stream with an English
-  subtitle asks nothing. `direct_stream_dialogue` reads the outside file when the source has no English track.
+  subtitle asks nothing. An episode's story reads the outside file when the source has no English track.
 - Logic: `npx vitest run tests/unit/directStream/torrent/subtitles/synced.test.ts tests/unit/directStream/outsideSubtitles.test.ts tests/unit/directStream/torrentSource.test.ts tests/unit/config.torrent.test.ts web/src/stream/controller.test.tsx web/src/stream/StreamApp.test.tsx`;
   the position answer's `subtitle_rev` in `tests/integration/movies.streams.int.test.ts`.
 - Throwaway daemon: `NOTESD_TORRENT_WHISPER=off NOTESD_TORRENT_WHISPER_PYTHON=$PWD/tests/fixtures/torrent/fake-vad.mjs $V up --web --torrent`,

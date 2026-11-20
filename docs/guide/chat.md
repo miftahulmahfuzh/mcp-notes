@@ -161,7 +161,7 @@ The allow list, by group. Arguments are in the [MCP tool reference](reference/mc
 | Seer Adversarial | `adversary_overview`, `adversary_verdicts`, `adversary_scorecard` | No |
 | Movies | `movies_list`, `movies_get`, `movies_history`, `movies_person`, `movies_mark`, `movies_pictures`, `movies_continue` | `movies_mark` stores a mark; `movies_continue` starts VLC |
 | Streaming sites | `streaming_find`, `streaming_play` | `streaming_play` opens Chrome and starts a film |
-| Direct streaming | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_dialogue`, `direct_stream_sources` | `direct_stream_discover` only reads TMDB and the library; `direct_stream_dialogue` reads a title's English subtitle from a source resolved out of sight and keeps it; `direct_stream_play` opens the player page full screen in the streaming Chrome; `direct_stream_update_source` is Claude Code's `/update-cloud-source` only |
+| Direct streaming | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_sources` | `direct_stream_discover` only reads TMDB and the library; `direct_stream_play` opens the player page full screen in the streaming Chrome; `direct_stream_update_source` is Claude Code's `/update-cloud-source` only |
 | Web | `WebSearch`, `WebFetch` | No |
 
 Not on the list: `link_note` and `unlink_note` (linking a note to a session is `/n` only) and the
@@ -200,9 +200,6 @@ These rules come from the system prompt, so they shape every answer:
   `direct_stream_play`, which plays it full screen in notesd's own player page in the streaming
   Chrome. A question ("can I stream it directly?") is `direct_stream_find`, which starts nothing.
   See [streaming.md](streaming.md#direct-stream).
-- Asked what a film or an episode is about, what happened in it or who said what, it calls
-  `direct_stream_dialogue` and answers from every line said, within the spoiler limit of a title
-  you have not finished. See [streaming.md](streaming.md#what-a-title-says-its-dialogue).
 - Asked to stream something it has to choose ("stream a Johnny Depp movie, the more recent the
   better", "pick a Spanish series from this year"), it calls `direct_stream_discover`, picks one
   title the owner has not seen, plays it and says which and why. Asked only what there is, it

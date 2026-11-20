@@ -87,9 +87,7 @@ export type StreamingToolName = (typeof STREAMING_TOOL_NAMES)[number];
  * (/direct-stream); direct_stream_sources lists the provider registry,
  * direct_stream_update_source adds a site's new providers (/update-cloud-source);
  * direct_stream_discover finds TMDB titles by year, language, person, studio or streaming
- * service, marked against the library, and starts nothing; direct_stream_dialogue reads what is
- * said in a film or an episode (its English subtitle, from a stream source resolved out of
- * sight) and keeps it.
+ * service, marked against the library, and starts nothing.
  */
 export const DIRECT_STREAM_TOOL_NAMES = [
   'direct_stream_find',
@@ -97,7 +95,6 @@ export const DIRECT_STREAM_TOOL_NAMES = [
   'direct_stream_sources',
   'direct_stream_update_source',
   'direct_stream_discover',
-  'direct_stream_dialogue',
 ] as const;
 
 export type DirectStreamToolName = (typeof DIRECT_STREAM_TOOL_NAMES)[number];
@@ -298,8 +295,6 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'adding stream providers';
     case 'direct_stream_discover':
       return 'looking for titles to stream';
-    case 'direct_stream_dialogue':
-      return 'reading the dialogue';
     case 'dword_vocab_lookup':
       return 'looking up a word';
     case 'dword_vocab_add':

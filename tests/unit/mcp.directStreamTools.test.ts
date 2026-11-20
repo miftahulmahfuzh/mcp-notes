@@ -56,7 +56,6 @@ function fakeDeps(
     updateSource: vi.fn(),
     marks: async () => new Map(),
     freshTitles: async () => new Set<string>(),
-    dialogue: vi.fn(async () => ({ provider: 'VidNest Anime', cues: 3, lastCueS: 1435, body: '00:17\tFight\n12:03\tThe gas\n23:44\tI\'m gonna be the King of the Pirates!', fetchedAt: new Date('2026-11-16T05:00:00Z'), cached: true, story: null })),
     ...over,
   };
   return { deps, tmdb, play: deps.play as typeof play, freshSource: deps.freshSource as typeof freshSource, rememberAlias: deps.rememberAlias as typeof rememberAlias };
@@ -670,55 +669,6 @@ describe('direct-stream MCP tools', () => {
       await noTmdb.close();
       const off = await connect(null);
       expect(text(await off.call('direct_stream_discover', { kind: 'tv' }))).toBe(DIRECT_STREAM_OFF);
-      await off.close();
-    });
-  });
-
-  describe('direct_stream_dialogue', () => {
-    it('answers the whole dialogue of a named episode, by season and episode or by one number, and plays nothing', async () => {
-      const f = fakeDeps({ progress: async () => [ep(1, 1), ep(1, 2), ep(2, 1)] });
-      const c = await connect(f.deps);
-      const out = json(await c.call('direct_stream_dialogue', { title: 'the bear', season: 2, episode: 3 }));
-      expect(out).toMatchObject({
-        title: { title: 'The Bear', movie_id: 'M-0BEA' },
-        season: 2,
-        episode: 3,
-        dialogue: { language: 'en', provider: 'VidNest Anime', cues: 3, minutes: 24, cached: true, from_minute: 0, next_from_minute: null, lines: 3 },
-      });
-      expect(out.dialogue.text).toBe("[00:17] Fight\n[12:03] The gas\n[23:44] I'm gonna be the King of the Pirates!");
-      expect(f.deps.dialogue).toHaveBeenLastCalledWith({ kind: 'tv', tmdbId: 136315, season: 2, episode: 3 }, { refresh: false });
-      const byNumber = json(await c.call('direct_stream_dialogue', { title: 'the bear', absolute_episode: 3, refresh: true, from_minute: 12 }));
-      expect(byNumber).toMatchObject({ season: 2, episode: 1, absolute_episode: 3, dialogue: { from_minute: 12, lines: 2 } });
-      expect(f.deps.dialogue).toHaveBeenLastCalledWith({ kind: 'tv', tmdbId: 136315, season: 2, episode: 1 }, { refresh: true });
-      const film = json(await c.call('direct_stream_dialogue', { title: 'saltburn' }));
-      expect(film).toMatchObject({ season: null, episode: null, dialogue: { cues: 3 } });
-      expect(f.play).not.toHaveBeenCalled();
-      await c.close();
-    });
-
-    it('asks for the episode of a series, lists several matches, and reads nothing for either', async () => {
-      const f = fakeDeps();
-      const c = await connect(f.deps);
-      expect(json(await c.call('direct_stream_dialogue', { title: 'the bear' }))).toMatchObject({ skipped: 'needs_episode', seasons: [{ season: 1, episodes: 8 }, { season: 2, episodes: 10 }] });
-      expect(json(await c.call('direct_stream_dialogue', { title: 'nothing like it' }))).toMatchObject({ skipped: 'no_match' });
-      expect(text(await c.call('direct_stream_dialogue', { title: 'saltburn', absolute_episode: 2 }))).toMatch(/^invalid_input: Saltburn \(2023\) is a film/);
-      expect(f.deps.dialogue).not.toHaveBeenCalled();
-      await c.close();
-    });
-
-    it('says why there is no dialogue when the stream has no English subtitle or no provider has the title; off without the service', async () => {
-      const noSubtitle = fakeDeps({ dialogue: vi.fn(async () => Promise.reject(new DirectStreamError('no_subtitle', 'VidFast streams it without an English subtitle.', { attempts: [{ provider: 'VidFast', outcome: 'resolved', took_s: 6, detail: '' }] }))) });
-      const c = await connect(noSubtitle.deps);
-      const r = await c.call('direct_stream_dialogue', { title: 'saltburn' });
-      expect(r.isError).toBe(true);
-      expect(json(r)).toMatchObject({ error: 'no_subtitle', title: { title: 'Saltburn' }, attempts: [{ provider: 'VidFast' }] });
-      expect(json(r).next).toMatch(/web search/);
-      await c.close();
-      const noSource = await connect(fakeDeps({ dialogue: vi.fn(async () => Promise.reject(new DirectStreamError('no_source', 'none', { attempts: [] }))) }).deps);
-      expect(json(await noSource.call('direct_stream_dialogue', { title: 'saltburn' }))).toMatchObject({ error: 'no_source' });
-      await noSource.close();
-      const off = await connect(null);
-      expect(text(await off.call('direct_stream_dialogue', { title: 'saltburn' }))).toBe(DIRECT_STREAM_OFF);
       await off.close();
     });
   });

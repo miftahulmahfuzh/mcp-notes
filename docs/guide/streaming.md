@@ -44,7 +44,7 @@ and [torrents](#torrents).
 | A stream that mends itself | An expired token is refreshed, a network error is ridden out, a host that stalls is left for another provider, and a pause downloads the film | [How a provider delivers](#how-a-provider-delivers), [A pause caches the film](#a-pause-caches-the-film) |
 | The next episode is already here | While an episode plays, the one after it is fetched to this machine | [The next episode, fetched ahead](#the-next-episode-fetched-ahead) |
 | Asked in your own words | "Play one of Nolan's films", "a Korean mafia film from this year TM", "resume One Piece from episode 730": people, studios, services, languages, genres and six codenames. A title chosen for you is never one you have seen | [Finding something to stream](#finding-something-to-stream), [Codenames](#codenames) |
-| It knows what was said | An episode's whole dialogue is read from its subtitle, so "why did Jack leave Zou?" has an answer | [What a title says](#what-a-title-says-its-dialogue) |
+| It knows what was said | An episode's story on the wall is retold from its whole dialogue, read from its subtitle | [What a title says](#what-a-title-says-its-dialogue) |
 | A broken stream explains itself | Every request of a play is logged. `/report-stream-bug` measures your connection against the stream host and names the cause | [Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug) |
 | No disguise | Every client says what it is. A bot check is never worked around: the owner clears it by hand, in the streaming Chrome | [The streaming Chrome](#the-streaming-chrome), [When the indexes have nothing](#when-the-indexes-have-nothing-1337x-extto-and-rutracker) |
 
@@ -789,7 +789,7 @@ hearing-impaired one, then the more downloaded), then the OpenSubtitles add-on
   not a failure. A stream with an
   English subtitle of its own is left exactly as it is: no request, no sync. A torrent session has
   its own subtitle tiers (see [Subtitles for a torrent](#subtitles-for-a-torrent)).
-- `direct_stream_dialogue` reads the outside file when the resolved source has no English track.
+- An episode's story reads the outside file when the resolved source has no English track.
 
 **When the services have nothing: Whisper.** A cloud stream used to end there. In the subtitle soak
 of 2026-11-20 that left three of fourteen such plays with nothing to read, the owner's Chasing the
@@ -1416,39 +1416,22 @@ does not list is, by what the site says of it. Only an address no search returne
 
 ### What a title says: its dialogue
 
-`direct_stream_dialogue` answers "what is this episode about?" from the title itself. It reads
-the English subtitle of a stream source: every line said, with the minute it is said. A TMDB
-synopsis is two sentences; an episode's dialogue is about 300 lines.
-
-```text
-what is One Piece episode 760 about?
-why did Jack leave Zou?
-remind me what happened in the last episode I watched
-how does Saltburn end?
-```
+An episode's story on the wall (its book icon, see [movies.md](movies.md#the-movies-page)) is
+written from the episode's dialogue: the English subtitle of a stream source, every line with the
+minute it is said.
 
 - **The first read resolves a source**, as a play does but out of sight: a background tab, no
   window, no sound, no player page (5 to 40 seconds). The first English track that holds lines is
   read through the pass-through's rules (the session's hosts, the captured headers): a separate
-  `.vtt` or `.srt` file first, then a track inside an HLS manifest, whose segments are joined.
+  `.vtt` or `.srt` file first, then a track inside an HLS manifest, whose segments are joined. A
+  source with no English track of its own reads the outside file a play would borrow.
 - **It is kept**, in `movie_dialogues` (one row per film or episode, written only by
-  `MoviesRepo`: `saveDialogue` for the lines, `saveStory` for the story), so the next question is
-  answered at once on this machine.
-  `refresh: true` reads it again.
-- **The episode is named** by season and episode, by one number (`absolute_episode`, as for a
-  play), or by an episode's movie id. A series without an episode answers `needs_episode`; "the
-  last episode I watched" is `movies_get` first (`last_play`).
-- **The text** is one line per subtitle cue, `[mm:ss] what is said`, minutes running on past the
-  hour. A long film comes in pages of about 40,000 characters that end on a whole minute:
-  `next_from_minute` says where the next page starts.
+  `MoviesRepo`: `saveDialogue` for the lines, `saveStory` for the story).
 - **What it is not.** Dialogue only: silent action is not described and the speaker is not named.
-  It holds the whole story, so in the chat bar the spoiler limit for a title you have not
-  finished still applies.
-- **The story.** On the wall, an episode's book icon has Claude retell the episode from this
-  dialogue, once, and keeps the result beside it ([movies.md](movies.md#the-movies-page)). The
-  tool hands a stored story back as `story`, next to the lines.
-- **When there is none:** `no_subtitle` (the source that resolved has no English subtitle) or
-  `no_source`. Claude then answers from the synopsis and a web search, and says so.
+
+No tool hands the lines to Claude Code or the chat bar: `direct_stream_dialogue` was never called
+and was removed on 2026-11-20. "What is this episode about?" is answered from `movies_get` (TMDB's
+synopsis) and a web search.
 
 ### `/update-cloud-source`: providers from another site
 
@@ -2111,7 +2094,7 @@ Whisper transcript); only a file `/sync-subtitle` checked against the audio outr
    Subs is asked before the add-on (by the IMDb id, for at most 12 s; machine translations are
    left out) and its file is labelled "English (Wyzie)"; when Wyzie has nothing or fails, the
    add-on is asked as above.
-4. **A cloud provider.** The title is resolved out of sight, as `direct_stream_dialogue` does,
+4. **A cloud provider.** The title is resolved out of sight, as an episode's story does,
    and that provider's English subtitle is kept as `borrow.vtt`, labelled with the provider. It
    asks nothing (`no_stream`) when the torrent was the fall-through after the cloud providers
    answered `no_source`, and is `skipped` when Whisper is on and the title's original language is
@@ -2555,7 +2538,7 @@ newtrackon's `stable` (`src/directStream/torrent/trackerLists.ts`).
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
-| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_sources`, `direct_stream_update_source`, `direct_stream_discover`, `direct_stream_dialogue` |
+| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_sources`, `direct_stream_update_source`, `direct_stream_discover` |
 | `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |
 | `claude/skills/direct-stream/` | The `/direct-stream` skill |
 | `claude/skills/report-stream-bug/` | The `/report-stream-bug` skill: `collect.sh`, `netcheck.mjs` (the measurement), `diagnose.mjs` (the known causes) |

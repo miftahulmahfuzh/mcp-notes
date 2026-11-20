@@ -1113,7 +1113,7 @@ at all.
 - **Edits:** delete a title, a file row or a play; change a title's metadata or refresh it from
   TMDB; rate or review one episode.
 - **What a title is about:** `movies_get` has TMDB's synopsis of a title and of each episode.
-  The whole story, line by line, is `direct_stream_dialogue`
+  An episode's whole story is the wall's book icon
   ([streaming.md](streaming.md#what-a-title-says-its-dialogue)).
 - **Titles you do not have:** the watch list is the "interested" mark (`movies_mark` with
   `interested: true`, by title key for a title not stored yet), shown under the Stream side's

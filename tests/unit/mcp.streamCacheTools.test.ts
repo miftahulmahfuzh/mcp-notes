@@ -69,7 +69,6 @@ function lookup(): DirectStreamToolDeps {
     freshSource: async () => null,
     marks: async () => new Map(),
     freshTitles: async () => new Set<string>(),
-    dialogue: vi.fn(),
     providers: vi.fn(async () => []),
     updateSource: vi.fn(),
   };
