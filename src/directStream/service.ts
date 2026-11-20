@@ -641,6 +641,14 @@ export class DirectStreamService {
    */
   private async torrentAgain(ref: StreamRef, resumeS: number | null, track: PlayTrack | null): Promise<StreamSession> {
     const last = (await this.remembered(ref))?.methods?.torrent ?? null;
+    return this.lastTorrentOrIndexes(ref, resumeS, last, track);
+  }
+
+  /**
+   * The torrent that last played this very film or episode (`last`), opened again with no index asked; the indexes
+   * are searched when none is remembered for it, or when its swarm has nothing now.
+   */
+  private async lastTorrentOrIndexes(ref: StreamRef, resumeS: number | null, last: Pick<RememberedChannel, 'infoHash' | 'season' | 'episode'> | null, track: PlayTrack | null): Promise<StreamSession> {
     if (last === null || last.infoHash === null || !sameSlot(ref, last)) return this.torrentSession(ref, resumeS, null, track);
     if (track !== null) track.stage = 'opening the torrent that played it last time';
     try {
@@ -706,18 +714,7 @@ export class DirectStreamService {
         if (track !== null) track.stage = known.channel === 'torrent' ? 'asking the torrents, which streamed it last time' : 'asking the torrents: no cloud provider had it last time';
         // The very torrent that played this film or this episode is opened again, with no index asked;
         // only when its swarm has nothing now are the indexes searched.
-        if (known.channel === 'torrent' && known.infoHash !== null && sameSlot(ref, known)) {
-          const hash = known.infoHash;
-          if (track !== null) track.stage = 'opening the torrent that played it last time';
-          try {
-            return await this.magnetSession(ref, resumeS, hash, track);
-          } catch (err) {
-            if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
-            this.log(`[notesd] direct stream: the torrent that played ${refLabel(ref)} last time does not play now; asking the indexes`);
-            return await this.after(err.attempts, () => this.torrentSession(ref, resumeS, null, track));
-          }
-        }
-        return await this.torrentSession(ref, resumeS, null, track);
+        return await this.lastTorrentOrIndexes(ref, resumeS, known.channel === 'torrent' ? known : null, track);
       } catch (err) {
         if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
         return this.after(err.attempts, () => this.everyCloud(ref, resumeS, track));
@@ -749,14 +746,7 @@ export class DirectStreamService {
       this.log(`[notesd] direct stream: ${provider} streamed ${refLabel(ref)} last time and has no stream now (${out.error}); asking the others`);
       return null;
     }
-    const hook = this.opts.hooks?.recordResolve;
-    if (hook !== undefined) {
-      try {
-        await hook(ref, out);
-      } catch (err) {
-        this.log(`[notesd] direct stream: the recordResolve hook failed: ${messageOf(err)}`);
-      }
-    }
+    await this.recordResolve(ref, out);
     const session = this.sessions.create(ref, out.source, out.attempts, await this.startAt(ref, resumeS), await this.audioLang(ref));
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
     return session;
@@ -1546,28 +1536,25 @@ export class DirectStreamService {
       if (out.error === 'no_source') throw new DirectStreamError('no_source', `No provider could stream ${refLabel(ref)}.`, { attempts: out.attempts });
       throw new DirectStreamError('resolve_failed', out.detail === '' ? `The resolve could not run: ${out.error}.` : out.detail, { reason: out.error, attempts: out.attempts });
     }
-    const hook = this.opts.hooks?.recordResolve;
-    if (hook !== undefined) {
-      try {
-        await hook(ref, out);
-      } catch (err) {
-        this.log(`[notesd] direct stream: the recordResolve hook failed: ${messageOf(err)}`);
-      }
-    }
+    await this.recordResolve(ref, out);
     return out;
+  }
+
+  /** The recordResolve hook, when there is one. It never fails a resolve: a hook that throws is logged. */
+  private async recordResolve(ref: StreamRef, out: ResolveOutput): Promise<void> {
+    const hook = this.opts.hooks?.recordResolve;
+    if (hook === undefined) return;
+    try {
+      await hook(ref, out);
+    } catch (err) {
+      this.log(`[notesd] direct stream: the recordResolve hook failed: ${messageOf(err)}`);
+    }
   }
 
   /** runResolve, then the recordResolve hook, then a typed failure. */
   private async resolveSource(ref: StreamRef, deadlineS?: number, skip: readonly string[] = [], only?: string): Promise<ResolvedOutput> {
     const out = await this.runResolve(ref, { ...(deadlineS === undefined ? {} : { deadlineS }), skip, ...(only === undefined ? {} : { only }) });
-    const hook = this.opts.hooks?.recordResolve;
-    if (hook !== undefined) {
-      try {
-        await hook(ref, out);
-      } catch (err) {
-        this.log(`[notesd] direct stream: the recordResolve hook failed: ${messageOf(err)}`);
-      }
-    }
+    await this.recordResolve(ref, out);
     if (out.ok) return out;
     if (out.error === 'no_source') {
       throw new DirectStreamError('no_source', `No provider could stream ${refLabel(ref)}.`, { attempts: out.attempts });
