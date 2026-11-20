@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story`
 **Branch:** `feature/stream-downloads-season-story` (base: `origin/main` @ `72283db`)
 **Phases:** 10
-**Status:** planned
+**Status:** all 10 phases implemented (phase 9 last, 2026-11-21 01:17); landing is the coordinator's
 **Coordinator:** —
 
 ---
@@ -117,7 +117,7 @@ And, to the assistant's proposal (recorded in the analysis under "User-Provided 
 | 6 | Stories from the web: the season story, the episode story web-first | R6 | `src/movies`, `src/http` | 18 | 1 | HARD | `.workflows/plan/stream-downloads-season-story/phase-6.md` | — | — |
 | 7 | The story on the page: the season row's button, sections and sources in the modal | R6 | `web` | 8 | 6 | NORMAL | `.workflows/plan/stream-downloads-season-story/phase-7.md` | — | — |
 | 8 | The title page: Download buttons, the choose menu, progress bars | R1, R2, R3 | `web` | 12 | 4, 7 | NORMAL | `.workflows/plan/stream-downloads-season-story/phase-8.md` | — | — |
-| 9 | Guides, pictures, the feature map and the end-to-end proof | R3, R4, R6 | `docs`, `verify-notesd` | 19 | 5, 8, 10 | NORMAL | `.workflows/plan/stream-downloads-season-story/phase-9.md` | — | — |
+| 9 | Guides, pictures, the feature map and the end-to-end proof | R3, R4, R6 | `docs`, `verify-notesd` | 19 | 5, 8, 10 | NORMAL | `.workflows/plan/stream-downloads-season-story/phase-9.md` | P1-NOTES-SD09 (complete) | — |
 | 10 | Office network: a torrent download through WARP before the cloud | R1 | `src/directStream/downloads` | 17 | 2, 3, 4 | HARD | `.workflows/plan/stream-downloads-season-story/phase-10.md` | — | — |
 
 Phase 1 serves two requirements because both features need a migration and two parallel `npm run db:generate` runs would both write `drizzle/0043_*` and `drizzle/meta/_journal.json`. Phases 4, 8 and 9 serve several because one route file, one title page and one guide pass carry R1 to R3 (and R4, R6 for the proof) together. Phase 8 depends on phase 7 only because both edit `EpisodeList.tsx` and `MovieDetail.tsx`; the story chain (1 → 6 → 7) is short and finishes long before phase 4 does.

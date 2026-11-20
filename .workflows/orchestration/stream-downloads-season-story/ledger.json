@@ -3,6 +3,12 @@
   "coordinator": "orch-stream-downloads-season-story",
   "coordinator_session_id": "e0a7d891-bf46-49aa-842a-f2e22f7c5465",
   "created": "2026-11-20T23:12:31+07:00",
+  "landed": {
+    "at": "2026-11-21T01:21:07+07:00",
+    "base": "main",
+    "commit": "e12a293f7ea7785f75f76936262f2c896ecbaa34",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -164,7 +170,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "09b167feb5a74b1810a8174a7edb6c62c26156db",
       "depends_on": [
         5,
         8,
@@ -172,17 +178,17 @@
       ],
       "difficulty": "NORMAL",
       "n": 9,
-      "note": null,
+      "note": "guides, CLAUDE.md, feature map, 4 fixture pictures, downloads.sh (story title season cache) PASS, neighbor cache.sh PASS; office rule written as phase 10 built it; decision: journey times the page's reads with performance.now (WSL wall clock steps ~1.9 s every ~34 s), 3 s bound unchanged; no product defect; owed after landing: docs:shots -- --live movies (episodes, stream-title, film, cache .png); index PLAN.md in the main checkout is edited but uncommitted; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1121-011132-1184415/evidence",
       "package": "docs`, `verify-notesd",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-9.md",
-      "reported_at": null,
+      "reported_at": "2026-11-21T01:19:22+07:00",
       "satisfies": [
         "R3",
         "R4",
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD09",
       "title": "Guides, pictures, the feature map and the end-to-end proof"
     },
     {
@@ -210,6 +216,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-21T00:53:40+07:00",
+  "updated": "2026-11-21T01:21:07+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
