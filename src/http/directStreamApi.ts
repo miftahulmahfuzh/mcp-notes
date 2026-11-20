@@ -4,6 +4,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { fileResponse } from '../directStream/cache/serve.js';
+import { noPreviews } from '../directStream/previews/types.js';
 import type { DirectStreamService } from '../directStream/service.js';
 import { isFile } from '../directStream/torrent/subtitles/disk.js';
 import { DirectStreamError, type StreamRef } from '../directStream/types.js';
@@ -85,7 +86,7 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
 
 // `movies` is optional here so a caller without the movies store (phase 3's route tests) still fits;
 // the position route answers `direct_stream_off` without it.
-export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'torrents'>>): Hono {
+export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'torrents' | 'streamPreviews'>>): Hono {
   const r = new Hono();
   const service = (): DirectStreamService => {
     const svc = deps.directStream ?? null;
@@ -150,14 +151,41 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     return c.json(info);
   });
 
-  r.get('/api/stream/sessions/:id/p', (c) =>
-    service().passThrough(c.req.param('id'), {
+  // Seek previews (src/directStream/previews/): the frames this session can show now. Never polled by the page:
+  // it fetches again when a `preview_rev` it is given is higher than the one it holds.
+  r.get('/api/stream/sessions/:id/previews', async (c) => {
+    const session = service().session(c.req.param('id'));
+    if (session === null) return c.json(UNKNOWN_SESSION, 403);
+    const previews = deps.streamPreviews ?? null;
+    const list = previews === null ? noPreviews() : await previews.list(session);
+    c.header('Cache-Control', 'no-store');
+    return c.json({ state: list.state, rev: session.previewRev, source: list.source, cues: list.cues });
+  });
+
+  // One sprite sheet of those previews, named by a cue's url.
+  r.get('/api/stream/sessions/:id/previews/:name', async (c) => {
+    const session = service().session(c.req.param('id'));
+    if (session === null) return c.json(UNKNOWN_SESSION, 403);
+    const bytes = (await deps.streamPreviews?.sheet(session, c.req.param('name'), c.req.query('k') ?? null)) ?? null;
+    if (bytes === null) return c.json({ error: 'not_found', message: 'This session has no preview sheet of that name on this machine.' }, 404);
+    return c.body(new Uint8Array(bytes), 200, {
+      'content-type': 'image/jpeg',
+      'content-length': String(bytes.length),
+      'cache-control': 'private, max-age=86400',
+      'x-content-type-options': 'nosniff',
+    });
+  });
+
+  r.get('/api/stream/sessions/:id/p', (c) => {
+    const image = c.req.query('img') === '1';
+    return service().passThrough(c.req.param('id'), {
       target: c.req.query('u') ?? '',
-      range: c.req.header('range') ?? null,
-      vtt: c.req.query('vtt') === '1',
+      range: image ? null : (c.req.header('range') ?? null),
+      vtt: !image && c.req.query('vtt') === '1',
+      ...(image ? { preview: 'image' as const } : {}),
       signal: c.req.raw.signal,
-    }),
-  );
+    });
+  });
 
   r.post('/api/stream/sessions/:id/refresh', sameOriginOnly, async (c) => {
     try {
@@ -228,7 +256,7 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
   });
 
   // Phase 5: the player page's position reports (src/movies/streams.ts).
-  r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null, torrents: deps.torrents ?? null }));
+  r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null, torrents: deps.torrents ?? null, previews: deps.streamPreviews ?? null }));
 
   return r;
 }
@@ -266,7 +294,7 @@ const positionBody = z.object({
 });
 
 /** The session a report is for: `subtitleRev` counts the times its subtitle changed since the play started (a torrent session's, else a cloud session's outside one). */
-type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number; infoHash?: string; fileIndex?: number } | null; outside?: { subtitleRev: number }; sourceRev?: number };
+type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number; infoHash?: string; fileIndex?: number } | null; outside?: { subtitleRev: number }; sourceRev?: number; previewRev?: number };
 
 /** What the position route reads (AppDeps fits: DirectStreamService.session returns a superset of StreamSessionRef). */
 export interface StreamPositionDeps {
@@ -281,6 +309,8 @@ export interface StreamPositionDeps {
   } | null;
   /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
   live?: StreamLive | null;
+  /** Seek previews: a report of a page still open makes its session the one whose sheets are made first. */
+  previews?: { reported(id: string): void } | null;
   /** A torrent session's report marks its download played (its keep clock), as nothing else does. */
   torrents?: { played(infoHash: string, fileIndex?: number): Promise<void> } | null;
 }
@@ -301,6 +331,7 @@ export interface StreamPositionDeps {
  * it, or an outside subtitle arrived late): the page loads its subtitle again when the number changes.
  * And `source_rev`, the count of the daemon's own moves of the session to another source (a check behind
  * the play rejected the stream, a torrent kept stalling): the page loads the new source when it changes.
+ * And `preview_rev`, the count of changes to the session's seek-preview frames: the page fetches them again when it rises.
  */
 export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: () => Date; log?: (line: string) => void } = {}): Hono {
   const r = new Hono();
@@ -331,11 +362,14 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     service.watched?.(session.id, { paused: report.paused === true, over, positionS: report.position_s, durationS: report.duration_s ?? null });
     // A check behind the play rejected the stream on screen: the move is made now that the film plays (never when paused).
     service.reported?.(session.id, { paused: report.paused === true, over });
+    // Seek previews: the session on screen has its sheets made first and its frames looked at again (preview_rev).
+    if (!over) deps.previews?.reported(session.id);
+    const previewRev = session.previewRev ?? 0;
     if (live !== null && report.beat === true && report.paused === true && !over && live.has(session.id)) {
       const on = live.current();
       if (on !== null) {
         live.report({ sessionId: session.id, titleId: on.title_id, ref: session.ref, provider: session.source.provider, positionS: report.position_s, durationS: report.duration_s ?? on.duration, paused: true });
-        return c.json({ ok: true, play_id: null, ended: false, subtitle_rev: subtitleRev, source_rev: sourceRev });
+        return c.json({ ok: true, play_id: null, ended: false, subtitle_rev: subtitleRev, source_rev: sourceRev, preview_rev: previewRev });
       }
     }
     const playing = session.torrent?.infoHash;
@@ -369,7 +403,7 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
         });
       }
     }
-    return c.json({ ok: true, play_id: written.play.id, ended: written.play.endedAt !== null, subtitle_rev: subtitleRev, source_rev: sourceRev });
+    return c.json({ ok: true, play_id: written.play.id, ended: written.play.endedAt !== null, subtitle_rev: subtitleRev, source_rev: sourceRev, preview_rev: previewRev });
   });
   return r;
 }

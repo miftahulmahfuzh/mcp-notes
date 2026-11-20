@@ -127,6 +127,11 @@ export interface StreamSession {
    * otherwise. A heard dub of that very torrent is reported and kept on it, and the play stays.
    */
   pastedTorrent: string | null;
+  /**
+   * Counts the times the session's seek-preview cue list changed (src/directStream/previews/service.ts); 0 at first.
+   * The page reads it in the session and in the answer to its position reports and fetches the previews again when it rises.
+   */
+  previewRev: number;
   lastUsedAt: Date;
 }
 
@@ -135,10 +140,11 @@ function hostOf(url: string): string | null {
   return abs === null ? null : new URL(abs).host.toLowerCase();
 }
 
-/** The hosts a resolve returned: the manifest's and every subtitle track's. */
+/** The hosts a resolve returned: the manifest's, every subtitle track's and the seek-preview track's. */
 export function sourceHosts(source: ResolvedSource): Set<string> {
   const hosts = new Set<string>();
-  for (const url of [source.manifest_url, ...source.subtitles.map((t) => t.url)]) {
+  const named = [source.manifest_url, ...source.subtitles.map((t) => t.url), ...(source.thumbnails ? [source.thumbnails.url] : [])];
+  for (const url of named) {
     const host = hostOf(url);
     if (host !== null) hosts.add(host);
   }
@@ -200,6 +206,7 @@ export class SessionStore {
       pendingMove: null,
       moving: false,
       pastedTorrent: null,
+      previewRev: 0,
       lastUsedAt: at,
     };
     this.sessions.set(session.id, session);

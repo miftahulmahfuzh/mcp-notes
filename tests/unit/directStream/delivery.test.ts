@@ -77,4 +77,11 @@ describe('a provider\'s delivery, from the evidence log', () => {
     expect(got.get('Other')?.verdict).toBe('bad');
     expect(got.has('Ancient')).toBe(false);
   });
+
+  it("never counts a seek-preview picture (kind image) in a provider's delivery", () => {
+    const pictures = many(DELIVERY_MIN_REQUESTS * 2, (i) => request('s1', 'VidFast', 10 - i / 10, 502, { kind: 'image', path: '/thumbs/sprite-1.jpg' }));
+    expect(deliveryByProvider(pictures, NOW).has('VidFast')).toBe(false);
+    const withSegments = [...pictures, ...many(DELIVERY_MIN_REQUESTS, (i) => request('s1', 'VidFast', 5 - i / 10, 200))];
+    expect(deliveryByProvider(withSegments, NOW).get('VidFast')).toMatchObject({ verdict: 'good', requests: DELIVERY_MIN_REQUESTS, failed: 0 });
+  });
 });

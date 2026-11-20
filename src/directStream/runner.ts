@@ -9,6 +9,7 @@ import {
   type ResolveAttempt,
   type ResolveOutput,
   type SubtitleTrack,
+  type ThumbnailTrack,
 } from './types.js';
 
 /** A whole resolve can try 24 providers at up to ~45 s each (phase 1); a single `--only` try is far shorter. */
@@ -48,6 +49,13 @@ const subtitleSchema = z.object({
   source: z.enum(['request', 'manifest']).nullish(),
 });
 
+const thumbnailsSchema = z.object({
+  url: z.string(),
+  referer: z.string().nullish(),
+  origin: z.string().nullish(),
+  user_agent: z.string().nullish(),
+});
+
 const sourceSchema = z.object({
   provider: z.string().min(1),
   embed_url: z.string().nullish(),
@@ -57,6 +65,8 @@ const sourceSchema = z.object({
   subtitles: z.array(subtitleSchema).nullish(),
   best_height: z.number().int().positive().nullish(),
   en_subtitle: z.boolean().nullish(),
+  /** A newer resolver's seek-preview track. Missing (an older resolver) or not fitting: null, and the resolve still stands. */
+  thumbnails: thumbnailsSchema.nullish().catch(null),
   audio: z
     .object({
       languages: z.array(z.string()).nullish(),
@@ -85,6 +95,13 @@ const present = (value: string | null | undefined): string | null => (value === 
 
 function toAttempt(a: z.infer<typeof attemptSchema>): ResolveAttempt {
   return { provider: a.provider, outcome: a.outcome, took_s: a.took_s ?? null, detail: a.detail ?? '' };
+}
+
+/** The seek-preview track as the daemon keeps it: null unless its address is http(s); header values null when not sent. */
+function toThumbnailTrack(t: z.infer<typeof thumbnailsSchema> | null | undefined): ThumbnailTrack | null {
+  if (t === undefined || t === null) return null;
+  const url = absoluteHttp(t.url);
+  return url === null ? null : { url, referer: present(t.referer), origin: present(t.origin), user_agent: present(t.user_agent) };
 }
 
 /**
@@ -120,6 +137,7 @@ export function parseResolveOutput(raw: unknown): ResolveOutput {
       subtitles,
       best_height: s.best_height ?? null,
       en_subtitle: s.en_subtitle ?? subtitles.some(isEnglish),
+      thumbnails: toThumbnailTrack(s.thumbnails),
       audio: s.audio === undefined || s.audio === null ? null : {
               languages: s.audio.languages ?? [],
               tracks: s.audio.tracks ?? 0,

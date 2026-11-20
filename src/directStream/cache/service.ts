@@ -60,6 +60,25 @@ export interface CachePlayData {
   audio: SourceAudio | null;
 }
 
+/** A cache as the seek previews read it (src/directStream/previews/cacheSource.ts): this host's only. */
+export interface CachePreviewRow {
+  id: string;
+  state: 'downloading' | 'ready' | 'failed';
+  manifestKind: NonNullable<StreamCacheRow['manifestKind']>;
+}
+
+/** StreamCache.previewView(): what the previews' cache source reads, and nothing it could write. */
+export interface CachePreviewView {
+  /** The cache's folder (`<root>/<id>`), whether or not it exists. */
+  folder(id: string): string;
+  /** This host's cache with this id and a known source, or null (the other host's included). */
+  get(id: string): Promise<CachePreviewRow | null>;
+  /** This host's ready caches with a known source. */
+  ready(): Promise<CachePreviewRow[]>;
+  /** The source signature in the folder's cache.json; null without one. */
+  signature(id: string): Promise<string | null>;
+}
+
 interface Waiting {
   id: string;
   ref: StreamRef;
@@ -368,6 +387,18 @@ export class StreamCache {
     const out: { row: StreamCacheRow; bytes: number }[] = [];
     for (const row of await this.repo.caches()) if (row.host === this.host) out.push({ row, bytes: await this.store.diskSize(row.id) });
     return out;
+  }
+
+  /** The seek previews' view of this host's caches (src/directStream/previews/cacheSource.ts). */
+  previewView(): CachePreviewView {
+    const own = (row: StreamCacheRow | null): CachePreviewRow | null =>
+      row === null || row.host !== this.host || row.manifestKind === null ? null : { id: row.id, state: row.state, manifestKind: row.manifestKind };
+    return {
+      folder: (id) => this.store.dir(id),
+      get: async (id) => own(await this.rowOf(id)),
+      ready: async () => (await this.repo.caches()).filter((row) => row.state === 'ready').map(own).filter((row): row is CachePreviewRow => row !== null),
+      signature: async (id) => (await this.store.readMeta(id))?.signature ?? null,
+    };
   }
 
   /** Stops the download, deletes the folder and the row. Throws unknown_cache, or not_on_this_machine for the other host's. */

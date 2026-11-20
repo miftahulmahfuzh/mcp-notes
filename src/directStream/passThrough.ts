@@ -4,6 +4,8 @@ import type { CapturedHeaders } from './types.js';
 
 /** A playlist or manifest larger than this is refused (they are kilobytes; this stops a runaway body). */
 export const PLAYLIST_MAX_BYTES = 8 * 1024 * 1024;
+/** A seek-preview picture (`img=1`) larger than this is refused: a sprite sheet is tens or hundreds of kilobytes. */
+export const PREVIEW_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
 /** The stream host must start answering within this; a body then streams for as long as it takes. */
 export const UPSTREAM_HEADERS_TIMEOUT_MS = 20_000;
 export const MAX_REDIRECTS = 5;
@@ -17,16 +19,22 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 export interface ForwardRequest {
   /** The `u` query parameter: the stream host address to fetch (empty when missing). */
   target: string;
-  /** The player's `Range` header, forwarded as is. */
+  /** The player's `Range` header, forwarded as is (never for an `image` request). */
   range: string | null;
   /** `vtt=1`: the answer is a subtitle file to hand back as WebVTT. */
   vtt: boolean;
+  /**
+   * A seek preview's request (previews/providerSource.ts), sent with the headers the resolve captured for the
+   * provider's preview track: `track`, that WebVTT file, read by the daemon; `image` (`img=1`), one of its
+   * pictures, answered only as an image/* body under PREVIEW_IMAGE_MAX_BYTES. Unset: a request of the play.
+   */
+  preview?: 'track' | 'image';
   /** Aborted when the player goes away; the stream host request is aborted with it. */
   signal: AbortSignal;
 }
 
-/** What the answer carries: a rewritten playlist or manifest, a subtitle, or media streamed through. */
-export type ForwardKind = 'hls' | 'dash' | 'vtt' | 'media';
+/** What the answer carries: a rewritten playlist or manifest, a subtitle, media streamed through, or a seek-preview picture. */
+export type ForwardKind = 'hls' | 'dash' | 'vtt' | 'media' | 'image';
 
 /**
  * What forward() saw, for the stream evidence log (evidence.ts). forward() only writes it, as it
@@ -68,6 +76,17 @@ export function upstreamHeaders(captured: CapturedHeaders, range: string | null)
   return headers;
 }
 
+/**
+ * The captured headers a request goes with: a seek preview's, those the provider's preview track was asked
+ * with (the player asks for the track's pictures from the same page); everything else, and a preview request
+ * of a source with no track, the manifest's.
+ */
+function capturedFor(session: StreamSession, req: ForwardRequest): CapturedHeaders {
+  const track = session.source.thumbnails ?? null;
+  if (req.preview === undefined || track === null) return session.source.headers;
+  return { referer: track.referer, origin: track.origin, user_agent: track.user_agent };
+}
+
 type TextKind = 'hls' | 'dash' | 'vtt';
 
 function textKind(target: string, contentType: string, vtt: boolean): TextKind | null {
@@ -80,8 +99,9 @@ function textKind(target: string, contentType: string, vtt: boolean): TextKind |
   return null;
 }
 
-async function readCapped(res: Response, max: number): Promise<string | null> {
-  if (res.body === null) return '';
+/** The whole body, or null (the body cancelled) as soon as it passes `max` bytes. */
+export async function readCappedBytes(res: Response, max: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (res.body === null) return new Uint8Array(0);
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -95,21 +115,65 @@ async function readCapped(res: Response, max: number): Promise<string | null> {
     }
     chunks.push(value);
   }
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out;
+}
+
+/** The whole body as text, or null as soon as it passes `max` bytes. */
+export async function readCapped(res: Response, max: number): Promise<string | null> {
+  const bytes = await readCappedBytes(res, max);
+  return bytes === null ? null : new TextDecoder().decode(bytes);
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+type Refuse = (status: number, error: string, message: string) => Response;
+
+/**
+ * A seek-preview picture (`img=1`): the host's answer only when it is 2xx, an image/* type and at most
+ * PREVIEW_IMAGE_MAX_BYTES, read whole so the page never gets half a picture; else 502 `not_an_image` or
+ * `image_too_large`. Cacheable by the browser: the address names the session and the picture.
+ */
+async function answerImage(upstream: Response, out: Headers, refuse: Refuse): Promise<Response> {
+  const contentType = upstream.headers.get('content-type') ?? '';
+  if (!upstream.ok || !/^image\//i.test(contentType)) {
+    await upstream.body?.cancel().catch(() => undefined);
+    const type = contentType === '' ? 'no type' : (contentType.split(';')[0] ?? '').trim();
+    return refuse(502, 'not_an_image', `The stream host answered ${upstream.status} with ${type}, not a picture.`);
+  }
+  let bytes: Uint8Array<ArrayBuffer> | null = null;
+  if (Number(upstream.headers.get('content-length') ?? '0') > PREVIEW_IMAGE_MAX_BYTES) {
+    await upstream.body?.cancel().catch(() => undefined);
+  } else {
+    try {
+      bytes = await readCappedBytes(upstream, PREVIEW_IMAGE_MAX_BYTES);
+    } catch (err) {
+      return refuse(502, 'upstream_error', `The stream host broke off: ${messageOf(err)}`);
+    }
+  }
+  if (bytes === null) return refuse(502, 'image_too_large', `The picture is larger than ${PREVIEW_IMAGE_MAX_BYTES} bytes.`);
+  out.set('content-type', contentType);
+  out.set('content-length', String(bytes.byteLength));
+  out.set('cache-control', 'private, max-age=86400');
+  return new Response(bytes, { status: upstream.status, headers: out });
+}
 
 /**
  * Fetches `req.target` for a live session and hands the answer back. Refuses with 403 `forbidden_host`,
  * before any request, an address that is not http(s) or not on a host the session may reach. Follows
  * redirects itself (a redirect answered by the session's host vouches for its target, like a playlist
  * entry). Playlists and manifests are read whole and rewritten, and the hosts they name join the
- * session; everything else streams through as it arrives, with the stream host's status. `trace`,
- * when given, is filled in for the evidence log; the answer does not depend on it.
+ * session; a seek-preview picture is checked and read whole (answerImage); everything else streams
+ * through as it arrives, with the stream host's status. `trace`, when given, is filled in for the
+ * evidence log; the answer does not depend on it.
  */
 export async function forward(session: StreamSession, req: ForwardRequest, fetchImpl: FetchLike, trace: ForwardTrace | null = null): Promise<Response> {
-  const refuse = (status: number, error: string, message: string): Response => {
+  const refuse: Refuse = (status, error, message) => {
     if (trace !== null) trace.error = `${error}: ${message}`;
     return jsonError(status, error, message);
   };
@@ -122,7 +186,8 @@ export async function forward(session: StreamSession, req: ForwardRequest, fetch
   if (req.signal.aborted) abort();
   else req.signal.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(abort, UPSTREAM_HEADERS_TIMEOUT_MS);
-  const headers = upstreamHeaders(session.source.headers, req.range);
+  const image = req.preview === 'image';
+  const headers = upstreamHeaders(capturedFor(session, req), image ? null : req.range);
   let target = first;
   let upstream: Response;
   try {
@@ -162,6 +227,14 @@ export async function forward(session: StreamSession, req: ForwardRequest, fetch
   }
 
   const out = new Headers({ 'cache-control': 'no-store', [UPSTREAM_STATUS_HEADER]: String(upstream.status) });
+  if (image) {
+    if (trace !== null) trace.kind = 'image';
+    try {
+      return await answerImage(upstream, out, refuse);
+    } finally {
+      req.signal.removeEventListener('abort', abort);
+    }
+  }
   const contentType = upstream.headers.get('content-type') ?? '';
   const nullBody = NULL_BODY_STATUSES.has(upstream.status);
   const kind = textKind(target, contentType, req.vtt);

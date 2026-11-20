@@ -4,8 +4,9 @@
 //
 // They show notesd's own player page (/stream/<session id>) in a throwaway daemon's real build. No
 // provider, no torrent swarm and no Chrome on Windows is touched: the session, the pass-through,
-// the torrent's status and its file route are answered here by Playwright, in the shapes the
-// daemon gives the page (the same fakes as .claude/skills/verify-notesd/scripts/stream/*.steps.mjs).
+// the session's preview frames, the torrent's status and its file route are answered here by
+// Playwright, in the shapes the daemon gives the page (the same fakes as
+// .claude/skills/verify-notesd/scripts/stream/*.steps.mjs).
 //
 // The film is the trailer of Sintel (© Blender Foundation, CC BY 3.0, durian.blender.org), fetched
 // once from download.blender.org into ~/.local/state/notesd-verify/.docs-film (DOCS_SHOTS_FILM_DIR)
@@ -13,6 +14,7 @@
 //
 //   player.png           a cloud stream: the title, the English subtitle the page draws, the controls
 //   player.gif           the quality menu, the subtitle delay key, a seek
+//   player-preview.png   the pointer on the timeline: the frame of that time from the stream's own preview track
 //   player-torrent.png   a torrent session: the magnet, peers and speed beside the title, the bar of what is on disk
 //   player-fetching.png  a seek past what is on disk: "Fetching this part from peers"
 import { execFile } from 'node:child_process';
@@ -33,7 +35,14 @@ const TITLE = 'Sintel (2010)';
 const TORRENT = { hash: '08ada5a7a6183aae1e09d831df6748d566095a10', name: 'Sintel.2010.1080p.BluRay.x264.AAC' };
 /** The share of the torrent's file "on disk". */
 const ON_DISK = 0.45;
-const TYPES = { '.m3u8': 'application/vnd.apple.mpegurl', '.ts': 'video/mp2t', '.vtt': 'text/vtt' };
+const TYPES = { '.m3u8': 'application/vnd.apple.mpegurl', '.ts': 'video/mp2t', '.vtt': 'text/vtt', '.jpg': 'image/jpeg' };
+/** The trailer's length, and the preview frames of session D1: one every PREVIEW_EVERY_S, 240×135, side by side in one sheet. */
+const FILM_S = 52;
+const PREVIEW_EVERY_S = 10;
+const PREVIEW_W = 240;
+const PREVIEW_H = 135;
+/** Where the stream's own preview track would have its sheet: served by the faked pass-through like the stream's other files. */
+const SHEET = 'thumbs/sheet.jpg';
 
 // The trailer's own lines, at about the seconds they are said.
 const CUES = [
@@ -86,9 +95,19 @@ async function makeFilm() {
   writeFileSync(path.join(DIR, '.done'), '');
 }
 
+/** The preview sheet of session D1: a frame every PREVIEW_EVERY_S seconds of the film, side by side in one JPEG. Made once. */
+async function makeSheet() {
+  const file = path.join(HLS, SHEET);
+  if (existsSync(file)) return;
+  mkdirSync(path.dirname(file), { recursive: true });
+  const frames = Math.ceil(FILM_S / PREVIEW_EVERY_S);
+  await ffmpeg('-i', FILM, '-vf', `fps=1/${PREVIEW_EVERY_S},scale=${PREVIEW_W}:${PREVIEW_H},tile=${frames}x1`, '-frames:v', '1', '-q:v', '4', file + '.part.jpg');
+  renameSync(file + '.part.jpg', file);
+}
+
 /** SessionInfo as GET /api/stream/sessions/:id answers it. */
 function session(id) {
-  const common = { session_id: id, kind: 'movie', tmdb_id: 45745, season: null, episode: null, title: TITLE, created_at: null, refreshed_at: null, expires_at: null, cached: null };
+  const common = { session_id: id, kind: 'movie', tmdb_id: 45745, season: null, episode: null, title: TITLE, created_at: null, refreshed_at: null, expires_at: null, cached: null, preview_rev: 0 };
   if (id === 'T1') {
     return {
       ...common,
@@ -109,7 +128,19 @@ function session(id) {
     subtitles: [{ url: '/api/stream/sessions/D1/p?u=en.vtt', lang: 'en', label: 'English', format: 'vtt', source: 'request', english: true }],
     best_height: 720,
     resume_s: 29,
+    preview_rev: 1,
   };
+}
+
+/** GET /api/stream/sessions/:id/previews: D1 lists the frames of its own preview track, through the pass-through; T1 has none. */
+function previews(id) {
+  if (id !== 'D1') return { state: 'none', rev: 0, source: null, cues: [] };
+  const url = '/api/stream/sessions/D1/p?u=' + encodeURIComponent(SHEET) + '&img=1';
+  const cues = [];
+  for (let k = 0; k * PREVIEW_EVERY_S < FILM_S; k++) {
+    cues.push({ start_s: k * PREVIEW_EVERY_S, end_s: Math.min((k + 1) * PREVIEW_EVERY_S, FILM_S), url, x: k * PREVIEW_W, y: 0, w: PREVIEW_W, h: PREVIEW_H });
+  }
+  return { state: 'ready', rev: 1, source: 'provider', cues };
 }
 
 /** Every address of a playlist comes back through the pass-through, as the daemon rewrites it. */
@@ -129,8 +160,9 @@ async function fakeDaemon(page) {
   await page.route('**/api/stream/sessions/**', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
-    const m = /^\/api\/stream\/sessions\/(D1|T1)(?:\/(p))?$/.exec(url.pathname);
+    const m = /^\/api\/stream\/sessions\/(D1|T1)(?:\/(p|previews))?$/.exec(url.pathname);
     if (!m) return route.fulfill({ status: 404, json: { error: 'not_found' } });
+    if (m[2] === 'previews') return route.fulfill({ json: previews(m[1]) });
     if (m[2] === 'p') {
       const file = path.join(HLS, url.searchParams.get('u') ?? '');
       const ext = path.extname(file);
@@ -185,6 +217,7 @@ const captionShown = () => (document.querySelector('.st-caption')?.textContent ?
 
 export default async ({ page, base, shot, clip }) => {
   await makeFilm();
+  await makeSheet();
 
   // A cloud stream: the English subtitle on by default, drawn by the page over the picture.
   await fakeDaemon(page);
@@ -194,6 +227,16 @@ export default async ({ page, base, shot, clip }) => {
   await wake(page);
   await page.waitForTimeout(400);
   await shot('player');
+
+  // The pointer on the timeline at 0:40: the frame of that time from the stream's own preview track, and the time under it.
+  await page.waitForFunction(() => window.notesdStream?.previews?.state === 'ready', null, { timeout: 10_000 });
+  const seek = await page.locator('.st-seek').boundingBox();
+  if (seek === null) throw new Error('streaming: the timeline is not on the page');
+  await page.mouse.move(seek.x + (seek.width * 40) / FILM_S, seek.y + seek.height / 2, { steps: 8 });
+  await page.locator('.st-preview .st-preview-frame').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.waitForTimeout(300);
+  await shot('player-preview');
+  await wake(page);
 
   // The menus and keys, in a fresh tab.
   await clip('player', async (tab) => {

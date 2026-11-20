@@ -28,6 +28,7 @@ import type { TrendingHandle } from './directStream/trending/job.js';
 import type { TrackerListsHandle } from './directStream/torrent/trackerLists.js';
 import type { StreamEvidence } from './directStream/evidence.js';
 import type { StreamReporter } from './directStream/report.js';
+import type { StreamPreviews } from './directStream/previews/service.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 import type { SessionEvents } from './sessions/events.js';
@@ -131,6 +132,13 @@ export interface AppDeps {
   kickSummaries?: () => void;
   /** The stream on screen in the player page (src/movies/streamLive.ts); null or absent with the movie library off. */
   streamLive?: StreamLive | null;
+  /**
+   * Seek previews (src/directStream/previews/): sprite sheets of the films on this machine, made by one niced ffmpeg
+   * and listed per stream session (GET /api/stream/sessions/:id/previews). Null or absent with
+   * NOTESD_STREAM_PREVIEWS=off or without direct streaming: nothing is built and the route answers no frame.
+   * startBackground starts its sweep and closes it before every other closer (the stream cache and the torrents included).
+   */
+  streamPreviews?: StreamPreviews | null;
   /**
    * The daily stream canary (src/directStream/canary.ts): every cloud provider asked for one known film, for
    * its health. The daemon always sets it (a DisabledCanary with NOTESD_STREAM_CANARY=off or direct streaming

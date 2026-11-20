@@ -10,6 +10,9 @@
 //                  with a Korean original-language audio track)
 //   calls.jsonl    one line per call, appended: {"at", "args"}; a resolve given --health adds "bad_delivery",
 //                  the providers that file marks with delivery "bad"
+//   thumbs         a name under upstream.mjs's /thumbs/ (thumbs.vtt, whole.vtt, words.vtt, page.vtt, big.vtt, or a
+//                  missing one such as gone.vtt): the resolve's source names that seek-preview track, with the
+//                  embed's headers; no file, no track
 // `resolve` answers like the real CLI, reading --providers and skipping browser-only rows: with two or
 // more usable providers (those --skip names are not usable) the first is a bot_check and the second resolves; with one, it resolves; with
 // none, no_source. `open` answers {"ok": true}.
@@ -83,6 +86,9 @@ function main() {
   const { origin } = JSON.parse(readFileSync(path.join(dir, 'upstream.json'), 'utf8'));
   // <dir>/no_subtitle: the stream names no subtitle at all (a cloud session then asks the subtitle services).
   const noSubtitle = existsSync(path.join(dir, 'no_subtitle'));
+  // <dir>/thumbs: the page loaded that seek-preview track (resolve.mjs thumbnailTrack).
+  const thumbsFile = path.join(dir, 'thumbs');
+  const thumbs = existsSync(thumbsFile) ? readFileSync(thumbsFile, 'utf8').trim() : '';
   const chosen = providers.length > 1 ? providers[1] : providers[0];
   const attempts = providers.length > 1 ? [{ provider: providers[0], outcome: 'bot_check', took_s: 1.2, detail: 'fake: Just a moment...' }] : [];
   attempts.push({ provider: chosen, outcome: 'resolved', took_s: 2.5, detail: '' });
@@ -104,6 +110,7 @@ function main() {
       subtitles: noSubtitle ? [] : [{ url: `${origin}/subs/en.srt`, lang: 'en', label: 'English', format: 'srt', source: 'request' }],
       best_height: 1080,
       en_subtitle: !noSubtitle,
+      ...(thumbs !== '' ? { thumbnails: { url: `${origin}/thumbs/${thumbs}`, referer: FIXTURE_REFERER, origin: FIXTURE_ORIGIN, user_agent: FIXTURE_USER_AGENT } } : {}),
       took_s: 2.5,
       ...(mode === 'hls_token' ? { audio: { languages: ['en', 'ko'], tracks: 2, original: true, track: { lang: 'ko', label: 'Korean' } } } : {}),
     },

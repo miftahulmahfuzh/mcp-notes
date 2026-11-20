@@ -58,6 +58,21 @@ async function allocated(file: string): Promise<number> {
 const sameRef = (a: StreamRef, b: StreamRef): boolean =>
   a.kind === b.kind && a.tmdbId === b.tmdbId && (a.kind === 'movie' || (b.kind === 'tv' && a.season === b.season && a.episode === b.episode));
 
+/**
+ * One chosen file of a torrent as this machine's disk holds it now (TorrentStreams.onDisk). `whole`: at its full
+ * length. `partial`: the byte stretches whose pieces are verified on disk, `[from, to)`, in order; empty when the
+ * torrent is not in the swarm and nothing says which pieces are there.
+ */
+export type FileOnDisk =
+  | { readonly kind: 'whole'; readonly path: string; readonly length: number }
+  | { readonly kind: 'partial'; readonly path: string; readonly length: number; readonly ranges: readonly [number, number][] };
+
+/** A chosen video of this host that is whole on disk: as its file, or as its finished remux alone (its original was deleted). */
+export type WholeVideo = { readonly infoHash: string; readonly fileIndex: number; readonly durationS: number | null } & (
+  | { readonly via: 'file'; readonly path: string }
+  | { readonly via: 'remux' }
+);
+
 export interface TorrentStreamsOptions {
   engine: TorrentEngine;
   repo: TorrentRecords;
@@ -435,6 +450,28 @@ export class TorrentStreams {
   }
 
   /**
+   * File `index` of a torrent as it is on this machine's disk now, for the seek previews (previews/torrentSource.ts).
+   * It reads the row, the disk and the swarm's map of verified pieces only. It never opens, uses, selects, reads
+   * through or holds the torrent, and it is not a request: a torrent waiting to leave the swarm leaves on time. Null
+   * for an unknown hash, the other machine's, a file no episode chose, or one that lives as its remux (its original
+   * is gone).
+   */
+  async onDisk(infoHash: string, index: number): Promise<FileOnDisk | null> {
+    const hash = normalizeInfoHash(infoHash);
+    if (hash === null) return null;
+    const found = await this.rowHere(hash, index);
+    if (found instanceof Response) return null;
+    const file = found.files.find((f) => f.index === index);
+    if (file === undefined || file.remuxed === true) return null;
+    const target = this.folder.diskPath(hash, file.path);
+    if (target === null) return null;
+    const whole = await this.filePath(hash, index);
+    if (whole !== null) return { kind: 'whole', path: whole, length: file.length };
+    const live = this.active.get(hash);
+    return { kind: 'partial', path: target, length: file.length, ranges: live === undefined ? [] : live.handle.ranges(index) };
+  }
+
+  /**
    * GET /api/stream/torrent/:hash/f/:index. A chosen file with Range: from disk when it is whole, else
    * through the swarm, whose pieces for the range come first. 404 unknown_torrent / not_on_this_machine /
    * not_selected, 409 not_in_swarm (unfinished and not open: play it to carry on), 503 closing.
@@ -534,6 +571,27 @@ export class TorrentStreams {
     let unnamedBytes = 0;
     for (const hash of await this.folder.hashes()) if (!byHash.has(hash)) unnamedBytes += await this.folder.size(hash);
     return { torrents, unnamedBytes, budgetBytes: this.opts.budgetBytes ?? null };
+  }
+
+  /**
+   * This host's chosen videos that are whole on disk now, for the seek previews' sweep: a ready row's video at its full
+   * length, or one that lives as its finished remux. It reads rows and the disk only, and joins or holds nothing.
+   */
+  async wholeVideos(): Promise<WholeVideo[]> {
+    const out: WholeVideo[] = [];
+    for (const row of await this.hostRows()) {
+      if (row.state !== 'ready' || row.fileIndex === null) continue;
+      const video = row.files.find((f) => f.index === row.fileIndex);
+      if (video === undefined) continue;
+      const base = { infoHash: row.infoHash, fileIndex: video.index, durationS: row.durationS };
+      if (video.remuxed === true) {
+        if (this.opts.remuxes?.playable(row.infoHash, video.index) === true) out.push({ ...base, via: 'remux' });
+        continue;
+      }
+      const whole = await this.folder.complete(row.infoHash, video.path, video.length);
+      if (whole !== null) out.push({ ...base, via: 'file', path: whole });
+    }
+    return out;
   }
 
   /**
