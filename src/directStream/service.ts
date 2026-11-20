@@ -21,7 +21,7 @@ import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, ty
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
 import { readMagnet } from './torrent/origins.js';
 import { namesCloud, namesTorrent, PREFERRED_TORRENT_HEIGHT, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type MagnetReport } from './torrent/source.js';
-import { TORRENT_WARP_AUTO, torrentThroughWarp, WARP_ATTEMPT, type TorrentWarp } from './torrentWarp.js';
+import { TORRENT_WARP_AUTO, torrentThroughWarp, WARP_ATTEMPT, WarpHolds, type TorrentWarp } from './torrentWarp.js';
 import type { WarpSwitch } from '../streaming/warp.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
@@ -493,11 +493,14 @@ export class DirectStreamService {
   /** The session made for a page whose own session a restart ended, by the id that page holds; and those being made (continueSession). */
   private readonly continued = new Map<string, string>();
   private readonly continuing = new Map<string, Promise<StreamSession>>();
+  /** The torrent asks holding WARP on (torrentWarp.ts): the last to let go puts back what this service switched on. */
+  private readonly warpHolds: WarpHolds | null;
   /** The next episode, fetched while this one plays; null when the daemon does not (ahead.ts). */
   private readonly ahead: EpisodeAhead | null;
 
   constructor(private readonly opts: DirectStreamServiceOptions) {
     this.repo = opts.repo;
+    this.warpHolds = opts.warp == null ? null : new WarpHolds(opts.warp.switch);
     this.runner = opts.runner;
     this.now = opts.now ?? (() => new Date());
     this.sessions = opts.sessions ?? new SessionStore(this.now);
@@ -862,12 +865,8 @@ export class DirectStreamService {
     if (height !== null && height !== PREFERRED_TORRENT_HEIGHT) {
       const infoHash = last.infoHash;
       this.log(`[notesd] direct stream: the torrent that played ${refLabel(ref)} last time is ${height}p; asking the indexes for ${PREFERRED_TORRENT_HEIGHT}p first`);
-      try {
-        return await this.torrentSession(ref, resumeS, null, track);
-      } catch (err) {
-        if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
-        return this.after(err.attempts, () => this.magnetSession(ref, resumeS, infoHash, track));
-      }
+      // One ask, the search then that torrent: WARP is tried once around both, and the title fails only when both did.
+      return this.torrentSession(ref, resumeS, null, track, infoHash);
     }
     if (track !== null) track.stage = 'opening the torrent that played it last time';
     try {
@@ -1017,7 +1016,7 @@ export class DirectStreamService {
    * torrent); or, after a cloud `resolve_failed`, that error again with the torrent attempts added. The
    * recordResolve hook is not called: a torrent says nothing of the title's cloud sources.
    */
-  private async torrentSession(ref: StreamRef, resumeS: number | null, cloud: DirectStreamError | null, track: PlayTrack | null = null): Promise<StreamSession> {
+  private async torrentSession(ref: StreamRef, resumeS: number | null, cloud: DirectStreamError | null, track: PlayTrack | null = null, thenTorrent: string | null = null): Promise<StreamSession> {
     const source = this.torrentSource();
     if (source === null) throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).');
     const audioLang = await this.audioLang(ref);
@@ -1028,7 +1027,7 @@ export class DirectStreamService {
     // Never inside serial(): the cloud resolve above has returned, and phase 6's borrow tier queues on serial().
     const before = cloud?.attempts ?? [];
     if (track !== null) track.attempts = [...before];
-    const ask = (): Promise<TorrentResolve> =>
+    const search = (): Promise<TorrentResolve> =>
       source.resolve(ref, {
         audioLang,
         imdbId,
@@ -1044,6 +1043,20 @@ export class DirectStreamService {
               },
             }),
       });
+    // `thenTorrent`: the remembered torrent of a lower height, opened with no index asked when the search found none.
+    const ask = async (): Promise<TorrentResolve> => {
+      const found = await search();
+      if (found.ok || thenTorrent === null) return found;
+      const last = await source.playMagnet(ref, {
+        magnet: thenTorrent,
+        audioLang,
+        imdbId,
+        names,
+        resumeS: startS,
+        ...(track === null ? {} : { progress: (p) => { track.stage = p.stage; track.attempts = [...before, ...found.attempts, ...p.attempts]; } }),
+      });
+      return { ...last, attempts: [...found.attempts, ...last.attempts] };
+    };
     const out = await this.throughWarp(ref, await ask(), ask);
     const attempts = [...before, ...out.attempts];
     if (!out.ok) {
@@ -1131,8 +1144,8 @@ export class DirectStreamService {
    */
   private async throughWarp(ref: StreamRef, out: TorrentResolve, again: () => Promise<TorrentResolve>): Promise<TorrentResolve> {
     const warp = this.opts.warp ?? null;
-    if (out.ok || warp === null) return out;
-    const next = await torrentThroughWarp(warp, out, () => {
+    if (out.ok || warp === null || this.warpHolds === null) return out;
+    const next = await torrentThroughWarp(warp, this.warpHolds, out, () => {
       this.torrentSource()?.forgetNoPeers(ref);
       return again();
     });

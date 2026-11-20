@@ -1388,7 +1388,9 @@ first for episode 4.
   since; the indexes are searched when none is remembered or its swarm has nothing now. A remembered
   torrent whose release name says another height than 1080p (a 720p) goes after the indexes instead:
   they are asked for a 1080p first, and it is opened only when they have nothing that plays
-  (`the torrent that played ... last time is 720p; asking the indexes for 1080p first`). `NTM`,
+  (`the torrent that played ... last time is 720p; asking the indexes for 1080p first`). The search
+  and that torrent are one ask: WARP (below) is tried once around both, and the title's torrents are
+  marked failed only when both found nothing. `NTM`,
   `provider: "cloud"` or Non Torrent stream asks the cloud provider that last streamed the title
   alone first, then the others without it, and never a torrent. A provider named by its own name
   (`VidLink`) is still asked alone.
@@ -2104,11 +2106,14 @@ plays, WARP stays on and the answer says so in an attempt `WARP`:
 > WARP: no torrent peer answered on the office network (Employee), so Cloudflare WARP was turned on and the
 > torrents asked again. WARP stays on.
 
-When it does not, WARP is put back off and the attempt says that too. `/warp off` turns it off when the owner is
-done. With `TORRENT_WARP_AUTO` false the same case only adds a hint ("turning WARP on (/warp on) may reach them")
+When it does not, WARP is put back off and the attempt says that too. Two torrent asks at once (two titles, or
+one while another is still asked) hold WARP together (`WarpHolds`): it is switched on once, and put back off only
+when the last of them lets go and none played through it (`WARP stays on while another torrent play asks through
+it`). `/warp off` turns it off when the owner is done. With `TORRENT_WARP_AUTO` false the same case only adds a hint ("turning WARP on (/warp on) may reach them")
 and switches nothing.
 
-Never for a cloud stream, never on another network, and never when WARP is already on. `NOTESD_STREAM_WARP=off`
+Never for a cloud stream, never on another network, and never when WARP is already on by the owner's hand: a
+WARP this daemon did not switch on is never switched off by it. `NOTESD_STREAM_WARP=off`
 (every `verify.sh` daemon) builds none of it.
 
 **Measured** on kosan_baruu, 2026-11-20 (where peers answer without WARP, so this shows that the tunnel carries

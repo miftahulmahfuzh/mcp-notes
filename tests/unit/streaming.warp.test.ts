@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { noPeersAtAll, torrentThroughWarp, WARP_ATTEMPT, type TorrentWarp } from '../../src/directStream/torrentWarp.js';
+import { noPeersAtAll, torrentThroughWarp, WARP_ATTEMPT, WarpHolds, type TorrentWarp } from '../../src/directStream/torrentWarp.js';
 import { NO_FILE_LIST } from '../../src/directStream/torrent/source.js';
 import type { TorrentResolve } from '../../src/directStream/torrent/source.js';
 import type { ResolveAttempt } from '../../src/directStream/types.js';
@@ -43,7 +43,7 @@ describe('WARP for a torrent play on the office network', () => {
   it('adds one hint line, switching nothing, without the automatic flip', async () => {
     const sw = fakeWarp(office);
     const again = vi.fn();
-    const out = await torrentThroughWarp({ switch: sw, auto: false }, failed([index, noPeers('A')]), again);
+    const out = await torrentThroughWarp({ switch: sw, auto: false }, new WarpHolds(sw), failed([index, noPeers('A')]), again);
     expect(out.ok).toBe(false);
     expect(out.attempts.at(-1)).toMatchObject({ provider: WARP_ATTEMPT, outcome: 'skipped' });
     expect(out.attempts.at(-1)?.detail).toContain('/warp on');
@@ -59,13 +59,15 @@ describe('WARP for a torrent play on the office network', () => {
       [office, [{ ...noPeers('A'), outcome: 'dubbed', detail: 'dub' }]],
     ] as Array<[WarpState, ResolveAttempt[]]>) {
       const first = failed(attempts);
-      expect(await torrentThroughWarp({ switch: fakeWarp(state), auto: true }, first, vi.fn())).toBe(first);
+      const sw = fakeWarp(state);
+      expect(await torrentThroughWarp({ switch: sw, auto: true }, new WarpHolds(sw), first, vi.fn())).toBe(first);
+      expect(sw.calls.filter((c) => c !== 'status')).toEqual([]);
     }
   });
 
   it('with the flip: switches WARP on, asks again, and keeps it on when that played', async () => {
     const sw = fakeWarp(office);
-    const out = await torrentThroughWarp({ switch: sw, auto: true }, failed([index, noPeers('A')]), async () => played);
+    const out = await torrentThroughWarp({ switch: sw, auto: true }, new WarpHolds(sw), failed([index, noPeers('A')]), async () => played);
     expect(out.ok).toBe(true);
     expect(sw.calls).toEqual(['status', 'on']);
     expect(out.attempts.map((a) => a.provider)).toEqual(['Index: torrentio', 'Torrent: A', WARP_ATTEMPT, 'Torrent: A']);
@@ -74,7 +76,7 @@ describe('WARP for a torrent play on the office network', () => {
 
   it('with the flip: puts WARP back off when the second ask found nothing either', async () => {
     const sw = fakeWarp(office);
-    const out = await torrentThroughWarp({ switch: sw, auto: true }, failed([noPeers('A')]), async () => failed([noPeers('A')]));
+    const out = await torrentThroughWarp({ switch: sw, auto: true }, new WarpHolds(sw), failed([noPeers('A')]), async () => failed([noPeers('A')]));
     expect(out.ok).toBe(false);
     expect(sw.calls).toEqual(['status', 'on', 'off']);
     expect(out.attempts.find((a) => a.provider === WARP_ATTEMPT)?.detail).toContain('put back off');
@@ -82,9 +84,63 @@ describe('WARP for a torrent play on the office network', () => {
 
   it('with the flip: asks nothing again when WARP would not switch on', async () => {
     const again = vi.fn();
-    const out = await torrentThroughWarp({ switch: fakeWarp(office, { setFails: true }), auto: true } satisfies TorrentWarp, failed([noPeers('A')]), again);
+    const sw = fakeWarp(office, { setFails: true });
+    const out = await torrentThroughWarp({ switch: sw, auto: true } satisfies TorrentWarp, new WarpHolds(sw), failed([noPeers('A')]), again);
     expect(again).not.toHaveBeenCalled();
     expect(out.attempts.at(-1)).toMatchObject({ provider: WARP_ATTEMPT, outcome: 'error' });
+  });
+});
+
+describe('WARP held by two torrent asks at once', () => {
+  const later = (): { open: () => void; wait: Promise<void> } => {
+    let open = (): void => undefined;
+    const wait = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return { open, wait };
+  };
+
+  it('is switched on once, stays on while the other still asks, and goes off only when the last let go', async () => {
+    const sw = fakeWarp(office);
+    const holds = new WarpHolds(sw);
+    const warp = { switch: sw, auto: true };
+    const slow = later();
+    const b = torrentThroughWarp(warp, holds, failed([noPeers('B')]), async () => {
+      await slow.wait;
+      return failed([noPeers('B')]);
+    });
+    const a = await torrentThroughWarp(warp, holds, failed([noPeers('A')]), async () => failed([noPeers('A')]));
+    expect(a.attempts.find((x) => x.provider === WARP_ATTEMPT)?.detail).toContain('stays on while another torrent play asks through it');
+    expect(sw.calls.filter((c) => c !== 'status')).toEqual(['on']);
+    slow.open();
+    const out = await b;
+    expect(out.attempts.find((x) => x.provider === WARP_ATTEMPT)?.detail).toContain('put back off');
+    expect(sw.calls.filter((c) => c !== 'status')).toEqual(['on', 'off']);
+  });
+
+  it('stays on when one of them played through it, though the other found nothing', async () => {
+    const sw = fakeWarp(office);
+    const holds = new WarpHolds(sw);
+    const warp = { switch: sw, auto: true };
+    const slow = later();
+    const b = torrentThroughWarp(warp, holds, failed([noPeers('B')]), async () => {
+      await slow.wait;
+      return failed([noPeers('B')]);
+    });
+    expect((await torrentThroughWarp(warp, holds, failed([noPeers('A')]), async () => played)).ok).toBe(true);
+    slow.open();
+    expect((await b).attempts.find((x) => x.provider === WARP_ATTEMPT)?.detail).toContain('another torrent play plays through it');
+    expect(sw.calls.filter((c) => c !== 'status')).toEqual(['on']);
+  });
+
+  it('never switches off a WARP the owner turned on, whatever the asks find', async () => {
+    const sw = fakeWarp({ ...office, warp: 'connected' });
+    const holds = new WarpHolds(sw);
+    const again = vi.fn();
+    await torrentThroughWarp({ switch: sw, auto: true }, holds, failed([noPeers('A')]), again);
+    await torrentThroughWarp({ switch: sw, auto: true }, holds, failed([noPeers('B')]), again);
+    expect(again).not.toHaveBeenCalled();
+    expect(sw.calls).toEqual(['status', 'status']);
   });
 });
 

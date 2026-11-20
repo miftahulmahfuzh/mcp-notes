@@ -10,6 +10,7 @@ import { TorrentSource, type FindAnswer, type TorrentSwarm } from '../../../src/
 import type { RememberedChannel } from '../../../src/directStream/types.js';
 import { directStreamRoutes } from '../../../src/http/directStreamApi.js';
 import { siteFallback, sitesToAsk } from '../../../src/streaming/fallback.js';
+import type { WarpState, WarpSwitch } from '../../../src/streaming/warp.js';
 
 const HEADERS = { origin: 'http://localhost', 'content-type': 'application/json' };
 const PLAY_FILM = { kind: 'movie', tmdb_id: 467905 };
@@ -46,6 +47,8 @@ interface Setup {
   site?: unknown;
   /** Held until opened: the streaming command's answer. */
   holdSite?: Promise<void>;
+  /** Cloudflare WARP's switch, with the automatic flip. */
+  warp?: WarpSwitch;
 }
 
 function setup(o: Setup = {}) {
@@ -122,6 +125,7 @@ function setup(o: Setup = {}) {
       },
     },
     torrent: () => torrent,
+    ...(o.warp === undefined ? {} : { warp: { switch: o.warp, auto: true } }),
     siteFallback: fallback,
     sessions: new SessionStore(() => NOW),
     now: () => NOW,
@@ -269,6 +273,24 @@ describe('a named method goes to what last played the title through that method'
     const nothing = setup({ known, releaseNames: names, torrentHasIt: false });
     expect((await post(nothing.app, { ...PLAY_FILM, provider: 'torrent' })).json.session.torrent.info_hash).toBe(h(9));
     expect(nothing.finds).toHaveBeenCalledTimes(1);
+
+    // At the office with no peer anywhere: WARP is switched on once around the search and the remembered torrent,
+    // and the title's torrents are marked failed once, when both found nothing.
+    let warp: WarpState['warp'] = 'disconnected';
+    const switched: string[] = [];
+    const office: WarpSwitch = {
+      status: async () => ({ ok: true, warp, ssid: 'Employee' }),
+      set: async (on) => {
+        switched.push(on ? 'on' : 'off');
+        warp = on ? 'connected' : 'disconnected';
+        return { ok: true, warp, ssid: 'Employee', changed: true };
+      },
+    };
+    const dark = setup({ known, releaseNames: names, deadHashes: [h(1), h(9)], warp: office });
+    expect((await post(dark.app, { ...PLAY_FILM, provider: 'torrent' })).status).toBe(502);
+    expect(switched).toEqual(['on', 'off']);
+    expect(dark.failed).toEqual(['torrent']);
+    expect(dark.opened.filter((x) => x === h(9))).toHaveLength(2);
 
     // A remembered 1080p is opened again with no index asked.
     const tall = setup({ known, releaseNames: { [h(9)]: 'Film.2026.1080p.WEB-DL.x264.AAC-OLD' } });
