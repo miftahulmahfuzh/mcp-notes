@@ -288,6 +288,21 @@ describe('diagnose.mjs', () => {
     expect(text).toContain('missing:');
     expect(text).toContain('the session had ended when the snapshot was taken');
   });
+
+  it('leaves the seek-preview pictures (kind image) out of the pass-through answers and the cause', () => {
+    const from = path.join(FIXTURES, 'host_slow');
+    const plain = readFolder(from);
+    const dir = mkdtempSync(path.join(tmpdir(), 'stream-report-image-'));
+    for (const name of readdirSync(from)) writeFileSync(path.join(dir, name), readFileSync(path.join(from, name)));
+    const first = plain.passes[0] as Record<string, unknown>;
+    const pictures = Array.from({ length: 30 }, (_, i) =>
+      JSON.stringify({ ...first, kind: 'image', path: `/thumbs/sprite-${i}.jpg`, status: 502, outcome: 'error', bytes: 0 }),
+    );
+    writeFileSync(path.join(dir, 'evidence.jsonl'), `${readFileSync(path.join(from, 'evidence.jsonl'), 'utf8').trimEnd()}\n${pictures.join('\n')}\n`);
+    const withPictures = readFolder(dir);
+    expect(withPictures.passes).toHaveLength(plain.passes.length);
+    expect(classify(withPictures).cause).toBe(classify(plain).cause);
+  });
 });
 
 describe('collect.sh', () => {

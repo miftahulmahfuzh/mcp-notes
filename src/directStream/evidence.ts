@@ -46,7 +46,7 @@ const requestSchema = z.object({
   stream_host: z.string().nullable(),
   path: z.string().nullable(),
   range: z.string().nullable(),
-  kind: z.enum(['hls', 'dash', 'vtt', 'media']).nullable(),
+  kind: z.enum(['hls', 'dash', 'vtt', 'media', 'image']).nullable(),
   status: z.number().int().nullable(),
   answer: z.number().int(),
   ttfb_ms: z.number().nullable(),

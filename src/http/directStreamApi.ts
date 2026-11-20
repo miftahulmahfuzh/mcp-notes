@@ -176,14 +176,16 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     });
   });
 
-  r.get('/api/stream/sessions/:id/p', (c) =>
-    service().passThrough(c.req.param('id'), {
+  r.get('/api/stream/sessions/:id/p', (c) => {
+    const image = c.req.query('img') === '1';
+    return service().passThrough(c.req.param('id'), {
       target: c.req.query('u') ?? '',
-      range: c.req.header('range') ?? null,
-      vtt: c.req.query('vtt') === '1',
+      range: image ? null : (c.req.header('range') ?? null),
+      vtt: !image && c.req.query('vtt') === '1',
+      ...(image ? { preview: 'image' as const } : {}),
       signal: c.req.raw.signal,
-    }),
-  );
+    });
+  });
 
   r.post('/api/stream/sessions/:id/refresh', sameOriginOnly, async (c) => {
     try {

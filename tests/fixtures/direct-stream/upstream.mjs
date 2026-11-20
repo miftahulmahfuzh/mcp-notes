@@ -33,6 +33,36 @@ const SEGMENT = Buffer.from(Array.from({ length: SEGMENT_BYTES }, (_, i) => i % 
 const VTT = 'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHello.\n';
 const SRT = '1\r\n00:00:01,000 --> 00:00:03,000\r\nHello.\r\n';
 
+// A player's seek-preview track and its pictures (fake-cli.mjs's <dir>/thumbs names the track a resolve answers).
+const PNG_1PX = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+const THUMBS_VTT = ['WEBVTT', '', '00:00:00.000 --> 00:00:04.000', 'sprite-0.png#xywh=0,0,160,90', '', '00:00:04.000 --> 00:00:08.000', 'sprite-0.png#xywh=160,0,160,90', ''].join('\n');
+const WHOLE_VTT = ['WEBVTT', '', '00:00:00.000 --> 00:00:04.000', 'sprite-0.png', '', '00:00:04.000 --> 00:00:08.000', 'sprite-1.png', ''].join('\n');
+let bigVtt = null;
+
+/** /thumbs/...: [status, type, body], or null (404). */
+function thumbsAnswer(pathname) {
+  switch (pathname) {
+    case '/thumbs/thumbs.vtt':
+      return [200, 'text/vtt', THUMBS_VTT];
+    case '/thumbs/whole.vtt':
+      return [200, 'text/vtt', WHOLE_VTT];
+    case '/thumbs/words.vtt':
+      return [200, 'text/vtt', VTT];
+    case '/thumbs/page.vtt':
+      return [200, 'text/html; charset=utf-8', '<!doctype html><title>Just a moment...</title>'];
+    case '/thumbs/big.vtt':
+      bigVtt ??= `WEBVTT\n\nNOTE ${'x'.repeat(3 * 1024 * 1024)}\n`;
+      return [200, 'text/vtt', bigVtt];
+    case '/thumbs/sprite-0.png':
+    case '/thumbs/sprite-1.png':
+      return [200, 'image/png', PNG_1PX];
+    case '/thumbs/page.png':
+      return [200, 'text/html; charset=utf-8', '<!doctype html><title>Not found</title>'];
+    default:
+      return null;
+  }
+}
+
 function hlsMaster(alt) {
   return [
     '#EXTM3U',
@@ -170,6 +200,8 @@ function filmAnswer(pathname, state) {
 
 /** [status, content type, body] for a path, or null (404). */
 function answer(pathname, alt) {
+  const thumbs = thumbsAnswer(pathname);
+  if (thumbs !== null) return thumbs;
   if (pathname === '/hls/master.m3u8') return [200, 'application/vnd.apple.mpegurl', hlsMaster(alt)];
   const media = /^\/hls\/(720|1080)\/index\.m3u8$/.exec(pathname);
   if (media) return [200, 'application/vnd.apple.mpegurl', hlsMedia(media[1])];

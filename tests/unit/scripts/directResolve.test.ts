@@ -8,7 +8,7 @@ import { ANIME_SEED_PATH, main, openInChrome, parseArgs, readHealth, readProvide
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { orderProviders } from '../../../claude/streaming/direct/order.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { embedUrl, indexSubtitles, pickSource, resolveTitle, seriesPlayerFrame } from '../../../claude/streaming/direct/resolve.mjs';
+import { embedUrl, indexSubtitles, pickSource, resolveTitle, seriesPlayerFrame, thumbnailTrack } from '../../../claude/streaming/direct/resolve.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { MEDIA_EXPRESSION, MUTE_SCRIPT, parseSniffReply } from '../../../claude/streaming/direct/sniff.mjs';
 
@@ -204,6 +204,7 @@ describe('picking the stream out of a capture', () => {
       subtitles: [{ url: 'https://cdn.example/hls/subs/en.m3u8', lang: 'en', label: 'English', format: 'hls', source: 'manifest' }],
       best_height: 2160,
       en_subtitle: true,
+      thumbnails: null,
     });
   });
 
@@ -236,18 +237,37 @@ describe('picking the stream out of a capture', () => {
     expect(found.en_subtitle).toBe(true);
   });
 
-  it("leaves out a player's seek-preview file: its cues are picture addresses, not words", () => {
+  it("keeps a player's seek-preview file apart from the subtitles: the first one, with the headers its request carried", () => {
     const found = pickSource(
       capture({
         hits: [
           hit({ url: 'https://cdn.example/vd/abc/index.m3u8', mime: 'application/vnd.apple.mpegurl', body: MASTER }),
-          hit({ at_s: 3, url: 'https://cdn.example/vd/abc/thumbs/thumbs.vtt', mime: 'text/vtt' }),
+          hit({ at_s: 3, url: 'https://cdn.example/vd/abc/thumbs/thumbs.vtt', mime: 'text/vtt', referer: 'https://player.example/', origin: 'https://player.example' }),
           hit({ at_s: 3, url: 'https://cdn.example/vd/abc/preview.vtt', mime: 'text/vtt', body: 'WEBVTT\n\n00:00.000 --> 00:10.000\nthumbs/sprite-001.jpg#xywh=160,0,160,90\n' }),
           hit({ at_s: 3, url: 'https://subs.example/the-fix/English.vtt', mime: 'text/vtt' }),
         ],
       }),
     );
     expect(found.subtitles.filter((t: Json) => t.source === 'request').map((t: Json) => t.url)).toEqual(['https://subs.example/the-fix/English.vtt']);
+    expect(found.thumbnails).toEqual({ url: 'https://cdn.example/vd/abc/thumbs/thumbs.vtt', referer: 'https://player.example/', origin: 'https://player.example', user_agent: UA });
+  });
+
+  it('tells a seek-preview file by its cues when its name does not, and skips one the host refused', () => {
+    const hits = [
+      hit({ at_s: 3, url: 'https://cdn.example/vd/abc/thumbs.vtt', mime: 'text/vtt', status: 403 }),
+      hit({ at_s: 3, url: 'https://cdn.example/vd/abc/preview.vtt', mime: 'text/vtt', user_agent: null, body: 'WEBVTT\n\n00:00.000 --> 00:10.000\nsprite-1.jpg#xywh=0,0,160,90\n' }),
+    ];
+    expect(thumbnailTrack(hits, 'TabChrome/1')).toEqual({ url: 'https://cdn.example/vd/abc/preview.vtt', referer: 'https://vidfast.vc/', origin: 'https://vidfast.vc', user_agent: 'TabChrome/1' });
+  });
+
+  it('names no seek-preview file when the page loaded none: a subtitle is never one, nor a sprite picture', () => {
+    const hits = [
+      hit({ url: 'https://subs.example/the-fix/English.vtt', mime: 'text/vtt' }),
+      hit({ url: 'https://cdn.example/vd/abc/thumbs/sprite-1.jpg', mime: 'image/jpeg' }),
+      hit({ url: 'blob:https://vidfast.vc/thumbs.vtt', mime: 'text/vtt' }),
+    ];
+    expect(thumbnailTrack(hits, UA)).toBeNull();
+    expect(pickSource(capture({ hits: [hit({ url: 'https://cdn.example/a.m3u8', body: MASTER }), ...hits] })).thumbnails).toBeNull();
   });
 
   it('finds no stream in refused requests or an empty capture', () => {
@@ -406,7 +426,7 @@ describe('the command', () => {
     expect(printed).toHaveLength(1);
     const out = printed[0] as Json;
     expect(Object.keys(out)).toEqual(['ok', 'kind', 'tmdb_id', 'season', 'episode', 'source', 'attempts']);
-    expect(Object.keys(out.source)).toEqual(['provider', 'embed_url', 'manifest_url', 'manifest_kind', 'headers', 'subtitles', 'best_height', 'en_subtitle', 'audio', 'took_s']);
+    expect(Object.keys(out.source)).toEqual(['provider', 'embed_url', 'manifest_url', 'manifest_kind', 'headers', 'subtitles', 'best_height', 'en_subtitle', 'thumbnails', 'audio', 'took_s']);
     expect(out).toMatchObject({
       ok: true,
       kind: 'movie',

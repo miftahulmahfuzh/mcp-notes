@@ -81,6 +81,23 @@ describe('parseResolveOutput', () => {
     expect(parseOpenOutput({ ok: false, url: 'x', error: 'chrome_not_reachable', detail: 'port 9333' })).toEqual({ ok: false, error: 'chrome_not_reachable', detail: 'port 9333' });
     expect(parseOpenOutput('nonsense')).toMatchObject({ ok: false, error: 'bad_output' });
   });
+
+  it('reads the seek-preview track with its own headers, and none from an older resolver', () => {
+    const thumbnails = { url: 'https://img.example/vd/1/thumbs.vtt?tok=1', referer: 'https://player.example/', origin: '', user_agent: 'Chrome/142' };
+    const out = parseResolveOutput({ ...RESOLVED, source: { ...RESOLVED.source, thumbnails } });
+    expect(out.ok && out.source.thumbnails).toEqual({ url: 'https://img.example/vd/1/thumbs.vtt?tok=1', referer: 'https://player.example/', origin: null, user_agent: 'Chrome/142' });
+    const older = parseResolveOutput(RESOLVED);
+    expect(older.ok && older.source.thumbnails).toBeNull();
+  });
+
+  it('keeps the resolve when its seek-preview track does not fit: no track', () => {
+    for (const thumbnails of [{ url: 'blob:https://player.example/1' }, { url: 42 }, 'thumbs.vtt']) {
+      const out = parseResolveOutput({ ...RESOLVED, source: { ...RESOLVED.source, thumbnails } });
+      expect(out.ok).toBe(true);
+      expect(out.ok && out.source.thumbnails).toBeNull();
+      expect(out.ok && out.source.manifest_url).toBe('https://cdn.example/hls/master.m3u8');
+    }
+  });
 });
 
 describe('directStreamScriptRunner', () => {

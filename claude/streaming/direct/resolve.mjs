@@ -199,6 +199,7 @@ export function indexSubtitles(hits) {
  * A player's seek-preview file: WebVTT whose cues are picture addresses (thumbs/sprite-001.jpg#xywh=160,0,160,90),
  * not words. Shown as a subtitle it prints those addresses over the film. Told by its name
  * (thumbs.vtt, thumbnails/…, sprite, storyboard) or, when the sniffer kept the body, by its cues.
+ * Kept apart as the source's `thumbnails` (thumbnailTrack), never a subtitle.
  */
 export function isThumbnailTrack(hit) {
   if (typeof hit.body === 'string' && /#xywh=\d+,\d+,\d+,\d+/.test(hit.body)) return true;
@@ -211,16 +212,37 @@ export function isThumbnailTrack(hit) {
   return /(?:^|[\/_.-])(?:thumbs?|thumbnails?|sprites?|storyboards?)(?:[\/_.-]|$)/i.test(path);
 }
 
+/** The subtitle format a request names: by its path, its type or a query parameter; null when it names none. */
+function subtitleExtOf(hit) {
+  return (
+    SUBTITLE_EXT.exec(pathOf(hit.url))?.[1]?.toLowerCase() ??
+    (/^text\/vtt/i.test(String(hit.mime ?? '')) ? 'vtt' : null) ??
+    subtitleExtIn(hit.url) ??
+    (hit.type === 'TextTrack' ? 'vtt' : null)
+  );
+}
+
+/**
+ * The player's seek-preview track: the first WebVTT request isThumbnailTrack names, with the headers that very
+ * request carried (the daemon fetches the track, and the pictures it names, with exactly these). Null when the
+ * page loaded none. Never a subtitle: requestSubtitles leaves every such request out.
+ */
+export function thumbnailTrack(hits, userAgent = null) {
+  for (const hit of hits) {
+    if (typeof hit.status === 'number' && !okStatus(hit)) continue;
+    if (!HTTP.test(String(hit.url ?? ''))) continue;
+    if (subtitleExtOf(hit) !== 'vtt' || !isThumbnailTrack(hit)) continue;
+    return { url: hit.url, referer: hit.referer ?? null, origin: hit.origin ?? null, user_agent: hit.user_agent ?? userAgent ?? null };
+  }
+  return null;
+}
+
 function requestSubtitles(hits, skipDirs) {
   const tracks = [];
   for (const hit of hits) {
     if (typeof hit.status === 'number' && !okStatus(hit)) continue;
     if (!/^https?:\/\//.test(String(hit.url ?? ''))) continue;
-    const ext =
-      SUBTITLE_EXT.exec(pathOf(hit.url))?.[1]?.toLowerCase() ??
-      (/^text\/vtt/i.test(String(hit.mime ?? '')) ? 'vtt' : null) ??
-      subtitleExtIn(hit.url) ??
-      (hit.type === 'TextTrack' ? 'vtt' : null);
+    const ext = subtitleExtOf(hit);
     if (!ext) continue;
     if (ext === 'vtt' && skipDirs.has(dirOf(hit.url))) continue;
     if (ext === 'vtt' && isThumbnailTrack(hit)) continue;
@@ -297,7 +319,8 @@ export function manifestBody(sniff) {
 
 /**
  * The stream in one capture: the manifest, the headers its request carried, the subtitle tracks
- * seen, the best height. Null when the capture holds no stream.
+ * seen, the best height, and the player's seek-preview track (null when it loaded none). Null when
+ * the capture holds no stream.
  */
 export function pickSource(sniff) {
   const hits = Array.isArray(sniff?.hits) ? sniff.hits : [];
@@ -316,6 +339,7 @@ export function pickSource(sniff) {
     subtitles,
     best_height: best.height ?? bestHeight(hit, kind),
     en_subtitle: subtitles.some(isEnglish),
+    thumbnails: thumbnailTrack(hits, sniff.user_agent ?? null),
   };
 }
 
