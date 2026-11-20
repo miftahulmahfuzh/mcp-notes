@@ -230,7 +230,31 @@ describe('TorrentStreams', () => {
     expect(streams.status()).toMatchObject({ port: null, swarm: [] });
     expect(await streams.find(REF)).toMatchObject({ infoHash: HASH, fileIndex: 1, state: 'ready' });
     expect(await streams.filePath(HASH, 1)).toBe(folder.diskPath(HASH, FILES[1]!.path));
+    // Opening, using and reading the file (the header probe) is no play.
+    expect(records.rows[0]?.playedAt).toBeNull();
+    await streams.played(HASH);
     expect(records.rows[0]?.playedAt?.getTime()).toBe(clock);
+  });
+
+  it('marks a download played only when asked, at most once a minute, and never from a read of its file', async () => {
+    const { streams, records } = build();
+    await streams.open(PICK, OPEN);
+    await streams.use(HASH, [1]);
+    expect((await streams.serve(HASH, 1, 'bytes=0-9')).status).toBe(206);
+    expect(records.rows[0]?.playedAt).toBeNull();
+    await streams.played(HASH.toUpperCase());
+    const first = clock;
+    clock += 30_000;
+    await streams.played(HASH);
+    expect(records.rows[0]?.playedAt?.getTime()).toBe(first);
+    clock += 31_000;
+    await streams.played(HASH);
+    expect(records.rows[0]?.playedAt?.getTime()).toBe(clock);
+    // A played torrent that then loses is no loser: its row stays.
+    await streams.drop(HASH);
+    expect(records.rows).toHaveLength(1);
+    await streams.played('f'.repeat(40));
+    await streams.played('not a hash');
   });
 
   it('answers not_on_this_machine for the other machine\'s download', async () => {

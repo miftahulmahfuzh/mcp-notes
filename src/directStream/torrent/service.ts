@@ -201,7 +201,7 @@ export class TorrentStreams {
 
   /**
    * Selects these files (videos and subtitles only) and counts one more user. On a finished download read
-   * from disk it only marks the play (nothing joins a swarm). Throws not_open, not_media, invalid_hash.
+   * from disk it does nothing (nothing joins a swarm). Throws not_open, not_media, invalid_hash.
    */
   async use(infoHash: string, fileIndexes: readonly number[]): Promise<void> {
     const hash = normalizeInfoHash(infoHash);
@@ -209,10 +209,7 @@ export class TorrentStreams {
     const live = this.active.get(hash);
     if (live === undefined) {
       const row = await this.repo.get(this.host, hash);
-      if (row !== null && row.state === 'ready' && fileIndexes.every((i) => row.files.some((f) => f.index === i)) && (await this.diskHandle(row)) !== null) {
-        await this.notePlayed(row, true);
-        return;
-      }
+      if (row !== null && row.state === 'ready' && fileIndexes.every((i) => row.files.some((f) => f.index === i)) && (await this.diskHandle(row)) !== null) return;
       throw new TorrentError('not_open', 'Open the torrent before using its files.');
     }
     const chosen = this.mediaFiles(live.handle, fileIndexes);
@@ -272,6 +269,28 @@ export class TorrentStreams {
     const live = hash === null ? undefined : this.active.get(hash);
     if (hash === null || live === undefined || live.users > 0) return;
     await this.leave(hash, live, 'it is not the torrent that plays', { forget: true });
+  }
+
+  /**
+   * The player page reported a position of this torrent's session: it really plays, so its download is kept for
+   * `keepDays` from now. Written at most once a minute per torrent; the file route's own reads (the header probe,
+   * ffmpeg, a subtitle tier) never mark a play. Unknown or the other machine's: ignored. Never throws.
+   */
+  async played(infoHash: string): Promise<void> {
+    const hash = normalizeInfoHash(infoHash);
+    if (hash === null) return;
+    const at = this.nowMs();
+    if (at - (this.playedAt.get(hash) ?? Number.NEGATIVE_INFINITY) < PLAYED_EVERY_MS) return;
+    this.playedAt.set(hash, at);
+    try {
+      const live = this.active.get(hash);
+      const row = live?.row ?? (await this.repo.get(this.host, hash));
+      if (row === null) return;
+      await this.repo.played(this.host, hash, this.now());
+      if (live !== undefined && this.active.get(hash) === live) live.row = { ...live.row, playedAt: this.now() };
+    } catch (err) {
+      this.log(`[notesd] torrent: could not mark ${hash.slice(0, 8)} played: ${messageOf(err)}`);
+    }
   }
 
   /** The peers connected and the download rate of a torrent in the swarm, now; null when it is not in it. */
@@ -351,7 +370,6 @@ export class TorrentStreams {
     if (found instanceof Response) return found;
     const file = found.files.find((f) => f.index === index);
     if (file === undefined) return jsonError(404, 'not_selected', 'That file of the torrent is not one this machine downloads.');
-    await this.notePlayed(found, index === found.fileIndex);
     const live = this.active.get(hash);
     if (found.state === 'ready' || live?.handle.done(index) === true) {
       const onDisk = await this.folder.complete(hash, file.path, file.length);
@@ -554,17 +572,6 @@ export class TorrentStreams {
     return jsonError(404, 'unknown_torrent', 'No torrent download has this info hash.');
   }
 
-  private async notePlayed(row: StreamTorrentRow, isVideo: boolean): Promise<void> {
-    if (!isVideo) return;
-    const at = this.nowMs();
-    if (at - (this.playedAt.get(row.infoHash) ?? Number.NEGATIVE_INFINITY) < PLAYED_EVERY_MS) return;
-    this.playedAt.set(row.infoHash, at);
-    try {
-      await this.repo.played(this.host, row.infoHash, this.now());
-    } catch (err) {
-      this.log(`[notesd] torrent: could not mark ${row.name} played: ${messageOf(err)}`);
-    }
-  }
 
   private viewOf(row: StreamTorrentRow): TorrentDownloadView {
     const available = row.host === this.host;

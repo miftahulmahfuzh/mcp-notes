@@ -77,7 +77,7 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
 
 // `movies` is optional here so a caller without the movies store (phase 3's route tests) still fits;
 // the position route answers `direct_stream_off` without it.
-export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'streaming'>>): Hono {
+export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'streaming' | 'torrents'>>): Hono {
   const r = new Hono();
   const service = (): DirectStreamService => {
     const svc = deps.directStream ?? null;
@@ -195,7 +195,7 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
   });
 
   // Phase 5: the player page's position reports (src/movies/streams.ts).
-  r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null }));
+  r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null, torrents: deps.torrents ?? null }));
 
   return r;
 }
@@ -221,7 +221,7 @@ const positionBody = z.object({
 });
 
 /** The session a report is for: `subtitleRev` counts the times its subtitle changed since the play started (a torrent session's, else a cloud session's outside one). */
-type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number } | null; outside?: { subtitleRev: number } };
+type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number; infoHash?: string } | null; outside?: { subtitleRev: number } };
 
 /** What the position route reads (AppDeps fits: DirectStreamService.session returns a superset of StreamSessionRef). */
 export interface StreamPositionDeps {
@@ -230,6 +230,8 @@ export interface StreamPositionDeps {
   directStream?: { session(id: string): PositionSession | null | Promise<PositionSession | null>; letGo?(id: string): void; watched?(id: string, report: { paused: boolean; over: boolean }): void } | null;
   /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
   live?: StreamLive | null;
+  /** A torrent session's report marks its download played (its keep clock), as nothing else does. */
+  torrents?: { played(infoHash: string): Promise<void> } | null;
 }
 
 /**
@@ -279,6 +281,8 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
         return c.json({ ok: true, play_id: null, ended: false, subtitle_rev: subtitleRev });
       }
     }
+    const playing = session.torrent?.infoHash;
+    if (playing !== undefined) void deps.torrents?.played(playing);
     const written = await new MovieStreams(movies, options).recordPosition(session, {
       positionS: body.data.position_s,
       durationS: body.data.duration_s ?? null,

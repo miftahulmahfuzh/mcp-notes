@@ -1808,7 +1808,10 @@ DHT node and no peer.
    leaves its swarm with its row and its folder when its open made the row and nothing of it was played;
    a row an earlier play made stays.
    A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
-   A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
+   A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder. Played means
+   the player page reported a position of it (at most one write a minute); the daemon's own reads of the
+   file (the header probe, the remux, a subtitle tier) are no play. A download never played counts from
+   when it finished, else from when it was made.
 8. Peers are reached over TCP only, with no switch. uTP beside it made things worse from this machine, WSL 2
    behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP alone fetched 183, 226, 184
    and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB.
