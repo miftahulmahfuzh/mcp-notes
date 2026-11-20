@@ -404,7 +404,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   if (directStream !== null) {
     try {
       const seeded = await directStream.syncSeed();
-      console.log(`[notesd] direct stream: on, ${seeded.total} providers in the seed (${seeded.inserted} new, ${seeded.updated} updated)`);
+      console.log(`[notesd] direct stream: on, ${seeded.total} providers in the seed (${seeded.inserted} new, ${seeded.updated} updated${seeded.removed.length === 0 ? '' : `, ${seeded.removed.join(', ')} removed`})`);
     } catch (err) {
       console.error(`[notesd] direct stream: could not load the provider seed: ${err instanceof Error ? err.message : String(err)}`);
     }

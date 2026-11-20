@@ -6,7 +6,6 @@ import {
   CAUSES,
   CampaignAbort,
   FINDINGS_FILE,
-  SEED_FILE,
   applySeed,
   checkFindings,
   claimedExpiry,
@@ -23,7 +22,9 @@ import {
   // @ts-expect-error -- plain .mjs scripts without type declarations
 } from '../../../claude/streaming/direct/campaign.mjs';
 
-// The seed's names and film templates, with nothing measured: a live campaign fills the rest.
+// The 24 fmovies providers the campaign was run on (the seed as it stood then), names and film templates, with
+// nothing measured: a live campaign fills the rest.
+const SEED_FILE = path.resolve(import.meta.dirname, '../../fixtures/direct-stream/fmovies-24.seed.json');
 const seed: any[] = JSON.parse(readFileSync(SEED_FILE, 'utf8')).map((p: any) => ({ ...p, tv: null, browser_only: false, en_subtitle: null, notes: '' }));
 
 const MASTER = [
@@ -289,7 +290,7 @@ describe('direct streaming probe campaign', () => {
     const original = console.log;
     console.log = (text: string) => out.push(text);
     try {
-      const code = await main('run', ['--only', 'VidFast,VidKing', '--out', dir, '--findings', findings], { sniff: fakeSniff, fetchImpl: fakeFetch, log: () => {} });
+      const code = await main('run', ['--only', 'VidFast,VidKing', '--out', dir, '--findings', findings, '--seed', SEED_FILE], { sniff: fakeSniff, fetchImpl: fakeFetch, log: () => {} });
       expect(code).toBe(0);
     } finally {
       console.log = original;

@@ -74,8 +74,8 @@ describe('migration 0020 (stream providers)', () => {
 
 describe('DirectStreamRepo.syncSeed', () => {
   it('loads the seed once, updates a changed seed row, and never touches a row a site added', async () => {
-    expect(await repo.syncSeed(SEED)).toEqual({ inserted: 3, updated: 0 });
-    expect(await repo.syncSeed(SEED)).toEqual({ inserted: 0, updated: 0 });
+    expect(await repo.syncSeed(SEED)).toEqual({ inserted: 3, updated: 0, removed: [] });
+    expect(await repo.syncSeed(SEED)).toEqual({ inserted: 0, updated: 0, removed: [] });
     const rows = await repo.providers();
     expect(rows.map((r) => [r.name, r.originSite])).toEqual([['Alpha', null], ['Bravo', null], ['Charlie', null]]);
     expect(rows.map(providerSeedJson)[1]).toEqual({
@@ -84,14 +84,30 @@ describe('DirectStreamRepo.syncSeed', () => {
     });
 
     const changed = SEED.map((e) => (e.name === 'Alpha' ? { ...e, tv: 'https://alpha.example/tv/{id}/{season}/{episode}' } : e));
-    expect(await repo.syncSeed(changed)).toEqual({ inserted: 0, updated: 1 });
+    expect(await repo.syncSeed(changed)).toEqual({ inserted: 0, updated: 1, removed: [] });
     expect((await repo.providers())[0]?.tv).toBe('https://alpha.example/tv/{id}/{season}/{episode}');
 
     // A provider /update-cloud-source added keeps its own values even when the seed later names it.
     await db.insert(streamProviders).values({ name: 'Delta', movie: 'https://delta.example/{id}', originSite: 'https://ww6-fmovies.com/' });
-    expect(await repo.syncSeed([...changed, { name: 'Delta', idKind: 'tmdb', movie: 'https://other.example/{id}', tv: null, browserOnly: true, enSubtitle: null, notes: '' }])).toEqual({ inserted: 0, updated: 0 });
+    expect(await repo.syncSeed([...changed, { name: 'Delta', idKind: 'tmdb', movie: 'https://other.example/{id}', tv: null, browserOnly: true, enSubtitle: null, notes: '' }])).toEqual({ inserted: 0, updated: 0, removed: [] });
     const delta = (await repo.providers()).find((r) => r.name === 'Delta');
     expect([delta?.movie, delta?.browserOnly, delta?.originSite]).toEqual(['https://delta.example/{id}', false, 'https://ww6-fmovies.com/']);
+  });
+
+  it('deletes a seed row the seed no longer names, with its health, and never a row a site added', async () => {
+    await repo.syncSeed(SEED);
+    await db.insert(streamProviders).values({ name: 'Delta', movie: 'https://delta.example/{id}', originSite: 'https://ww6-fmovies.com/' });
+    await repo.recordAttempts('host-a', [
+      { provider: 'Charlie', outcome: 'no_stream', took_s: 35, detail: 'unreachable: HTTP 523', source: null },
+      { provider: 'Alpha', outcome: 'resolved', took_s: 3, detail: '', source: null },
+      { provider: 'Delta', outcome: 'bot_check', took_s: 4, detail: '', source: null },
+    ]);
+    expect(await repo.syncSeed(SEED.filter((e) => e.name !== 'Charlie'))).toEqual({ inserted: 0, updated: 0, removed: ['Charlie'] });
+    expect((await repo.providers()).map((r) => r.name)).toEqual(['Alpha', 'Bravo', 'Delta']);
+    expect((await repo.healthFor('host-a')).map((r) => r.name).sort()).toEqual(['Alpha', 'Delta']);
+    // An empty seed (a file read wrong) deletes nothing.
+    expect(await repo.syncSeed([])).toEqual({ inserted: 0, updated: 0, removed: [] });
+    expect((await repo.providers()).map((r) => r.name)).toEqual(['Alpha', 'Bravo', 'Delta']);
   });
 });
 

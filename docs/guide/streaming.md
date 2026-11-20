@@ -456,7 +456,7 @@ requests, with the headers the manifest request carried). `dubbed` is about the 
 provider, so it leaves the provider's health alone. When every stream is a dub the answer is
 `no_source`. A dub's separate English subtitle file is not wasted: when the stream that is kept
 has no English subtitle of its own, the file is added to its tracks (`borrowed_from` names the
-provider it came from). Providers are data, `providers.seed.json`, 24 templates read
+provider it came from). Providers are data, `providers.seed.json`, ten templates read
 from fmovies. `--deadline-s <n>` stops trying providers once `n` seconds have passed (the answer is
 `deadline`, which says nothing about the title). `cli.mjs open <url> --fullscreen` puts a daemon page
 full screen in the streaming Chrome and starts the player with sound, as a click would.
@@ -571,7 +571,9 @@ audio, an English subtitle file).
   loads it into this machine's `stream_providers` table at every start. Each machine has its own
   registry: a provider added with `/update-cloud-source` on one laptop is not on the other.
   An entry changed in the file updates its row. A provider added from a site keeps the site's
-  address in `origin_site` and is never rewritten by the seed. Nothing deletes a provider.
+  address in `origin_site` and is never rewritten or deleted by the seed. A seed provider the file no
+  longer names is deleted at the next start, with its health rows; the plays and sources that name
+  it stay.
 - Health is per machine, in `stream_provider_health`: for each provider the last outcome
   (`resolved`, `no_stream`, `bot_check`, `error`), counts, failures in a row, the last success and
   failure, the last ten times to a stream, the manifest kind, the best quality and whether an
@@ -590,14 +592,14 @@ audio, an English subtitle file).
   gone is replaced by where the provider went: `111movies.com` is a parked domain, and
   Movies111 is `player.vidmario.net/embed/...` (where `111movies.net` forwards the old
   addresses).
-- The ten providers the 2026-11-15 campaign called `unreachable` were looked at one by one on
-  2026-11-19 (each entry's `notes` says which it is). None is blocked by this network: seven are
-  dead (Videasy and VidKing shut down, their names no longer answer anywhere; Peachify, CloudBox,
-  UltraBox, UpCloud and CloudPlay sit behind Cloudflare with an origin that is down, error 521 to
-  523, and UpCloud's host now forwards to UltraBox's), and three moved: MovieVault to
-  `www.rivestream.app` (it resolves a film, late), StreamVault to `hexa.su` and StreamBoxHD to
-  `autoembed.me`, both of which put a puzzle before the film (`bot_check`). A dead provider stays
-  in the registry, and after five failures in a row the order puts it last.
+- The seed holds the ten fmovies providers that still give a stream here. Fourteen were taken out
+  of it: seven dead (Videasy and VidKing shut down, their names no longer answer anywhere; Peachify,
+  CloudBox, UltraBox, UpCloud and CloudPlay sit behind Cloudflare with an origin that is down,
+  error 521 to 523), and seven that only ever showed a puzzle or a bot check and never resolved
+  (VidMov, VidFyi and VidSrc behind vidsrc.sh, NonTongo, MediaHub, StreamVault at `hexa.su`,
+  StreamBoxHD at `autoembed.me`). MovieVault resolves at `www.rivestream.app` (late) and Movies111
+  at `player.vidmario.net`. `/update-cloud-source` on ww6-fmovies.com would add the fourteen back
+  as site providers; they then rest after five failures in a row like any other.
 
 ### How a provider delivers
 

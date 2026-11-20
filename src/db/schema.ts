@@ -1520,7 +1520,8 @@ export type StreamManifestKind = (typeof STREAM_MANIFEST_KINDS)[number]
  * embed address template keyed by the TMDB (or IMDb) id: `movie` has `{id}`, `tv` adds `{season}` and
  * `{episode}` (null: no episode template known). `origin_site` null means the row comes from the
  * checked-in seed, which the daemon syncs at every start; a site's address means /update-cloud-source
- * added it, and the seed never rewrites it. Nothing deletes a provider.
+ * added it, and the seed never rewrites or deletes it. A seed row the seed no longer names is deleted
+ * at the next start (health cascades; movie_stream_sources and plays name providers as text).
  */
 export const streamProviders = pgTable(
   'stream_providers',

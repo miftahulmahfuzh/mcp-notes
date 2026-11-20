@@ -9,33 +9,6 @@
     "notes": "campaign 2026-11-19: resolved hls 696p en in 7.9 s; Fight Club: not_found, episodes"
   },
   {
-    "name": "Videasy",
-    "id_kind": "tmdb",
-    "movie": "https://player.videasy.net/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: unreachable; dead: player.videasy.net only forwards to player.videasy.to, whose name servers refuse (shut down, with its mirror VidKing)"
-  },
-  {
-    "name": "VidKing",
-    "id_kind": "tmdb",
-    "movie": "https://www.vidking.net/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: unreachable; dead: the name servers of vidking.net refuse every query (Videasy's mirror, shut down with it)"
-  },
-  {
-    "name": "Peachify",
-    "id_kind": "tmdb",
-    "movie": "https://peachify.top/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: unreachable; dead: Cloudflare 523, the origin of peachify.top is unreachable (same on 2026-11-15); not an ISP block"
-  },
-  {
     "name": "Smashy",
     "id_kind": "tmdb",
     "movie": "https://player.smashystream.com/movie/{id}",
@@ -72,24 +45,6 @@
     "notes": "campaign 2026-11-19: resolved dash 480p in 7.3 s; episodes"
   },
   {
-    "name": "VidMov",
-    "id_kind": "tmdb",
-    "movie": "https://vidsrc.mov/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: bot_check"
-  },
-  {
-    "name": "VidFyi",
-    "id_kind": "tmdb",
-    "movie": "https://vidsrc.fyi/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: bot_check"
-  },
-  {
     "name": "VidRock",
     "id_kind": "tmdb",
     "movie": "https://vidrock.net/movie/{id}",
@@ -108,24 +63,6 @@
     "notes": "campaign 2026-11-19: resolved hls ?p in 7.6 s; episodes; moved: 111movies.com is a parked domain, 111movies.net forwards to player.vidmario.net"
   },
   {
-    "name": "NonTongo",
-    "id_kind": "tmdb",
-    "movie": "https://www.nontongo.win/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: bot_check"
-  },
-  {
-    "name": "VidSrc",
-    "id_kind": "tmdb",
-    "movie": "https://vidsrc.me/embed/movie?tmdb={id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: bot_check"
-  },
-  {
     "name": "HyperLink",
     "id_kind": "tmdb",
     "movie": "https://vidsrc.wtf/api/1/movie/?id={id}&color=215fb3",
@@ -142,69 +79,6 @@
     "browser_only": false,
     "en_subtitle": true,
     "notes": "campaign 2026-11-19: resolved hls 801p en in 14.2 s; needed_click, episodes"
-  },
-  {
-    "name": "UltraBox",
-    "id_kind": "tmdb",
-    "movie": "https://player.vidplus.to/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: unreachable; dead: player.vidplus.to forwards to player2.vidplus.pro, Cloudflare 521 (same on 2026-11-15); not an ISP block"
-  },
-  {
-    "name": "CloudBox",
-    "id_kind": "tmdb",
-    "movie": "https://vidify.top/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: unreachable; dead: Cloudflare 521, the web server of vidify.top is down (same on 2026-11-15); not an ISP block"
-  },
-  {
-    "name": "UpCloud",
-    "id_kind": "tmdb",
-    "movie": "https://player.vidsrc.co/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: unreachable; dead: player.vidsrc.co now forwards to player.vidplus.to, UltraBox's host, Cloudflare 521"
-  },
-  {
-    "name": "StreamVault",
-    "id_kind": "tmdb",
-    "movie": "https://hexa.su/watch/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: bot_check; moved from hexa.watch (the name no longer exists) to hexa.su, which shows a Cap \"Verification Required\" puzzle before the film: bot_check, never solved"
-  },
-  {
-    "name": "MediaHub",
-    "id_kind": "tmdb",
-    "movie": "https://spencerdevs.xyz/movie/{id}?theme=215fb3",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: bot_check"
-  },
-  {
-    "name": "CloudPlay",
-    "id_kind": "tmdb",
-    "movie": "https://vidsrc.cc/v2/embed/movie/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: unreachable; dead: Cloudflare 522, the origin of vidsrc.cc times out (same on 2026-11-15); not an ISP block"
-  },
-  {
-    "name": "StreamBoxHD",
-    "id_kind": "tmdb",
-    "movie": "https://autoembed.me/movie/tmdb/{id}",
-    "tv": null,
-    "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-19: bot_check; moved from test.autoembed.cc (the name no longer exists) to autoembed.me (its own docs: /movie/tmdb/{id}, /tv/tmdb/{id}-{season}-{episode}), whose player shows a slider puzzle: bot_check, never solved"
   },
   {
     "name": "MovieVault",

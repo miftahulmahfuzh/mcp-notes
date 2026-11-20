@@ -237,6 +237,8 @@ export interface SyncSeedResult {
   total: number;
   inserted: number;
   updated: number;
+  /** Seed providers the file no longer names, deleted with their health. */
+  removed: string[];
 }
 
 export interface DirectStreamServiceOptions {
@@ -471,12 +473,12 @@ export class DirectStreamService {
     return this.opts.host;
   }
 
-  /** Loads the seed file into the shared registry (insert missing, update changed seed rows). */
+  /** Loads the seed files into the registry (insert missing, update changed seed rows, delete seed rows the files no longer name). */
   async syncSeed(): Promise<SyncSeedResult> {
     const animeFile = this.opts.animeSeedFile ?? null;
     const entries = [...(await readSeedFile(this.opts.seedFile)), ...(animeFile === null ? [] : await readSeedFile(animeFile))];
-    const { inserted, updated } = await this.repo.syncSeed(entries, this.now());
-    return { total: entries.length, inserted, updated };
+    const { inserted, updated, removed } = await this.repo.syncSeed(entries, this.now());
+    return { total: entries.length, inserted, updated, removed };
   }
 
   /**
