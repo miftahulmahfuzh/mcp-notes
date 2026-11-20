@@ -6,20 +6,20 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "21482bc",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": null,
+      "note": "preview core, two previews routes, preview_rev, cache source, NOTESD_STREAM_PREVIEWS; branch phase-1-seek-preview-thumbnails; decided: HlsCacheVideo.input() makes previews/ itself one level only (rung 1); proof script must play TMDB movie 467905 not 550 (fake TMDB lacks 550) - phase 5 reuses it; only phase 1's task minted here; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/{1120-203657-255111,1120-203734-257319,1120-203734-257322,1120-203734-257328,1120-203734-257327}/evidence",
       "package": "src/directStream/previews`, `src/http",
       "plan": ".workflows/plan/seek-preview-thumbnails/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-20T20:44:35+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A139",
       "title": "Preview core: builder, store, routes, the cloud-cache source"
     },
     {
@@ -106,6 +106,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/seek-preview-thumbnails/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seek-preview-thumbnails",
-  "updated": "2026-11-20T20:41:41+07:00",
+  "updated": "2026-11-20T20:44:35+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seek-preview-thumbnails"
 }
