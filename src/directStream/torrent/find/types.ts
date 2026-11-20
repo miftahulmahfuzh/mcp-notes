@@ -59,6 +59,8 @@ export interface ReleaseInfo {
   multiAudio: boolean;
   /** A dub without the original track. Never a candidate. */
   dubbed: boolean;
+  /** A known voice-over or dub group the name carries (find/dubGroups.ts: ColdFilm, LostFilm...); null when none. */
+  dubGroup: string | null;
   /** A cinema recording: CAM, TS/TELESYNC, TC/TELECINE. Never a candidate. */
   cam: boolean;
   threeD: boolean;

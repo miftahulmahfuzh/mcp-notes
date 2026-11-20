@@ -1,4 +1,5 @@
 import { normalizeName } from '../../match.js';
+import { dubGroupIn } from './dubGroups.js';
 import type { AudioCodec, Container, ReleaseHeight, ReleaseHints, ReleaseInfo, ReleaseSource, VideoCodec } from './types.js';
 
 /**
@@ -230,6 +231,8 @@ interface Signals {
   multi: boolean;
   dual: boolean;
   dub: boolean;
+  /** A known voice-over or dub group named after the title (dubGroups.ts). */
+  dubGroup: string | null;
   cam: boolean;
   threeD: boolean;
 }
@@ -249,10 +252,18 @@ function readSignals(text: string, titles: readonly string[]): Signals {
     multi: false,
     dual: false,
     dub: false,
+    dubGroup: null,
     cam: false,
     threeD: false,
   };
   if (CYRILLIC.test(text)) signals.languages.add('ru');
+  // A known voice-over group (ColdFilm, LostFilm...) is a dub into its language, as a name that says "dub" is.
+  const group = dubGroupIn(tail.filter((_, i) => !subtitles.has(i)));
+  if (group !== null) {
+    signals.dub = true;
+    signals.dubGroup = group.name;
+    signals.languages.add(group.language);
+  }
   for (const token of tokens) {
     signals.height ??= heightOf(token);
     signals.videoCodec ??= VIDEO_CODECS.get(token) ?? null;
@@ -392,6 +403,7 @@ export function parseRelease(name: string, context: ReleaseContext = {}): Releas
   const multi = fromName.multi || (fromFile?.multi ?? false);
   const dual = fromName.dual || (fromFile?.dual ?? false);
   const dub = fromName.dub || (fromFile?.dub ?? false);
+  const dubGroup = fromName.dubGroup ?? fromFile?.dubGroup ?? null;
   const foreign = original === null ? [] : [...languages].filter((l) => l !== original);
   const dubbed = !originalNamed && !multi && (dub || foreign.length > 0);
   const audioCodecs = [...new Set([...(fromFile?.audioCodecs ?? []), ...fromName.audioCodecs])];
@@ -420,6 +432,7 @@ export function parseRelease(name: string, context: ReleaseContext = {}): Releas
     languages: [...languages].sort(),
     multiAudio,
     dubbed,
+    dubGroup,
     cam,
     threeD,
     season: ref.season ?? named.season,

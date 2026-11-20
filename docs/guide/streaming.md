@@ -2010,6 +2010,13 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   dub never plays over it), and one that really is only the dub is still `dubbed`. A directly-playable dual-audio file
   whose original track is not the default is remuxed so the original plays; with the remux off and the dub as the
   default, it is refused rather than played in the wrong language. In that round one listed seed is enough.
+- **A known voice-over group is a dub by name.** `Eternally.Yours.S01E07.1080p.ColdFilm.mkv` says no "dub", and its
+  file tags no audio language, yet ColdFilm is a Russian voice-over studio. The groups known by name (ColdFilm,
+  LostFilm, HDRezka, NewStudio, Jaskier, AlexFilm, BaibaKo, Kubik v Kube, IdeaFilm, TVShows, NovaMedia, all Russian)
+  are listed once, with what each is, in `find/dubGroups.ts`: a release that names one after the title reads as a dub
+  into that language and goes to the dub-named round above, unless the name also says the original is there
+  (`LostFilm.Rus.Eng`) or the title is made in that language. A group is added there only once it is known to be a
+  voice-over or dub studio.
 - **1080p by default.** The finder puts 1080p first among the well seeded releases (then 720p, 2160p, 480p: a 2160p
   rarely streams smoothly here), ahead of whether Chrome plays the file as is: the remux costs seconds, a lower
   picture costs the whole film. A lower height plays only when no 1080p delivers within the budget.
