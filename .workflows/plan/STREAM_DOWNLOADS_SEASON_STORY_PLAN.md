@@ -5,7 +5,7 @@
 **Analysis:** `.workflows/analyze/20261120-213359-K7Q2_code_analyzer.md`
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story`
 **Branch:** `feature/stream-downloads-season-story` (base: `origin/main` @ `72283db`)
-**Phases:** 9
+**Phases:** 10
 **Status:** planned
 **Coordinator:** —
 
@@ -37,7 +37,7 @@ And, to the assistant's proposal (recorded in the analysis under "User-Provided 
 
 | ID | What the user asked for (verbatim) | Phases |
 |---|---|---|
-| R1 | i am just thinking , why not add an icon button Download as well? add it to title page. from my experince using Stream subsystem, Torrent always gives higher image quality (if it is a 1080p magnet) compared to Non Torrent sources. i am thinking, by default, clicking download will download the 1080p magnet version, but if it is not available, then download (or cache, if you prefer to call it that way) from NT cloud sources. you know what, just add a small dropdown "Choose how to download <movie/series name>" , so user can manually select NT source if he wanted to. | 1, 2, 4, 8 |
+| R1 | i am just thinking , why not add an icon button Download as well? add it to title page. from my experince using Stream subsystem, Torrent always gives higher image quality (if it is a 1080p magnet) compared to Non Torrent sources. i am thinking, by default, clicking download will download the 1080p magnet version, but if it is not available, then download (or cache, if you prefer to call it that way) from NT cloud sources. you know what, just add a small dropdown "Choose how to download <movie/series name>" , so user can manually select NT source if he wanted to. | 1, 2, 4, 8, 10 |
 | R2 | for Series, we also need to add the download button in Season row (which will start downloading the whole season) , and episode row (which will only download that episode) . | 3, 4, 8 |
 | R3 | i hope we can show somekind of live progress bar of the download as well . title page can see this. | 4, 8, 9 |
 | R4 | i think we need to improve Cache page: add "Downloading" filter : by default (cache-default-view), we show all files that are being downloaded together with the downloaded files in the cache list. but we can click this Downloading filter and the list will only show the files that are currently being downloaded only (cache-downloading-view). | 5, 9 |
@@ -51,7 +51,7 @@ And, to the assistant's proposal (recorded in the analysis under "User-Provided 
 | R1.1 | event | WHEN the owner clicks the Download button of a film on its Stream-side title page THE SYSTEM SHALL queue a download of that film to this machine's stream store through `POST /api/stream/downloads` and answer at once | 4, 8 | P4.J1, P8.J2, P8.J9 |
 | R1.2 | event | WHEN a download with no source named is planned THE SYSTEM SHALL try a 1080p torrent with live seeds first, then a cloud source at 1080p or lower, then a torrent below 1080p | 2 | P2.J1 |
 | R1.3 | event | WHEN the owner opens the Download button's caret THE SYSTEM SHALL show a menu titled "Choose how to download <name>" offering best torrent, cloud and pick a torrent, and SHALL download only from the one chosen | 4, 8 | P4.J2, P8.J3, P8.J9 |
-| R1.4 | state | WHILE this machine is on SSID `Employee` THE SYSTEM SHALL send a download with no source named straight to cloud and SHALL NOT switch WARP for any download | 2 | P2.J2 |
+| R1.4 | complex | WHILE this machine is on SSID `Employee` WHEN a torrent download finds no peer at all with WARP off THE SYSTEM SHALL switch WARP on once and ask the torrents again before going on to the cloud | 10 | P10.J1, P10.J3 |
 | R1.5 | unwanted | IF a torrent candidate's audio is not in the title's original language THEN THE SYSTEM SHALL leave it undownloaded and go on to the next candidate | 2 | P2.J3 |
 | R1.6 | ubiquitous | THE SYSTEM SHALL keep a download the owner asked for through the age prune and the budget prune until the owner deletes it | 2 | P2.J4 |
 | R1.7 | event | WHEN the daemon starts with downloads queued or running in `stream_downloads` THE SYSTEM SHALL carry them on from what is on disk | 1, 2 | P1.J1, P1.J2, P2.J5 |
@@ -59,6 +59,7 @@ And, to the assistant's proposal (recorded in the analysis under "User-Provided 
 | R1.9 | state | WHILE a torrent plays on screen THE SYSTEM SHALL pause torrent downloads, and SHALL resume them when that play ends | 2 | P2.J7 |
 | R1.10 | event | WHEN `direct_stream_cache` is called with `action: "start"` and a torrent asked for THE SYSTEM SHALL queue the same download the button queues | 4 | P4.J3 |
 | R1.11 | unwanted | IF no torrent and no cloud source of a title can be downloaded THEN THE SYSTEM SHALL mark the download failed with a reason that `GET /api/stream/downloads` returns | 2, 4 | P2.J8, P4.J6 |
+| R1.12 | event | WHEN a download that held WARP on ends, pauses, fails or is cancelled, or switching WARP on did not reach a peer, THE SYSTEM SHALL put WARP back off unless a play or another download still holds it or the owner turned it on | 10 | P10.J2 |
 | R2.1 | event | WHEN the owner clicks the Download button of a season row THE SYSTEM SHALL queue every aired episode of that season that is not whole on this machine | 3, 4, 8 | P3.J1, P3.J5, P4.J5, P8.J6, P8.J9 |
 | R2.2 | event | WHEN the owner clicks the Download button of an episode row THE SYSTEM SHALL queue that episode only | 4, 8 | P4.J4, P8.J5, P8.J9 |
 | R2.3 | optional | WHERE a season pack with live seeds holds the season THE SYSTEM SHALL download the season from that one torrent and record one `stream_torrents` row per episode | 3 | P3.J3, P3.J4, P3.J5 |
@@ -96,7 +97,7 @@ And, to the assistant's proposal (recorded in the analysis under "User-Provided 
 3. Nothing starts unasked: a download starts only from the owner's click or tool call, for exactly the title, season or episode named. Fetch-ahead and pause caching keep their present behaviour.
 4. A torrent is in the swarm only while something uses it: a download job holds it and lets it go when its files are whole or the job fails or is cancelled. Only video and subtitle files are selected. Nothing from a torrent is run.
 5. Original language only: a download applies the same audio check a play does (`MovieStreams.originalLanguage`), before the bulk of the file is fetched.
-6. WARP is never switched by a download.
+6. A download switches WARP only on SSID `Employee`, only after a torrent step found no peer at all with WARP off, only through the stream service's one `WarpHolds` (the engine never holds `set`), and puts it back as R1.12 says. A WARP the owner turned on is never touched; `claude/streaming/warp.mjs` stays the one place `warp-cli` and `netsh` run. (Until phase 10 lands, phase 2's interim rule holds: no download switches WARP.)
 7. `titleSearchExclusion` and the `/sync-subtitle` rounds are not loosened; the seek-preview rules hold (no network, no swarm, one niced ffmpeg).
 8. Rows record their host; a download row of another machine reads `available: false`.
 9. Every path, binary, fetch, clock, SSID reader, engine and model writer is injected; no test touches the network, the real `~/.claude` or the streaming Chrome. Nothing new runs with `DEFAULT_MOVIES_CONFIG` or when `NOTESD_TORRENT=off` and the cache is off.
@@ -116,7 +117,8 @@ And, to the assistant's proposal (recorded in the analysis under "User-Provided 
 | 6 | Stories from the web: the season story, the episode story web-first | R6 | `src/movies`, `src/http` | 18 | 1 | HARD | `.workflows/plan/stream-downloads-season-story/phase-6.md` | — | — |
 | 7 | The story on the page: the season row's button, sections and sources in the modal | R6 | `web` | 8 | 6 | NORMAL | `.workflows/plan/stream-downloads-season-story/phase-7.md` | — | — |
 | 8 | The title page: Download buttons, the choose menu, progress bars | R1, R2, R3 | `web` | 12 | 4, 7 | NORMAL | `.workflows/plan/stream-downloads-season-story/phase-8.md` | — | — |
-| 9 | Guides, pictures, the feature map and the end-to-end proof | R3, R4, R6 | `docs`, `verify-notesd` | 19 | 5, 8 | NORMAL | `.workflows/plan/stream-downloads-season-story/phase-9.md` | — | — |
+| 9 | Guides, pictures, the feature map and the end-to-end proof | R3, R4, R6 | `docs`, `verify-notesd` | 19 | 5, 8, 10 | NORMAL | `.workflows/plan/stream-downloads-season-story/phase-9.md` | — | — |
+| 10 | Office network: a torrent download through WARP before the cloud | R1 | `src/directStream/downloads` | 17 | 2, 3, 4 | HARD | `.workflows/plan/stream-downloads-season-story/phase-10.md` | — | — |
 
 Phase 1 serves two requirements because both features need a migration and two parallel `npm run db:generate` runs would both write `drizzle/0043_*` and `drizzle/meta/_journal.json`. Phases 4, 8 and 9 serve several because one route file, one title page and one guide pass carry R1 to R3 (and R4, R6 for the proof) together. Phase 8 depends on phase 7 only because both edit `EpisodeList.tsx` and `MovieDetail.tsx`; the story chain (1 → 6 → 7) is short and finishes long before phase 4 does.
 
@@ -172,9 +174,18 @@ Phase 1 serves two requirements because both features need a migration and two p
 
 ### Phase 9 — Guides, pictures, the feature map and the end-to-end proof
 **Satisfies:** R3, R4, R6
+**After phase 10:** the guide, `CLAUDE.md`'s WARP rule and the feature map state the office rule as phase 10 built it (phase-10.md, Handoffs, lists the lines of phase-9.md written for the old rule).
 **Owns:** `docs/guide/streaming.md` ("Downloading a title"; "What a title says: its story"; the rules in the code), `docs/guide/movies.md` (Download buttons, season story, Cache page), `docs/guide/architecture.md` (writer table: `stream_downloads`/`DownloadsRepo`; data model: `stream_downloads`, `movie_stories`, `kept_at`), `docs/guide/reference/configuration.md` (the `NOTESD_MOVIES_STORY_MODEL` row only if still stale), `CLAUDE.md`, `README.md` only if a line changes. Pictures: fixture pictures for the streaming guide (`docs:shots -- streaming`); for the movies guide only read-only `--live` retakes, never a fixture picture. `verify.sh`'s `TORRENT_SEED_KBPS` knob (the SSID pin is phase 2's). `.claude/skills/verify-notesd/features/{movies,direct-streaming,README}.md` entries and the `direct-stream/downloads.sh` driver with its steps files (stages story, title, season, cache), run with evidence kept.
 **Does not touch:** behaviour. A defect the proof finds is fixed in the smallest way and noted in the plan's log.
 **Exit criteria:** `npm run docs:check` and `npm test` pass; no `[[CHECK` is left; `downloads.sh RUN` passes on a throwaway daemon with evidence saved.
+
+### Phase 10 — Office network: a torrent download through WARP before the cloud
+**Satisfies:** R1
+**Owns:** `src/directStream/downloads/warp.ts` (`DownloadWarp`, `WarpRounds`, `WarpHold`), `DirectStreamService.warpForDownloads()` over the one `WarpHolds` plays use, the removal of the office branches from `plan.ts`, `service.ts` and `season.ts`, `no_peers_here` meaning "no peer on the office network even after WARP", the texts and tests of phases 2, 3 and 4 that state the old rule (listed in its Handoffs), `docs:gen`.
+**Does not touch:** `torrentWarp.ts`, `claude/streaming/warp.mjs`, `cacheShelf.ts`, web, story code, guide prose and `CLAUDE.md` (phase 9), `verify.sh`.
+**Exit criteria:** its R1.4 and R1.12 tests pass with a fake switch over the real `WarpHolds`; the play WARP tests pass unchanged; `torrentWarp.ts` and `warp.mjs` show no diff; `npm test`, `npm run typecheck` and `docs:check` pass.
+
+Phase 10 shares a wave with phases 5 and 8. Phase 8 is web only. Phase 5 edits `src/daemon.ts` (the `CacheShelf` wiring) and `src/directStream/service.ts` (`aheadFetching`); phase 10's edits to those two files are a comment over `buildStreamDownloads` and `warpForDownloads()` beside `throughWarp`, in separate hunks.
 
 ## Reconciliation Log
 
@@ -215,7 +226,9 @@ Phase 1 serves two requirements because both features need a migration and two p
 
 | Fork | Chosen | Rung |
 |---|---|---|
-| Office network: torrent through WARP, queue until home wifi, or cloud | Straight to cloud on SSID `Employee`; WARP never switched for a download | 5: the owner's "let's do as you say" to that recommendation |
+| Office network: torrent through WARP, queue until home wifi, or cloud | **Overturned by the owner after launch (2026-11-21):** the order is the same on every network; on SSID `Employee` a torrent download that finds no peer switches WARP on once and asks again, holds it while in the swarm, puts it back after, and only then goes on to the cloud. Built by phase 10 over phase 2's interim cloud-only rule | 5: the owner's words, "can't we try to connect to Torrent first, by flipping WARP off<->on … i prefer we download 1080p Torrent instead of 1080p Non Torrent" |
+| Adding the WARP rule while phase 2 was being built | A new phase 10 after phases 2, 3 and 4 instead of re-briefing a running session; phase 2's J2 stays as an interim check that traces nothing | 6: a running phase is never re-briefed |
+| What a download does with WARP when it lets go (phase 10) | Done, failed or cancelled: WARP back off unless a play or another download holds it. Paused for a torrent play: WARP stays on, as after a play today. Daemon stop: WARP left as it is, as a play leaves it | 6: `torrentWarp.ts`' rule for plays |
 | The 40 GB torrent budget vs downloads the owner keeps | Kept downloads are skipped by both prunes and still count in the total shown; the budget's default is unchanged and what is not kept goes first | 1: invariant "kept until the owner deletes it" (R1.6), 6: `stream_caches`' owner/auto convention |
 | Where a web-written or season story lives (the dialogue row needs a dialogue) | A new `movie_stories` table written by `MoviesRepo`; old stories copied in, origin `dialogue` | 6: `movie_genre_guides` convention |
 | Season download from the cloud | One owner's cache per episode through the cache's existing one-at-a-time queue | 6: existing cache queue |
