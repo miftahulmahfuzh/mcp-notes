@@ -683,6 +683,8 @@ this machine keeps on disk for streaming, its torrent downloads (`NOTESD_TORRENT
 copies and cue files) and its cloud stream cache (`NOTESD_STREAM_CACHE_DIR`). Only this machine's: the
 other laptop's rows are never listed.
 
+![The Cache page: the total against the torrent budget, the two bulk buttons, every title holding cache, Dan Da Dan unfolded to its episodes](img/movies/cache.png)
+
 - **The header** says the total against the torrent budget, split by kind: `41.2 of 40 GB · torrents
   35.8 · cloud 5.4`. Sizes are blocks on disk, as the budget's prune measures them, never a file's
   length, so a download still on its way counts what it holds. A torrent folder no row names (the prune

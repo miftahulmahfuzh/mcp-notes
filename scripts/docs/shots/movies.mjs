@@ -409,7 +409,7 @@ export async function live({ page, base, shot, clip, fetchJson }) {
       await states.getByRole('button', { name }).click();
       await tab.waitForTimeout(800);
     }
-    await tab.getByRole('button', { name: 'Series' }).click();
+    await tab.getByRole('button', { name: 'Series', exact: true }).click();
     await tab.waitForTimeout(800);
     await tab.getByRole('button', { name: 'All kinds' }).click();
     await tab.getByRole('searchbox', { name: 'Filter titles' }).pressSequentially('old', { delay: 140 });
