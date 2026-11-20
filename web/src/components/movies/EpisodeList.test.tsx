@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { EpisodeList, type EpisodeListProps } from './EpisodeList';
 import { PLAYER_IDLE, SERIES } from '../../testing/movieFixtures';
+import { makeDownload } from '../../testing/downloadFixtures';
 
 afterEach(() => {
   cleanup();
@@ -119,5 +120,34 @@ describe('EpisodeList: the season story button', () => {
     unmount();
     render(<EpisodeList {...props({ detail, side: 'stream' })} />);
     expect(screen.queryByRole('button', { name: /Narrate the full story/ })).toBeNull();
+  });
+});
+
+describe('EpisodeList: downloads', () => {
+  const binding = (rows = [] as ReturnType<typeof makeDownload>[]) => ({ rows, onNotice: noop, onChanged: noop });
+  const rowOf = (code: string) => document.querySelector(`[data-episode="${code}"]`) as HTMLElement;
+
+  it('puts a Download button on every season head and episode row only when the page hands it the downloads', () => {
+    render(<EpisodeList {...props({ side: 'stream', streamEnabled: true })} />);
+    expect(screen.queryByRole('button', { name: /^Download / })).toBeNull();
+    cleanup();
+    render(<EpisodeList {...props({ side: 'stream', streamEnabled: true, downloads: binding() })} />);
+    for (const s of SERIES.seasons) expect(screen.getByRole('button', { name: `Download MobLand season ${s.season}` })).toBeTruthy();
+    for (const e of season.episodes) {
+      const code = `S${String(e.season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}`;
+      expect(within(rowOf(code)).getByRole('button', { name: `Download MobLand ${code}` })).toBeTruthy();
+    }
+  });
+
+  it('draws the bar on the season head and on the episode row the download belongs to, and nowhere else', () => {
+    const rows = [makeDownload({ title_id: SERIES.id, kind: 'tv', tmdb_id: SERIES.tmdb_id, season: 1, episode: 2, state: 'running', progress: 0.3 })];
+    render(<EpisodeList {...props({ side: 'stream', streamEnabled: true, downloads: binding(rows) })} />);
+    expect(screen.getByRole('progressbar', { name: 'Download of MobLand season 1' }).getAttribute('aria-valuenow')).toBe('30');
+    // Phase 9's drive finds the season's bar inside the season head.
+    expect(screen.getByRole('progressbar', { name: 'Download of MobLand season 1' }).closest('.mv-season-head')).not.toBeNull();
+    expect(within(rowOf('S01E02')).getByRole('progressbar', { name: 'Download of MobLand S01E02' }).getAttribute('aria-valuenow')).toBe('30');
+    expect(within(rowOf('S01E01')).queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByRole('progressbar', { name: 'Download of MobLand season 2' })).toBeNull();
+    expect(screen.getAllByRole('progressbar')).toHaveLength(2);
   });
 });

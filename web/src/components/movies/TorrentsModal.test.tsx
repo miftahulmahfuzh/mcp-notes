@@ -96,6 +96,16 @@ describe('TorrentsModal', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it('downloads a row by its hash when opened for a download, and offers no Play there', async () => {
+    const onDownload = vi.fn();
+    render(<TorrentsModal target={TARGET} what="Eternally Yours S01E07" onDownload={onDownload} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /^Play / })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Download Eternally.Yours.S01E07.1080p.ColdFilm.mkv' }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Download Eternally.Yours.S01E07.1080p.WEB.h264-ETHEL' }));
+    expect(onDownload).toHaveBeenCalledWith('a'.repeat(40), 'Eternally.Yours.S01E07.1080p.WEB.h264-ETHEL');
+  });
+
   it('says other heights, a failure and a left-out release plainly', () => {
     expect(candidateFacts(row({ height: null, size_bytes: null, seeds: null, scrape: null, from: ['played before'], audio: { languages: [], how: 'unknown', heard_probability: null } }))).toEqual(['other', 'played before', 'audio unknown']);
     expect(candidateTags(row({ failed: 'no_stream: the swarm stalled', left_out: 'few_seeds', dub_named: true }))).toEqual([

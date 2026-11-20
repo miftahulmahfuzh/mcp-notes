@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowClockwise, ArrowUUpLeft, CircleNotch, Play, Prohibit, X } from '@phosphor-icons/react';
+import { ArrowClockwise, ArrowUUpLeft, CircleNotch, DownloadSimple, Play, Prohibit, X } from '@phosphor-icons/react';
 import { blacklistTorrent, fetchTorrentCandidates, unblacklistTorrent, type StreamRef, type TorrentCandidateView } from '../../moviesApi';
 import './MovieModal.css';
 
@@ -8,8 +8,10 @@ export interface TorrentsModalProps {
   /** The film or episode the list is of (`what` names it: "Eternally Yours S01E07"). */
   target: StreamRef;
   what: string;
-  /** Plays one torrent for the title, as a pasted magnet; the page shows the play's notice. */
-  onPlay: (infoHash: string, name: string) => void;
+  /** Plays one torrent for the title, as a pasted magnet; the page shows the play's notice. Left out, the rows have no Play. */
+  onPlay?: ((infoHash: string, name: string) => void) | undefined;
+  /** Downloads that one torrent to this machine (the Download button's "Pick a torrent…"). Left out, the rows have no Download. */
+  onDownload?: ((infoHash: string, name: string) => void) | undefined;
   onClose: () => void;
 }
 
@@ -46,12 +48,13 @@ export function candidateTags(c: TorrentCandidateView): Array<{ label: string; k
 }
 
 /**
- * Every candidate torrent of a film or episode, opened from the play menu's Torrent stream row: what the indexes list
- * (their answer of the last ten minutes, or asked again with the refresh button), the torrents this machine opened
- * for it and the magnets pasted for it. Per row its facts and status, and two buttons: play that very torrent, and
- * blacklist it (for every title) or take it off the blacklist. Listing joins no swarm.
+ * Every candidate torrent of a film or episode, opened from the play menu's Torrent stream row (each row plays) or from
+ * a Download button's "Pick a torrent…" (each row downloads): what the indexes list (their answer of the last ten
+ * minutes, or asked again with the refresh button), the torrents this machine opened for it and the magnets pasted for
+ * it. Per row its facts and status, its play or download button, and blacklist it (for every title) or take it off
+ * the blacklist. Listing joins no swarm.
  */
-export function TorrentsModal({ target, what, onPlay, onClose }: TorrentsModalProps) {
+export function TorrentsModal({ target, what, onPlay, onDownload, onClose }: TorrentsModalProps) {
   const [rows, setRows] = useState<TorrentCandidateView[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,16 +143,30 @@ export function TorrentsModal({ target, what, onPlay, onClose }: TorrentsModalPr
                   </span>
                 </span>
                 <span className="mt-acts">
-                  <button
-                    type="button"
-                    className="ibtn hov"
-                    data-tip="Play this one"
-                    aria-label={`Play ${c.name}`}
-                    disabled={c.blacklisted !== null || busy !== null}
-                    onClick={() => onPlay(c.info_hash, c.name)}
-                  >
-                    <Play weight="duotone" />
-                  </button>
+                  {onPlay !== undefined && (
+                    <button
+                      type="button"
+                      className="ibtn hov"
+                      data-tip="Play this one"
+                      aria-label={`Play ${c.name}`}
+                      disabled={c.blacklisted !== null || busy !== null}
+                      onClick={() => onPlay(c.info_hash, c.name)}
+                    >
+                      <Play weight="duotone" />
+                    </button>
+                  )}
+                  {onDownload !== undefined && (
+                    <button
+                      type="button"
+                      className="ibtn hov"
+                      data-tip="Download this one to this machine"
+                      aria-label={`Download ${c.name}`}
+                      disabled={c.blacklisted !== null || busy !== null}
+                      onClick={() => onDownload(c.info_hash, c.name)}
+                    >
+                      <DownloadSimple weight="duotone" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="ibtn hov"
