@@ -37,14 +37,22 @@ const ENGLISH = /^(en|eng)(?:[-_].*)?$/i;
 const isEnglishTrack = (t: EmbeddedTrackInfo): boolean => (t.lang !== null && ENGLISH.test(t.lang.trim())) || /\benglish\b/i.test(t.title ?? '');
 const isForced = (t: EmbeddedTrackInfo): boolean => t.forced === true || /\bforced\b/i.test(t.title ?? '');
 const isSdh = (t: EmbeddedTrackInfo): boolean => t.hearingImpaired === true || /\b(sdh|cc|hearing)\b/i.test(t.title ?? '');
+/**
+ * A signs-and-songs track ("Signs & Songs@EMBER", "Signs/Songs", "Signs"): only the on-screen text and
+ * the lyrics, never what is said. A title that also says "full" or "dialogue" is a full track.
+ */
+export const isSignsTrackTitle = (title: string | null | undefined): boolean =>
+  /\b(signs?|songs?)\b/i.test(title ?? '') && !/\b(full|dialogue|dialog)\b/i.test(title ?? '');
 
 /**
  * The English text track to show: a full one before an SDH one, SubRip before ASS, then the first in
  * the file. A forced track (only the lines in another language) is taken only when it is the one
- * English text track. Picture tracks and tracks in other languages are never chosen.
+ * English text track. A signs-and-songs track is never taken, not even alone: with no other the chain
+ * goes on to the subtitle services, whose files hold the dialogue. Picture tracks and tracks in other
+ * languages are never chosen.
  */
 export function chooseEmbeddedTrack(tracks: readonly EmbeddedTrackInfo[]): EmbeddedTrackInfo | null {
-  const english = tracks.filter((t) => TEXT_SUBTITLE_CODECS.has(t.codec.toLowerCase()) && isEnglishTrack(t));
+  const english = tracks.filter((t) => TEXT_SUBTITLE_CODECS.has(t.codec.toLowerCase()) && isEnglishTrack(t) && !isSignsTrackTitle(t.title));
   const full = english.filter((t) => !isForced(t));
   if (full.length === 0) return english.length === 1 ? (english[0] ?? null) : null;
   const rank = (t: EmbeddedTrackInfo): [number, number, number] => [isSdh(t) ? 1 : 0, CODEC_RANK[t.codec.toLowerCase()] ?? 9, t.index];

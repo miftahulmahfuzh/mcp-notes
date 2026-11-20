@@ -34,7 +34,7 @@ const OTHER_CODES = new Set([
   'sr', 'srp', 'sl', 'slv', 'et', 'est', 'lv', 'lav', 'lt', 'lit', 'is', 'ice', 'isl', 'ca', 'cat',
 ]);
 /** Words after the language that say what kind of track it is, never which language. */
-const TAIL_WORDS = new Set(['sdh', 'hi', 'cc', 'forced', 'foreign', 'full', 'default', 'hearing', 'impaired']);
+const TAIL_WORDS = new Set(['sdh', 'hi', 'cc', 'forced', 'foreign', 'full', 'default', 'hearing', 'impaired', 'signs', 'songs', 'sign', 'song']);
 
 function tokensOf(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t !== '');
@@ -64,10 +64,17 @@ export function subtitleLanguage(filePath: string, titleName = ''): SubtitleLang
   return null;
 }
 
-/** `forced` (only the lines in another language), `sdh` (with sounds and speakers) or `plain`. */
-export function subtitleFlavor(filePath: string): SubtitleFlavor {
+/**
+ * `forced` (only the lines in another language, or a signs-and-songs file: on-screen text and lyrics,
+ * never the dialogue), `sdh` (with sounds and speakers) or `plain`.
+ */
+export function subtitleFlavor(filePath: string, titleName = ''): SubtitleFlavor {
   const tokens = tokensOf(baseOf(filePath).base);
   if (tokens.includes('forced') || tokens.includes('foreign')) return 'forced';
+  // The video's own name is not read as signs: "Signs.2002.en.srt", "Song.of.the.Sea.en.srt".
+  const title = new Set(tokensOf(titleName.replace(/\.[a-z0-9]{2,4}$/i, '')));
+  const own = tokens.filter((t) => !title.has(t));
+  if (['signs', 'sign', 'songs', 'song'].some((w) => own.includes(w)) && !own.includes('full') && !own.includes('dialogue')) return 'forced';
   if (tokens.includes('sdh') || tokens.includes('cc') || tokens.includes('hi') || (tokens.includes('hearing') && tokens.includes('impaired'))) return 'sdh';
   return 'plain';
 }
@@ -98,15 +105,15 @@ function formatRank(name: string): number {
 export function rankSubtitleFiles(files: readonly TorrentFileInfo[], subtitleIndexes: readonly number[], videoName: string): SubtitleFilePick[] {
   const wanted = new Set(subtitleIndexes);
   const subs = files.filter((f) => wanted.has(f.index) && SUBTITLE_EXT.test(f.name));
-  const english = subs.filter((f) => subtitleLanguage(f.path, videoName) === 'en' && subtitleFlavor(f.path) !== 'forced');
+  const english = subs.filter((f) => subtitleLanguage(f.path, videoName) === 'en' && subtitleFlavor(f.path, videoName) !== 'forced');
   if (english.length > 0) {
     return english
-      .map((file) => ({ file, flavor: subtitleFlavor(file.path), format: formatRank(file.name) }))
+      .map((file) => ({ file, flavor: subtitleFlavor(file.path, videoName), format: formatRank(file.name) }))
       .sort((a, b) => FLAVOR_ORDER[a.flavor] - FLAVOR_ORDER[b.flavor] || a.format - b.format || b.file.length - a.file.length)
       .map(({ file, flavor }) => ({ file, lang: 'en' as const, label: flavor === 'sdh' ? 'English SDH' : 'English' }));
   }
   const [only] = subs;
-  if (subs.length === 1 && only !== undefined && subtitleLanguage(only.path, videoName) === null && subtitleFlavor(only.path) !== 'forced') {
+  if (subs.length === 1 && only !== undefined && subtitleLanguage(only.path, videoName) === null && subtitleFlavor(only.path, videoName) !== 'forced') {
     return [{ file: only, lang: null, label: '' }];
   }
   return [];

@@ -58,6 +58,14 @@ describe('chooseEmbeddedTrack', () => {
     expect(chooseEmbeddedTrack([sub(2, 'subrip', 'eng', { forced: true }), sub(3, 'ass', 'eng', { forced: true })])).toBeNull();
   });
 
+  it('never takes a signs-and-songs track, not even alone, so the subtitle services are asked', () => {
+    // JUJUTSU KAISEN from EMBER: the signs track comes first in the file and both are ASS.
+    expect(chooseEmbeddedTrack([sub(2, 'ass', 'eng', { title: 'Signs & Songs@EMBER' }), sub(3, 'ass', 'eng', { title: 'Full Subtitles@EMBER' })])?.index).toBe(3);
+    expect(chooseEmbeddedTrack([sub(2, 'ass', 'eng', { title: 'Signs & Songs@EMBER' })])).toBeNull();
+    expect(chooseEmbeddedTrack([sub(2, 'ass', 'eng', { title: 'Signs/Songs' }), sub(3, 'ass', 'eng', { title: 'Signs' })])).toBeNull();
+    expect(chooseEmbeddedTrack([sub(2, 'ass', 'eng', { title: 'Full (Dialogue + Signs)' })])?.index).toBe(2);
+  });
+
   it('names the track by its title when it says something', () => {
     expect(trackLabel(sub(2, 'subrip', 'eng', { title: 'English SDH' }))).toBe('English SDH');
     expect(trackLabel(sub(2, 'subrip', 'eng', { title: 'eng' }))).toBe('English');

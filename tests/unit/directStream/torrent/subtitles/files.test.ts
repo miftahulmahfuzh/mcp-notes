@@ -37,6 +37,15 @@ describe('subtitleLanguage', () => {
     expect(subtitleFlavor('Film.eng.forced.srt')).toBe('forced');
     expect(subtitleFlavor('Film.en.srt')).toBe('plain');
   });
+
+  it('reads a signs-and-songs file as forced, but not the words of the video name', () => {
+    expect(subtitleFlavor('Show.S01E02.eng.signs.ass')).toBe('forced');
+    expect(subtitleFlavor('Show.S01E02.English [Signs & Songs].ass')).toBe('forced');
+    expect(subtitleFlavor('Show.S01E02.English [Full + Signs].ass')).toBe('plain');
+    expect(subtitleFlavor('Signs.2002.en.srt', 'Signs.2002.mkv')).toBe('plain');
+    expect(subtitleFlavor('Song.of.the.Sea.2014.en.srt', 'Song.of.the.Sea.2014.mp4')).toBe('plain');
+    expect(subtitleLanguage('Show.S01E02.eng.signs.ass', 'Show.S01E02.mkv')).toBe('en');
+  });
 });
 
 describe('rankSubtitleFiles (R3.1)', () => {

@@ -2391,7 +2391,8 @@ Whisper transcript); only a file `/sync-subtitle` checked against the audio outr
    or `Subs/<film>/2_English.srt` beside the video. Those files are downloaded with the video (on
    a replay from disk, the download's record names them). A plain English file comes before an
    SDH one, SubRip before WebVTT before ASS/SSA (converted with ffmpeg), and a `forced` file is
-   never used. With no English file, the torrent's one subtitle file is used when its name gives
+   never used, nor a signs-and-songs one (`signs` or `songs` in its name, outside the video's own
+   name, and not `full`): it holds the on-screen text and the lyrics, never the dialogue. With no English file, the torrent's one subtitle file is used when its name gives
    no language; the player shows it like an English one. A file already on disk answers at once.
    One still downloading holds nothing back: the tiers after it are asked meanwhile, and when the
    file arrives (within 5 minutes, while the session holds the torrent) it takes the place of
@@ -2623,7 +2624,10 @@ pack's `S01EAll` and a name with no episode in it say nothing.
 When the torrent holds no subtitle file, the video file's own English text track is used: SubRip,
 ASS/SSA, mov_text or WebVTT, chosen by language (`eng`, `en`), a full track before an SDH one,
 SubRip before ASS. A forced track (only the lines spoken in another language) is used only when it
-is the file's one English text track. Picture tracks (PGS, VobSub, DVB) are never turned into text:
+is the file's one English text track. A signs-and-songs track (its title says `Signs`, `Songs` or
+`Signs & Songs`, and not `Full` or `Dialogue`, as anime releases name them) is never used, not even
+alone: it holds the on-screen text and the lyrics, never the dialogue, so with no other track the
+subtitle service is asked. Picture tracks (PGS, VobSub, DVB) are never turned into text:
 the daemon log says `no English text subtitle track in <hash> (...)`, and the next tier, the
 subtitle service, is asked.
 
