@@ -477,9 +477,6 @@ describe('movies config', () => {
     expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, animeMapUrl: 'https://api.ani.zip', cacheDir: null, pictureModel: 'haiku', ffmpegBin: 'ffmpeg', ahead: true, firstProvider: 'cinemaos.live', audioCheck: true, canary: true, trending: { enabled: true, size: 100, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] } })
     expect(ds({ NOTESD_STREAM_AHEAD: 'off' })?.ahead).toBe(false)
     expect(ds({ NOTESD_STREAM_CANARY: 'off' })?.canary).toBe(false)
-    expect(ds({ NOTESD_STREAM_FIRST_PROVIDER: 'off' })?.firstProvider).toBeNull()
-    expect(ds({ NOTESD_STREAM_FIRST_PROVIDER: ' VidFast ' })?.firstProvider).toBe('VidFast')
-    expect(() => ds({ NOTESD_STREAM_FIRST_PROVIDER: 'a,b' })).toThrow(/NOTESD_STREAM_FIRST_PROVIDER/)
     // The cloud audio-language check: on by default, a boolean switch.
     expect(ds({ NOTESD_STREAM_AUDIO_CHECK: 'off' })?.audioCheck).toBe(false)
     expect(ds({ NOTESD_STREAM_AUDIO_CHECK: 'on' })?.audioCheck).toBe(true)

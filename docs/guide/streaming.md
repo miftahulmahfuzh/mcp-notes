@@ -472,7 +472,7 @@ stream. When the provider with the English track has the shorter picture (a 960p
 recording found after a 1080p stream), the taller stream plays and takes that provider's English
 subtitle file (`borrowed_from`); only a separate file can be lent, not a track inside a manifest.
 
-**The order** (`order.mjs`): first the provider `NOTESD_STREAM_FIRST_PROVIDER` names
+**The order** (`order.mjs`): first the provider `DEFAULT_STREAM_FIRST_PROVIDER` names
 (`cinemaos.live`: it reaches a stream in 7 to 11 s, where a list of embeds can take a minute),
 while it earns the place: after three failures in a row, or a play whose delivery was bad, it is
 ordered like the others until it gives a stream again. It comes after an anime's embeds, and

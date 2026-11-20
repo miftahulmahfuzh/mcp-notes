@@ -126,10 +126,7 @@ export interface TrendingConfig {
   enabled: boolean
   /** `NOTESD_TRENDING_SIZE`, default 100: titles of each kind (films, series) on the list. */
   size: number
-  /**
-   * `NOTESD_TRENDING_SKIP_LANGUAGES`, default `hi,ta,te,ml,kn,bn,mr,pa` (Indian cinema): TMDB original-language codes (comma separated) whose titles never
-   * make the list, and leave it at once when one is already there. `none`: nothing is skipped.
-   */
+  /** DEFAULT_TRENDING_SKIP_LANGUAGES: TMDB original-language codes whose titles never make the list, and leave it at once. */
   skipLanguages: string[]
 }
 
@@ -203,9 +200,9 @@ export interface DirectStreamConfig {
    */
   ahead?: boolean
   /**
-   * `NOTESD_STREAM_FIRST_PROVIDER`, default `cinemaos.live`: the cloud provider every resolve tries
-   * before the others, while it keeps working (claude/streaming/direct/order.mjs). `off`, null or
-   * unset in a literal: none, the providers are ordered by what was measured.
+   * DEFAULT_STREAM_FIRST_PROVIDER: the cloud provider every resolve tries before the others, while it
+   * keeps working (claude/streaming/direct/order.mjs). Null or unset in a literal: none, the providers
+   * are ordered by what was measured.
    */
   firstProvider?: string | null
   /**
@@ -251,7 +248,7 @@ export type TorrentWhisperConfig =
       python: string
       /** `NOTESD_TORRENT_WHISPER_MODEL`, default `small`: a faster-whisper model name or Hugging Face repo id. */
       model: string
-      /** `NOTESD_TORRENT_WHISPER_THREADS`, default 8: CPU threads of the worker. */
+      /** DEFAULT_TORRENT_WHISPER_THREADS: CPU threads of the worker. */
       threads: number
       /** `NOTESD_TORRENT_WHISPER_STRETCH_S`, default 300, at least 5: seconds of audio per Whisper run. */
       stretchS: number
@@ -276,7 +273,7 @@ export interface TorrentFinderConfig {
   minSeeds?: number
   /** `NOTESD_TORRENT_MAX_GB`, as bytes: a bigger release is left out. */
   maxSizeBytes?: number
-  /** `NOTESD_TORRENT_INDEX_TIMEOUT_MS`: how long one index may take to answer. */
+  /** How long one index may take to answer; unset: the finder's DEFAULT_INDEX_TIMEOUT_MS. */
   indexTimeoutMs?: number
   /** `NOTESD_TORRENT_<NAME>_URL` per index: an address replaces the finder's, `off` (null) never asks that index. */
   indexes: Partial<Record<TorrentIndexName, string | null>>
@@ -322,7 +319,6 @@ export function parseTorrentFinder(env: Record<string, string | undefined>): Tor
   return {
     minSeeds: optional('NOTESD_TORRENT_MIN_SEEDS'),
     maxSizeBytes: maxGb === undefined ? undefined : maxGb * 1024 ** 3,
-    indexTimeoutMs: optional('NOTESD_TORRENT_INDEX_TIMEOUT_MS'),
     indexes,
   }
 }
@@ -939,15 +935,6 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
   }
 }
 
-/** A provider's name as the registry has it; `off` is none, unset the default. */
-function parseFirstProvider(raw: string | undefined): string | null {
-  const name = raw?.trim() ?? ''
-  if (name === '') return DEFAULT_STREAM_FIRST_PROVIDER
-  if (name.toLowerCase() === 'off') return null
-  if (name.length > 60 || name.includes(',')) throw new Error(`NOTESD_STREAM_FIRST_PROVIDER must be a provider's name or off (got ${name.slice(0, 80)})`)
-  return name
-}
-
 export function parseDirectStream(env: Record<string, string | undefined>): DirectStreamConfig {
   return {
     enabled: parseSwitch('NOTESD_DIRECT_STREAM', env.NOTESD_DIRECT_STREAM),
@@ -961,7 +948,7 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
         : parseModel('NOTESD_STREAM_PICTURE_MODEL', env.NOTESD_STREAM_PICTURE_MODEL, DEFAULT_STREAM_PICTURE_MODEL),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
     ahead: env.NOTESD_STREAM_AHEAD?.trim().toLowerCase() !== 'off',
-    firstProvider: parseFirstProvider(env.NOTESD_STREAM_FIRST_PROVIDER),
+    firstProvider: DEFAULT_STREAM_FIRST_PROVIDER,
     audioCheck: parseSwitch('NOTESD_STREAM_AUDIO_CHECK', env.NOTESD_STREAM_AUDIO_CHECK),
     canary: parseSwitch('NOTESD_STREAM_CANARY', env.NOTESD_STREAM_CANARY),
     trending: parseTrending(env),
@@ -972,17 +959,8 @@ export function parseTrending(env: Record<string, string | undefined>): Trending
   return {
     enabled: parseSwitch('NOTESD_TRENDING', env.NOTESD_TRENDING),
     size: parsePositiveInt('NOTESD_TRENDING_SIZE', env.NOTESD_TRENDING_SIZE, DEFAULT_TRENDING_SIZE),
-    skipLanguages: parseSkipLanguages(env.NOTESD_TRENDING_SKIP_LANGUAGES),
+    skipLanguages: [...DEFAULT_TRENDING_SKIP_LANGUAGES],
   }
-}
-
-function parseSkipLanguages(raw: string | undefined): string[] {
-  const value = (raw ?? '').trim().toLowerCase()
-  if (value === '') return [...DEFAULT_TRENDING_SKIP_LANGUAGES]
-  if (value === 'none' || value === 'off') return []
-  const codes = value.split(',').map((c) => c.trim()).filter((c) => c !== '')
-  for (const c of codes) if (!/^[a-z]{2,3}$/.test(c)) throw new ConfigError(`NOTESD_TRENDING_SKIP_LANGUAGES takes language codes like "hi,ta" or none, got "${c}"`)
-  return [...new Set(codes)]
 }
 
 /** An address setting: unset or blank is `fallback`, `off` is null, anything else must be an http(s) address (trailing slashes dropped). */
@@ -1063,7 +1041,7 @@ export function parseTorrentWhisper(env: Record<string, string | undefined>, dat
     dir,
     python: whisperPython(env, dataDir),
     model,
-    threads: parsePositiveInt('NOTESD_TORRENT_WHISPER_THREADS', env.NOTESD_TORRENT_WHISPER_THREADS, DEFAULT_TORRENT_WHISPER_THREADS),
+    threads: DEFAULT_TORRENT_WHISPER_THREADS,
     stretchS,
   }
 }
@@ -1120,12 +1098,12 @@ function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback:
  * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS, NOTESD_TORRENT_SUBTITLE_WAIT_MS,
  * NOTESD_TORRENT_TRACKER_LISTS (on or off; anything else throws ConfigError),
  * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
- * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_INDEX_TIMEOUT_MS, NOTESD_TORRENT_TORRENTIO_URL,
+ * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_TORRENTIO_URL,
  * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_TORRENTSDB_URL, NOTESD_TORRENT_PEERFLIX_URL,
  * NOTESD_TORRENT_KNABEN_URL, NOTESD_TORRENT_BITSEARCH_URL, NOTESD_TORRENT_TORRENTSCSV_URL (a number below 1 or a non-http address throw ConfigError),
  * NOTESD_FFMPEG_BIN.
  * Torrent Whisper keys: NOTESD_TORRENT_WHISPER, NOTESD_TORRENT_WHISPER_DIR, NOTESD_TORRENT_WHISPER_PYTHON,
- * NOTESD_TORRENT_WHISPER_MODEL, NOTESD_TORRENT_WHISPER_THREADS, NOTESD_TORRENT_WHISPER_STRETCH_S (a relative
+ * NOTESD_TORRENT_WHISPER_MODEL, NOTESD_TORRENT_WHISPER_STRETCH_S (a relative
  * folder or Python, a model name with spaces or `..`, or a stretch under 5 s throw ConfigError).
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,

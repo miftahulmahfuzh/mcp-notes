@@ -1,5 +1,5 @@
 // The order providers are tried in, the one place it lives (decision D1): the provider the owner
-// put first (`first`, NOTESD_STREAM_FIRST_PROVIDER) while it keeps working; then a provider that never
+// put first (`first`, the daemon's DEFAULT_STREAM_FIRST_PROVIDER) while it keeps working; then a provider that never
 // gave a stream on this machine in DEAD_AFTER tries or more goes last of all; then a provider known to
 // offer an English subtitle first, unknown next, known without one last; then delivery (a provider
 // whose last play on this machine kept stalling goes last); then health; then the best quality;

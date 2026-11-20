@@ -28,12 +28,11 @@ describe('parseTorrentWhisper', () => {
           NOTESD_TORRENT_WHISPER_DIR: '/opt/whisper',
           NOTESD_TORRENT_WHISPER_PYTHON: '/usr/local/bin/python3',
           NOTESD_TORRENT_WHISPER_MODEL: 'base.en',
-          NOTESD_TORRENT_WHISPER_THREADS: '4',
           NOTESD_TORRENT_WHISPER_STRETCH_S: '60',
         },
         DATA,
       ),
-    ).toEqual({ enabled: true, dir: '/opt/whisper', python: '/usr/local/bin/python3', model: 'base.en', threads: 4, stretchS: 60 });
+    ).toEqual({ enabled: true, dir: '/opt/whisper', python: '/usr/local/bin/python3', model: 'base.en', threads: 8, stretchS: 60 });
     expect(parseTorrentWhisper({ NOTESD_TORRENT_WHISPER_DIR: '/opt/whisper' }, DATA)).toMatchObject({ python: '/opt/whisper/venv/bin/python' });
     expect(parseTorrentWhisper({ NOTESD_TORRENT_WHISPER_MODEL: 'Systran/faster-whisper-small' }, DATA)).toMatchObject({ model: 'Systran/faster-whisper-small' });
   });
@@ -42,7 +41,6 @@ describe('parseTorrentWhisper', () => {
     expect(() => parseTorrentWhisper({ NOTESD_TORRENT_WHISPER: 'maybe' }, DATA)).toThrow(ConfigError);
     expect(() => parseTorrentWhisper({ NOTESD_TORRENT_WHISPER_MODEL: 'small; rm -rf /' }, DATA)).toThrow(ConfigError);
     expect(() => parseTorrentWhisper({ NOTESD_TORRENT_WHISPER_MODEL: '../../etc' }, DATA)).toThrow(ConfigError);
-    expect(() => parseTorrentWhisper({ NOTESD_TORRENT_WHISPER_THREADS: '0' }, DATA)).toThrow(ConfigError);
     expect(() => parseTorrentWhisper({ NOTESD_TORRENT_WHISPER_STRETCH_S: '4' }, DATA)).toThrow(ConfigError);
     expect(() => parseTorrentWhisper({ NOTESD_TORRENT_WHISPER_DIR: 'whisper' }, DATA)).toThrow(ConfigError);
     expect(() => parseTorrentWhisper({ NOTESD_TORRENT_WHISPER_PYTHON: 'python3' }, DATA)).toThrow(ConfigError);

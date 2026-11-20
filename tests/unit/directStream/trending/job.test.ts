@@ -233,9 +233,6 @@ describe('buildTrending', () => {
   it('reads its settings', () => {
     expect(config({}).directStream?.trending).toEqual({ enabled: true, size: 100, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] });
     expect(config({ NOTESD_TRENDING_SIZE: '40' }).directStream?.trending).toEqual({ enabled: true, size: 40, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] });
-    expect(config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'HI, ta,hi' }).directStream?.trending?.skipLanguages).toEqual(['hi', 'ta']);
-    expect(config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'none' }).directStream?.trending?.skipLanguages).toEqual([]);
-    expect(() => config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'hindi' })).toThrow(/NOTESD_TRENDING_SKIP_LANGUAGES/);
     expect(() => config({ NOTESD_TRENDING_SIZE: '0' })).toThrow(/NOTESD_TRENDING_SIZE/);
   });
 });

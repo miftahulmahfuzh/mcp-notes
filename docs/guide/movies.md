@@ -627,8 +627,8 @@ film or series (an episode's id answers its series); a listing with no IMDb id i
 cinema recording, a dub, a 3D release, a swarm under 5 seeds and a film over 25 GB. A series is its
 best-seeded episode or pack. The first `NOTESD_TRENDING_SIZE` (100) of each kind that you have not seen
 make the list, taken from the 300 most seeded listings of that kind, so it can come out shorter when
-most of those are watched. Titles whose TMDB original language is in `NOTESD_TRENDING_SKIP_LANGUAGES` (default: Hindi and the other
-languages of Indian cinema) are left out of the build and of every read, so one already on the list goes at
+most of those are watched. Titles whose TMDB original language is Hindi or one of the other
+languages of Indian cinema (`DEFAULT_TRENDING_SKIP_LANGUAGES`) are left out of the build and of every read, so one already on the list goes at
 once. A title with no stored language is asked of TMDB at the build and the answer kept; until it is known, a release
 name that says only a skipped language ("Telugu DVDScr") skips it. The list skews to what the
 indexes' users download (mostly Western, mainstream, English); nothing is done to widen it.
