@@ -266,6 +266,8 @@ export const DEFAULT_TORRENT_WHISPER_CONFIG: TorrentWhisperConfig = { enabled: f
 
 export const DEFAULT_TORRENT_UPLOAD_KBPS = 100
 export const DEFAULT_TORRENT_KEEP_DAYS = 7
+/** `NOTESD_TORRENT_BUDGET_GB`: the torrent folder is kept under this many GiB. */
+export const DEFAULT_TORRENT_BUDGET_GB = 40
 
 /** The JSON torrent indexes the finder asks (src/directStream/torrent/find/). */
 export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'torrentsdb', 'peerflix', 'knaben', 'bitsearch', 'torrentscsv'] as const
@@ -371,6 +373,11 @@ export interface TorrentConfig {
   /** `NOTESD_TORRENT_KEEP_DAYS`, default 7: a download not played for this many days is deleted with its files. */
   keepDays: number
   /**
+   * `NOTESD_TORRENT_BUDGET_GB`, default 40: the torrent folder (downloads, remuxes, cue files) is kept under this many
+   * GiB; the prune deletes whole torrents, least recently played first, until it is (src/directStream/torrent/service.ts).
+   */
+  budgetGb: number
+  /**
    * `NOTESD_TORRENT_SUBTITLE_WAIT_MS`, default 1500 (source.ts SUBTITLE_HEAD_MS): how long a torrent play may wait
    * for its subtitle before it starts without one; the search then goes on behind the play. Unset: the default.
    */
@@ -433,6 +440,7 @@ export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
   dir: path.join(tmpdir(), 'notesd-torrents'),
   uploadKbps: DEFAULT_TORRENT_UPLOAD_KBPS,
   keepDays: DEFAULT_TORRENT_KEEP_DAYS,
+  budgetGb: DEFAULT_TORRENT_BUDGET_GB,
   discovery: true,
   peers: [],
   finder: DEFAULT_TORRENT_FINDER_CONFIG,
@@ -1005,6 +1013,7 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
     dir: parseOptionalAbsolutePath('NOTESD_TORRENT_DIR', env.NOTESD_TORRENT_DIR) ?? path.join(dataDir, 'movies', 'torrents'),
     uploadKbps: parsePositiveInt('NOTESD_TORRENT_UPLOAD_KBPS', env.NOTESD_TORRENT_UPLOAD_KBPS, DEFAULT_TORRENT_UPLOAD_KBPS),
     keepDays: parsePositiveInt('NOTESD_TORRENT_KEEP_DAYS', env.NOTESD_TORRENT_KEEP_DAYS, DEFAULT_TORRENT_KEEP_DAYS),
+    budgetGb: parsePositiveInt('NOTESD_TORRENT_BUDGET_GB', env.NOTESD_TORRENT_BUDGET_GB, DEFAULT_TORRENT_BUDGET_GB),
     ...(env.NOTESD_TORRENT_SUBTITLE_WAIT_MS === undefined || env.NOTESD_TORRENT_SUBTITLE_WAIT_MS.trim() === ''
       ? {}
       : { subtitleWaitMs: parsePositiveInt('NOTESD_TORRENT_SUBTITLE_WAIT_MS', env.NOTESD_TORRENT_SUBTITLE_WAIT_MS, 1500) }),
@@ -1103,7 +1112,7 @@ function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback:
  * Direct streaming keys: NOTESD_DIRECT_STREAM, NOTESD_STREAM_FRESH_DAYS, NOTESD_DIRECT_STREAM_CLI, NOTESD_ANIME_MAP_URL,
  * NOTESD_STREAM_CACHE_DIR (a freshness window below 1, a relative resolver path or a relative cache folder throw ConfigError).
  * Stream canary key: NOTESD_STREAM_CANARY (default on).
- * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS, NOTESD_TORRENT_SUBTITLE_WAIT_MS,
+ * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS, NOTESD_TORRENT_BUDGET_GB, NOTESD_TORRENT_SUBTITLE_WAIT_MS,
  * NOTESD_TORRENT_TRACKER_LISTS (on or off; anything else throws ConfigError),
  * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
  * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_TORRENTIO_URL,

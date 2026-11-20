@@ -253,7 +253,7 @@ const positionBody = z.object({
 });
 
 /** The session a report is for: `subtitleRev` counts the times its subtitle changed since the play started (a torrent session's, else a cloud session's outside one). */
-type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number; infoHash?: string } | null; outside?: { subtitleRev: number }; sourceRev?: number };
+type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number; infoHash?: string; fileIndex?: number } | null; outside?: { subtitleRev: number }; sourceRev?: number };
 
 /** What the position route reads (AppDeps fits: DirectStreamService.session returns a superset of StreamSessionRef). */
 export interface StreamPositionDeps {
@@ -269,7 +269,7 @@ export interface StreamPositionDeps {
   /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
   live?: StreamLive | null;
   /** A torrent session's report marks its download played (its keep clock), as nothing else does. */
-  torrents?: { played(infoHash: string): Promise<void> } | null;
+  torrents?: { played(infoHash: string, fileIndex?: number): Promise<void> } | null;
 }
 
 /**
@@ -326,7 +326,7 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
       }
     }
     const playing = session.torrent?.infoHash;
-    if (playing !== undefined) void deps.torrents?.played(playing);
+    if (playing !== undefined) void deps.torrents?.played(playing, session.torrent?.fileIndex);
     let written: Awaited<ReturnType<MovieStreams['recordPosition']>>;
     try {
       written = await new MovieStreams(movies, options).recordPosition(session, {

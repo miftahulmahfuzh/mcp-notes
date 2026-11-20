@@ -412,7 +412,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   the engine (`port`, `swarm`, `upload_cap_bytes_per_s`) and every download. Upload is capped at
   `NOTESD_TORRENT_UPLOAD_KBPS`; a torrent leaves the swarm once nothing holds it (at once when finished, three
   minutes after the last request otherwise) and only its chosen files stay; a finished download opens and plays
-  from disk with no swarm; downloads are cleared after `NOTESD_TORRENT_KEEP_DAYS` without a play.
+  from disk with no swarm; downloads are cleared after `NOTESD_TORRENT_KEEP_DAYS` without a play, and whole torrents (least recently played first) while the folder is over `NOTESD_TORRENT_BUDGET_GB`; a season pack keeps a row and the file of every episode chosen from it (E01 stays after E02 is watched; `GET /api/stream/torrent` lists one entry per episode).
   `NOTESD_TORRENT=off`: 503 `torrent_off`, nothing is built, no socket is opened.
 - Logic: `npx vitest run tests/unit/directStream/torrent tests/unit/config.torrent.test.ts` (`engine.test.ts`
   seeds a generated torrent over loopback with DHT and trackers off); the table, both machines and replay from

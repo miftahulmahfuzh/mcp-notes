@@ -1,15 +1,15 @@
 import type { StreamTorrentRow } from '../../src/db/schema.js';
 import { cacheSlot } from '../../src/directStream/repo.js';
-import type { TorrentChoice, TorrentRecords, TorrentRecordSpec } from '../../src/directStream/torrent/repo.js';
+import type { TorrentChoice, TorrentRecords, TorrentRecordSpec, TorrentSlot } from '../../src/directStream/torrent/repo.js';
 import type { StreamRef } from '../../src/directStream/types.js';
 
-/** TorrentsRepo in memory, with the same rules (one row per host and hash; a new slot forgets the choice; failed and ready exclude each other). */
+/** TorrentsRepo in memory, with the same rules (one row per host, hash and episode; another title forgets the choice; failed and ready exclude each other). */
 export class MemoryTorrentRecords implements TorrentRecords {
   readonly rows: StreamTorrentRow[] = [];
 
   async record(host: string, spec: TorrentRecordSpec, now: Date): Promise<StreamTorrentRow> {
     const slot = cacheSlot(spec.ref);
-    const row = this.at(host, spec.infoHash);
+    const row = this.at(host, { infoHash: spec.infoHash, season: slot.season, episode: slot.episode });
     if (row === undefined) {
       const created: StreamTorrentRow = {
         host,
@@ -46,9 +46,20 @@ export class MemoryTorrentRecords implements TorrentRecords {
     return this.copy(row);
   }
 
-  async get(host: string, infoHash: string): Promise<StreamTorrentRow | null> {
-    const row = this.at(host, infoHash);
-    return row === undefined ? null : this.copy(row);
+  async get(host: string, infoHash: string, ref?: StreamRef): Promise<StreamTorrentRow | null> {
+    if (ref !== undefined) {
+      const s = cacheSlot(ref);
+      const row = this.at(host, { infoHash, season: s.season, episode: s.episode });
+      return row === undefined ? null : this.copy(row);
+    }
+    return (await this.slots(host, infoHash))[0] ?? null;
+  }
+
+  async slots(host: string, infoHash: string): Promise<StreamTorrentRow[]> {
+    return this.rows
+      .filter((r) => r.host === host && r.infoHash === infoHash)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .map((r) => this.copy(r));
   }
 
   async byHash(infoHash: string): Promise<StreamTorrentRow[]> {
@@ -67,34 +78,34 @@ export class MemoryTorrentRecords implements TorrentRecords {
     return [...this.rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).map((r) => this.copy(r));
   }
 
-  async chosen(host: string, infoHash: string, choice: TorrentChoice, now: Date): Promise<StreamTorrentRow> {
-    return this.copy(Object.assign(this.must(host, infoHash), { files: choice.files.map((f) => ({ ...f })), fileIndex: choice.fileIndex, fileLength: choice.fileLength, updatedAt: now }));
+  async chosen(host: string, slot: TorrentSlot, choice: TorrentChoice, now: Date): Promise<StreamTorrentRow> {
+    return this.copy(Object.assign(this.must(host, slot), { files: choice.files.map((f) => ({ ...f })), fileIndex: choice.fileIndex, fileLength: choice.fileLength, updatedAt: now }));
   }
 
-  async progress(host: string, infoHash: string, bytesDone: number, now: Date): Promise<void> {
-    Object.assign(this.must(host, infoHash), { bytesDone, updatedAt: now });
+  async progress(host: string, slot: TorrentSlot, bytesDone: number, now: Date): Promise<void> {
+    Object.assign(this.must(host, slot), { bytesDone, updatedAt: now });
   }
 
-  async ready(host: string, infoHash: string, bytesDone: number, now: Date): Promise<StreamTorrentRow> {
-    const row = this.must(host, infoHash);
+  async ready(host: string, slot: TorrentSlot, bytesDone: number, now: Date): Promise<StreamTorrentRow> {
+    const row = this.must(host, slot);
     if (row.fileIndex === null) throw new Error('stream_torrents_ready_check: a ready download needs a chosen video');
     return this.copy(Object.assign(row, { state: 'ready', error: null, completedAt: now, bytesDone, updatedAt: now }));
   }
 
-  async failed(host: string, infoHash: string, error: string, now: Date): Promise<void> {
-    Object.assign(this.must(host, infoHash), { state: 'failed', error, completedAt: null, updatedAt: now });
+  async failed(host: string, slot: TorrentSlot, error: string, now: Date): Promise<void> {
+    Object.assign(this.must(host, slot), { state: 'failed', error, completedAt: null, updatedAt: now });
   }
 
-  async restarted(host: string, infoHash: string, now: Date): Promise<void> {
-    Object.assign(this.must(host, infoHash), { state: 'downloading', error: null, completedAt: null, bytesDone: 0, updatedAt: now });
+  async restarted(host: string, slot: TorrentSlot, now: Date): Promise<void> {
+    Object.assign(this.must(host, slot), { state: 'downloading', error: null, completedAt: null, bytesDone: 0, updatedAt: now });
   }
 
-  async played(host: string, infoHash: string, now: Date): Promise<void> {
-    Object.assign(this.must(host, infoHash), { playedAt: now });
+  async played(host: string, slot: TorrentSlot, now: Date): Promise<void> {
+    Object.assign(this.must(host, slot), { playedAt: now });
   }
 
-  async duration(host: string, infoHash: string, seconds: number, now: Date): Promise<void> {
-    Object.assign(this.must(host, infoHash), { durationS: seconds, updatedAt: now });
+  async duration(host: string, slot: TorrentSlot, seconds: number, now: Date): Promise<void> {
+    Object.assign(this.must(host, slot), { durationS: seconds, updatedAt: now });
   }
 
   async stale(host: string, before: Date): Promise<StreamTorrentRow[]> {
@@ -104,19 +115,18 @@ export class MemoryTorrentRecords implements TorrentRecords {
   }
 
   async delete(host: string, infoHash: string): Promise<boolean> {
-    const at = this.rows.findIndex((r) => r.host === host && r.infoHash === infoHash);
-    if (at < 0) return false;
-    this.rows.splice(at, 1);
-    return true;
+    const before = this.rows.length;
+    this.rows.splice(0, this.rows.length, ...this.rows.filter((r) => !(r.host === host && r.infoHash === infoHash)));
+    return this.rows.length < before;
   }
 
-  private at(host: string, infoHash: string): StreamTorrentRow | undefined {
-    return this.rows.find((r) => r.host === host && r.infoHash === infoHash);
+  private at(host: string, slot: TorrentSlot): StreamTorrentRow | undefined {
+    return this.rows.find((r) => r.host === host && r.infoHash === slot.infoHash && r.season === slot.season && r.episode === slot.episode);
   }
 
-  private must(host: string, infoHash: string): StreamTorrentRow {
-    const row = this.at(host, infoHash);
-    if (row === undefined) throw new Error(`no torrent ${infoHash} on ${host}`);
+  private must(host: string, slot: TorrentSlot): StreamTorrentRow {
+    const row = this.at(host, slot);
+    if (row === undefined) throw new Error(`no torrent ${slot.infoHash} on ${host}`);
     return row;
   }
 

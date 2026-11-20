@@ -55,17 +55,27 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+const SLOT = { infoHash: HASH, season: 0, episode: 0 };
+
 describe('stream_torrents', () => {
-  it('keeps one row per host and hash; another title slot forgets the chosen files', async () => {
+  it('keeps one row per host, hash and episode; another episode of a pack gets its own row, another film forgets the choice', async () => {
     const first = await repo.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: 'Release.A', trackers: ['udp://t.example:1/announce'] }, T0);
     expect(first).toMatchObject({ state: 'downloading', fileIndex: null, files: [], trackers: ['udp://t.example:1/announce'] });
-    await repo.chosen('host-a', HASH, { files: [{ index: 1, path: `${NAME}/${NAME}.mp4`, length: 3000 }], fileIndex: 1, fileLength: 3000 }, T0);
+    await repo.chosen('host-a', SLOT, { files: [{ index: 1, path: `${NAME}/${NAME}.mp4`, length: 3000 }], fileIndex: 1, fileLength: 3000 }, T0);
     const same = await repo.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: null, trackers: [] }, T0);
     expect(same).toMatchObject({ fileIndex: 1, release: 'Release.A', trackers: ['udp://t.example:1/announce'] });
     const other = await repo.record('host-a', { infoHash: HASH, ref: EPISODE, name: NAME, release: null, trackers: [] }, T0);
     expect(other).toMatchObject({ kind: 'tv', season: 1, episode: 2, fileIndex: null, files: [], state: 'downloading' });
+    // The film's row keeps its chosen file beside the episode's.
+    expect(await repo.get('host-a', HASH, REF)).toMatchObject({ kind: 'movie', fileIndex: 1 });
+    expect((await repo.slots('host-a', HASH)).map((r) => [r.season, r.episode]).sort()).toEqual([[0, 0], [1, 2]]);
+    // The same slot opened for another film forgets the choice.
+    const otherFilm = await repo.record('host-a', { infoHash: HASH, ref: { kind: 'movie', tmdbId: 551 }, name: NAME, release: null, trackers: [] }, T0);
+    expect(otherFilm).toMatchObject({ tmdbId: 551, fileIndex: null, files: [] });
     await repo.record('host-b', { infoHash: HASH, ref: REF, name: NAME, release: null, trackers: [] }, T0);
-    expect((await repo.byHash(HASH)).map((r) => r.host)).toEqual(['host-a', 'host-b']);
+    expect((await repo.byHash(HASH)).map((r) => r.host)).toEqual(['host-a', 'host-a', 'host-b']);
+    expect(await repo.delete('host-a', HASH)).toBe(true);
+    expect((await repo.byHash(HASH)).map((r) => r.host)).toEqual(['host-b']);
   });
 
   it('refuses contradictions', async () => {
@@ -79,11 +89,11 @@ describe('stream_torrents', () => {
 
   it('moves through ready, failed and restarted without breaking a check', async () => {
     await repo.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: null, trackers: [] }, T0);
-    await repo.chosen('host-a', HASH, { files: [{ index: 1, path: `${NAME}/${NAME}.mp4`, length: 3000 }], fileIndex: 1, fileLength: 3000 }, T0);
-    expect(await repo.ready('host-a', HASH, 3000, T0)).toMatchObject({ state: 'ready', completedAt: T0 });
-    await repo.failed('host-a', HASH, 'no_metadata', T0);
+    await repo.chosen('host-a', SLOT, { files: [{ index: 1, path: `${NAME}/${NAME}.mp4`, length: 3000 }], fileIndex: 1, fileLength: 3000 }, T0);
+    expect(await repo.ready('host-a', SLOT, 3000, T0)).toMatchObject({ state: 'ready', completedAt: T0 });
+    await repo.failed('host-a', SLOT, 'no_metadata', T0);
     expect(await repo.get('host-a', HASH)).toMatchObject({ state: 'failed', error: 'no_metadata', completedAt: null });
-    await repo.restarted('host-a', HASH, T0);
+    await repo.restarted('host-a', SLOT, T0);
     expect(await repo.get('host-a', HASH)).toMatchObject({ state: 'downloading', error: null, bytesDone: 0 });
   });
 
@@ -91,7 +101,7 @@ describe('stream_torrents', () => {
     const day = 86_400_000;
     await repo.record('host-a', { infoHash: 'a'.repeat(40), ref: REF, name: 'never played', release: null, trackers: [] }, new Date(T0.getTime() - 9 * day));
     await repo.record('host-a', { infoHash: 'b'.repeat(40), ref: REF, name: 'played lately', release: null, trackers: [] }, new Date(T0.getTime() - 9 * day));
-    await repo.played('host-a', 'b'.repeat(40), new Date(T0.getTime() - day));
+    await repo.played('host-a', { infoHash: 'b'.repeat(40), season: 0, episode: 0 }, new Date(T0.getTime() - day));
     await repo.record('host-b', { infoHash: 'c'.repeat(40), ref: REF, name: 'other machine', release: null, trackers: [] }, new Date(T0.getTime() - 9 * day));
     const stale = await repo.stale('host-a', new Date(T0.getTime() - 7 * day));
     expect(stale.map((r) => r.name)).toEqual(['never played']);
@@ -110,8 +120,8 @@ describe('stream_torrents', () => {
   it('plays a finished download from disk after a restart, with no swarm (R2.9)', async () => {
     const file = `${NAME}/${NAME}.mp4`;
     await repo.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: null, trackers: [] }, T0);
-    await repo.chosen('host-a', HASH, { files: [{ index: 1, path: file, length: VIDEO.length }], fileIndex: 1, fileLength: VIDEO.length }, T0);
-    await repo.ready('host-a', HASH, VIDEO.length, T0);
+    await repo.chosen('host-a', SLOT, { files: [{ index: 1, path: file, length: VIDEO.length }], fileIndex: 1, fileLength: VIDEO.length }, T0);
+    await repo.ready('host-a', SLOT, VIDEO.length, T0);
     const folder = new TorrentFolder(root);
     const onDisk = folder.diskPath(HASH, file)!;
     await mkdir(path.dirname(onDisk), { recursive: true });

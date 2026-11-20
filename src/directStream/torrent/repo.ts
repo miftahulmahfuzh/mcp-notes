@@ -27,26 +27,38 @@ export function torrentRef(row: Pick<StreamTorrentRow, 'kind' | 'tmdbId' | 'seas
   return row.kind === 'movie' ? { kind: 'movie', tmdbId: row.tmdbId } : { kind: 'tv', tmdbId: row.tmdbId, season: row.season, episode: row.episode };
 }
 
-const key = (host: string, infoHash: string) => and(eq(streamTorrents.host, host), eq(streamTorrents.infoHash, infoHash));
+/** One episode's row of a torrent (a film is season 0, episode 0): a row itself will do. */
+export type TorrentSlot = Pick<StreamTorrentRow, 'infoHash' | 'season' | 'episode'>;
+
+/** The slot a ref takes in a torrent. */
+export function slotOf(infoHash: string, ref: StreamRef): TorrentSlot {
+  const s = cacheSlot(ref);
+  return { infoHash, season: s.season, episode: s.episode };
+}
+
+const torrentKey = (host: string, infoHash: string) => and(eq(streamTorrents.host, host), eq(streamTorrents.infoHash, infoHash));
+const key = (host: string, slot: TorrentSlot) =>
+  and(eq(streamTorrents.host, host), eq(streamTorrents.infoHash, slot.infoHash), eq(streamTorrents.season, slot.season), eq(streamTorrents.episode, slot.episode));
 
 /** The only writer of `stream_torrents`. */
 export class TorrentsRepo {
   constructor(private readonly db: Db) {}
 
   /**
-   * This host's row of a torrent, made now (downloading) when there is none. An existing one takes the
-   * new title slot, name and trackers; a failed one, or one opened for another slot, starts over
-   * (downloading); another slot also forgets the chosen files.
+   * This host's row of a torrent's episode (a film: its one row), made now (downloading) when there is none.
+   * Another episode of the same torrent gets its own row, so a season pack keeps every episode chosen from it.
+   * An existing one takes the new name and trackers; a failed one, or one opened for another title, starts
+   * over (downloading); another title also forgets the chosen files.
    */
   async record(host: string, spec: TorrentRecordSpec, now: Date): Promise<StreamTorrentRow> {
     const slot = cacheSlot(spec.ref);
     const [inserted] = await this.db
       .insert(streamTorrents)
       .values({ host, infoHash: spec.infoHash, ...slot, name: spec.name, release: spec.release, trackers: [...spec.trackers], state: 'downloading', createdAt: now, updatedAt: now })
-      .onConflictDoNothing({ target: [streamTorrents.host, streamTorrents.infoHash] })
+      .onConflictDoNothing({ target: [streamTorrents.host, streamTorrents.infoHash, streamTorrents.season, streamTorrents.episode] })
       .returning();
     if (inserted !== undefined) return inserted;
-    const existing = await this.get(host, spec.infoHash);
+    const existing = await this.get(host, spec.infoHash, spec.ref);
     if (existing === null) throw new Error(`the torrent ${spec.infoHash} on ${host} vanished while it was recorded`);
     const sameSlot = existing.kind === slot.kind && existing.tmdbId === slot.tmdbId && existing.season === slot.season && existing.episode === slot.episode;
     const restart = !sameSlot || existing.state === 'failed';
@@ -61,15 +73,22 @@ export class TorrentsRepo {
         ...(restart ? { state: 'downloading' as const, error: null, completedAt: null } : {}),
         ...(sameSlot ? {} : { fileIndex: null, files: [], fileLength: null, bytesDone: 0, durationS: null }),
       })
-      .where(key(host, spec.infoHash))
+      .where(key(host, { infoHash: spec.infoHash, season: slot.season, episode: slot.episode }))
       .returning();
     if (row === undefined) throw new Error(`the torrent ${spec.infoHash} on ${host} vanished while it was recorded`);
     return row;
   }
 
-  async get(host: string, infoHash: string): Promise<StreamTorrentRow | null> {
-    const [row] = await this.db.select().from(streamTorrents).where(key(host, infoHash));
+  /** This host's row of a torrent for `ref`'s episode; without a ref, its most recently written row. */
+  async get(host: string, infoHash: string, ref?: StreamRef): Promise<StreamTorrentRow | null> {
+    const where = ref === undefined ? torrentKey(host, infoHash) : key(host, slotOf(infoHash, ref));
+    const [row] = await this.db.select().from(streamTorrents).where(where).orderBy(desc(streamTorrents.updatedAt)).limit(1);
     return row ?? null;
+  }
+
+  /** This host's rows of a torrent, one per episode chosen from it, the most recently written first. */
+  async slots(host: string, infoHash: string): Promise<StreamTorrentRow[]> {
+    return this.db.select().from(streamTorrents).where(torrentKey(host, infoHash)).orderBy(desc(streamTorrents.updatedAt), asc(streamTorrents.season), asc(streamTorrents.episode));
   }
 
   /** Every host's row of a torrent. */
@@ -97,49 +116,52 @@ export class TorrentsRepo {
 
   /** Every row of both hosts, newest first. */
   async all(): Promise<StreamTorrentRow[]> {
-    return this.db.select().from(streamTorrents).orderBy(desc(streamTorrents.createdAt), asc(streamTorrents.host), asc(streamTorrents.infoHash));
+    return this.db
+      .select()
+      .from(streamTorrents)
+      .orderBy(desc(streamTorrents.createdAt), asc(streamTorrents.host), asc(streamTorrents.infoHash), asc(streamTorrents.season), asc(streamTorrents.episode));
   }
 
-  async chosen(host: string, infoHash: string, choice: TorrentChoice, now: Date): Promise<StreamTorrentRow> {
+  async chosen(host: string, slot: TorrentSlot, choice: TorrentChoice, now: Date): Promise<StreamTorrentRow> {
     const [row] = await this.db
       .update(streamTorrents)
       .set({ files: choice.files, fileIndex: choice.fileIndex, fileLength: choice.fileLength, updatedAt: now })
-      .where(key(host, infoHash))
+      .where(key(host, slot))
       .returning();
-    if (row === undefined) throw new Error(`no torrent ${infoHash} on ${host}`);
+    if (row === undefined) throw new Error(`no torrent ${slot.infoHash} (${slot.season}x${slot.episode}) on ${host}`);
     return row;
   }
 
-  async progress(host: string, infoHash: string, bytesDone: number, now: Date): Promise<void> {
-    await this.db.update(streamTorrents).set({ bytesDone, updatedAt: now }).where(key(host, infoHash));
+  async progress(host: string, slot: TorrentSlot, bytesDone: number, now: Date): Promise<void> {
+    await this.db.update(streamTorrents).set({ bytesDone, updatedAt: now }).where(key(host, slot));
   }
 
   /** Every chosen file is whole on disk. Needs a chosen video (the CHECK refuses otherwise). */
-  async ready(host: string, infoHash: string, bytesDone: number, now: Date): Promise<StreamTorrentRow> {
+  async ready(host: string, slot: TorrentSlot, bytesDone: number, now: Date): Promise<StreamTorrentRow> {
     const [row] = await this.db
       .update(streamTorrents)
       .set({ state: 'ready', error: null, completedAt: now, bytesDone, updatedAt: now })
-      .where(key(host, infoHash))
+      .where(key(host, slot))
       .returning();
-    if (row === undefined) throw new Error(`no torrent ${infoHash} on ${host}`);
+    if (row === undefined) throw new Error(`no torrent ${slot.infoHash} (${slot.season}x${slot.episode}) on ${host}`);
     return row;
   }
 
-  async failed(host: string, infoHash: string, error: string, now: Date): Promise<void> {
-    await this.db.update(streamTorrents).set({ state: 'failed', error, completedAt: null, updatedAt: now }).where(key(host, infoHash));
+  async failed(host: string, slot: TorrentSlot, error: string, now: Date): Promise<void> {
+    await this.db.update(streamTorrents).set({ state: 'failed', error, completedAt: null, updatedAt: now }).where(key(host, slot));
   }
 
   /** A ready download whose files are gone: downloading again from nothing. */
-  async restarted(host: string, infoHash: string, now: Date): Promise<void> {
-    await this.db.update(streamTorrents).set({ state: 'downloading', error: null, completedAt: null, bytesDone: 0, updatedAt: now }).where(key(host, infoHash));
+  async restarted(host: string, slot: TorrentSlot, now: Date): Promise<void> {
+    await this.db.update(streamTorrents).set({ state: 'downloading', error: null, completedAt: null, bytesDone: 0, updatedAt: now }).where(key(host, slot));
   }
 
-  async played(host: string, infoHash: string, now: Date): Promise<void> {
-    await this.db.update(streamTorrents).set({ playedAt: now }).where(key(host, infoHash));
+  async played(host: string, slot: TorrentSlot, now: Date): Promise<void> {
+    await this.db.update(streamTorrents).set({ playedAt: now }).where(key(host, slot));
   }
 
-  async duration(host: string, infoHash: string, seconds: number, now: Date): Promise<void> {
-    await this.db.update(streamTorrents).set({ durationS: seconds, updatedAt: now }).where(key(host, infoHash));
+  async duration(host: string, slot: TorrentSlot, seconds: number, now: Date): Promise<void> {
+    await this.db.update(streamTorrents).set({ durationS: seconds, updatedAt: now }).where(key(host, slot));
   }
 
   /** One host's rows last played (else finished, else made) before `before`. */
@@ -155,8 +177,9 @@ export class TorrentsRepo {
       );
   }
 
+  /** Deletes every row of the torrent on this host (all its episodes). */
   async delete(host: string, infoHash: string): Promise<boolean> {
-    const rows = await this.db.delete(streamTorrents).where(key(host, infoHash)).returning({ infoHash: streamTorrents.infoHash });
+    const rows = await this.db.delete(streamTorrents).where(torrentKey(host, infoHash)).returning({ infoHash: streamTorrents.infoHash });
     return rows.length > 0;
   }
 }
@@ -164,5 +187,5 @@ export class TorrentsRepo {
 /** What TorrentStreams needs of the repository (tests pass an in-memory one). */
 export type TorrentRecords = Pick<
   TorrentsRepo,
-  'record' | 'get' | 'byHash' | 'forRef' | 'all' | 'chosen' | 'progress' | 'ready' | 'failed' | 'restarted' | 'played' | 'duration' | 'stale' | 'delete'
+  'record' | 'get' | 'slots' | 'byHash' | 'forRef' | 'all' | 'chosen' | 'progress' | 'ready' | 'failed' | 'restarted' | 'played' | 'duration' | 'stale' | 'delete'
 >;

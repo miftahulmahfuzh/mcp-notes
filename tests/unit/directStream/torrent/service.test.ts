@@ -226,8 +226,8 @@ describe('TorrentStreams', () => {
     const records = new MemoryTorrentRecords();
     const at = new Date(clock - 3 * 86_400_000);
     await records.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: PICK.name, trackers: [] }, at);
-    await records.chosen('host-a', HASH, { files: [{ index: 1, path: FILES[1]!.path, length: VIDEO.length }, { index: 0, path: FILES[0]!.path, length: SRT.length }], fileIndex: 1, fileLength: VIDEO.length }, at);
-    await records.ready('host-a', HASH, VIDEO.length, at);
+    await records.chosen('host-a', { infoHash: HASH, season: 0, episode: 0 }, { files: [{ index: 1, path: FILES[1]!.path, length: VIDEO.length }, { index: 0, path: FILES[0]!.path, length: SRT.length }], fileIndex: 1, fileLength: VIDEO.length }, at);
+    await records.ready('host-a', { infoHash: HASH, season: 0, episode: 0 }, VIDEO.length, at);
     const engine = new FakeTorrentEngine([]);
     const { streams, folder } = build({ records, engine });
     await put(folder, FILES[1]!.path, VIDEO);
@@ -286,9 +286,9 @@ describe('TorrentStreams', () => {
     const records = new MemoryTorrentRecords();
     const OLD = 'a1'.repeat(20);
     await records.record('host-a', { infoHash: OLD, ref: REF, name: 'Old', release: null, trackers: [] }, new Date(clock - 30 * 86_400_000));
-    await records.played('host-a', OLD, new Date(clock - 8 * 86_400_000));
+    await records.played('host-a', { infoHash: OLD, season: 0, episode: 0 }, new Date(clock - 8 * 86_400_000));
     await records.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: null, trackers: [] }, new Date(clock - 30 * 86_400_000));
-    await records.played('host-a', HASH, new Date(clock - 86_400_000));
+    await records.played('host-a', { infoHash: HASH, season: 0, episode: 0 }, new Date(clock - 86_400_000));
     const { streams, folder } = build({ records });
     await mkdir(folder.dirOf(OLD), { recursive: true });
     expect(await streams.start()).toBe(1);

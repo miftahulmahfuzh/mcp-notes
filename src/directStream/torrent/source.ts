@@ -108,7 +108,7 @@ export interface TorrentSwarm {
   /** `/api/stream/torrent/<hash>/f/<index>`. */
   localUrl(infoHash: string, index: number): string;
   /** The video's length once the probe knows it: `/map` then answers seconds (phase 4's grey bar). */
-  setDuration(infoHash: string, seconds: number): unknown;
+  setDuration(infoHash: string, seconds: number, fileIndex?: number): unknown;
   /** Gives back a hold taken with `use`; with none left the swarm is left at once (a torrent that lost the race, or did not play). Absent: `release`. */
   drop?(infoHash: string): unknown;
   /** For a torrent opened and not used: leaves its swarm at once when nothing uses it, and touches nobody's hold. Absent: `release`. */
@@ -767,7 +767,7 @@ export class TorrentSource {
       this.log(`[notesd] torrent: the download ${download.infoHash} of ${refLabel(ref)} could not be remuxed: ${messageOf(err)}`);
       return null;
     }
-    this.noteDuration(download.infoHash, probe);
+    this.noteDuration(download.infoHash, probe, download.fileIndex);
     const stop = new AbortController();
     const torrent: SessionTorrent = {
       infoHash: download.infoHash,
@@ -882,11 +882,11 @@ export class TorrentSource {
   }
 
   /** Phase 1's map turns bytes into seconds once it knows the length (the page's grey bar). */
-  private noteDuration(infoHash: string, probe: MediaProbe): void {
+  private noteDuration(infoHash: string, probe: MediaProbe, fileIndex: number): void {
     if (probe.durationS === null) return;
     const seconds = probe.durationS;
     void Promise.resolve()
-      .then(() => this.opts.swarm.setDuration(infoHash, seconds))
+      .then(() => this.opts.swarm.setDuration(infoHash, seconds, fileIndex))
       .catch((err: unknown) => this.log(`[notesd] torrent: could not record the length of ${infoHash}: ${messageOf(err)}`));
   }
 
@@ -1218,7 +1218,7 @@ export class TorrentSource {
       } catch (err) {
         return { ok: false, attempt: { provider: torrentLabel(c.name), outcome: 'unplayable', took_s: p.tookS, detail: `${describeProbe(probe)}: the remux did not start (${messageOf(err)})` } };
       }
-      this.noteDuration(c.infoHash, probe);
+      this.noteDuration(c.infoHash, probe, p.video);
       const stop = new AbortController();
       const torrent: SessionTorrent = {
         infoHash: c.infoHash,

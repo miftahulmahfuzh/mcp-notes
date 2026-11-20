@@ -1908,13 +1908,29 @@ DHT node and no peer.
    deletes each folder under `NOTESD_TORRENT_DIR` named as an info hash that no row of this machine names
    and nothing uses; the tracker book and the tracker lists beside them stay. While the old shared database
    is still to be merged, that folder sweep is skipped: a download whose row is only there yet keeps its files.
-8. Peers are reached over TCP only, with no switch. uTP beside it made things worse from this machine, WSL 2
+8. The torrent folder has a budget, `NOTESD_TORRENT_BUDGET_GB` (40 GiB; `NOTESD_TORRENT_MAX_GB` is only the
+   finder's limit for one release). It counts everything under each torrent's folder: the downloaded files, a
+   remux's segments, subtitle cue files and kept subtitles (blocks on disk, so an unfinished download counts what
+   it holds). At start, every six hours and after a download finishes, whole torrents are deleted until the folder
+   is under it: never-played ones first, oldest first, then the least recently played. A torrent played or
+   finished in the last 24 hours goes only when that was not enough, and one in use (a session, the next episode
+   being fetched ahead) never goes. Its remux and cue files go with it. Each deletion is one log line:
+   `torrent: cleared <name> (4.2 GB, last played 2026-11-12): the downloads took more than the 40.0 GB budget,
+   38.1 GB now`.
+9. A season pack keeps every episode chosen from it. `stream_torrents` has one row per host, info hash and
+   episode (a film is episode 0 of season 0), each with its own chosen files, state, play and length, so watching
+   E02 after E01 keeps E01's file, and E01 plays again from disk. The next episode fetched ahead into the same
+   pack gets its own row while the episode on screen keeps its: each is marked `ready` when its own files are
+   whole, and the played mark and the grey bar follow the episode on screen. Leaving the swarm deletes only the
+   files no row of the torrent chose (the edge bytes of the other episodes). The 7-day rule and the budget treat
+   a pack as one torrent, dated by its most recent episode.
+10. Peers are reached over TCP only, with no switch. uTP beside it made things worse from this machine, WSL 2
    behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP alone fetched 183, 226, 184
    and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB.
-9. A late peer never ends the daemon. A torrent that was left (a torrent that lost the race) may
+11. A late peer never ends the daemon. A torrent that was left (a torrent that lost the race) may
    still get a peer's handshake bytes just after; the engine ignores a handshake for a torrent it no longer
    holds (`handshakeGuard.ts`).
-10. Nor does a tracker's late answer. An HTTP tracker still sending its answer when its torrent is left (a racer that
+12. Nor does a tracker's late answer. An HTTP tracker still sending its answer when its torrent is left (a racer that
    lost, a pack without the episode) had its read aborted with nothing to catch it, and the daemon ended
    (`DOMException [AbortError]` at bittorrent-tracker's `destroyCleanup`, during a Jujutsu Kaisen play); such a
    failure is now dropped, and any other goes to the request's own callback (`trackerGuard.ts`).

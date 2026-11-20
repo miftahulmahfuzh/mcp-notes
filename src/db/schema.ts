@@ -1690,9 +1690,10 @@ export interface StreamTorrentFile {
  * One torrent download on one host (migration 0031, torrent-stream-source phase 1). Written only by
  * TorrentsRepo (src/directStream/torrent/repo.ts). The files live in that host's torrent folder
  * (`<NOTESD_TORRENT_DIR>/<info hash>/`), so the other machine lists the row with `available: false`.
- * One row per host and info hash; the title slot is the one it was last opened for (a film is season 0,
- * episode 0, as in stream_caches); opening it for another slot forgets the chosen files. `files` are the
- * chosen files only (the video and its subtitles), `file_index` the video. `error` is set exactly when it
+ * One row per host, info hash and episode (a film is season 0, episode 0, as in stream_caches): a season
+ * pack has a row for every episode chosen from it, each with its own files, state and play, so watching
+ * E02 never forgets E01's file. A film's row opened for another title forgets its chosen files. `files`
+ * are the slot's chosen files only (the video and its subtitles), `file_index` the video. `error` is set exactly when it
  * failed; `completed_at` exactly when it is ready, which needs a chosen video.
  */
 export const streamTorrents = pgTable(
@@ -1723,7 +1724,7 @@ export const streamTorrents = pgTable(
     playedAt: timestamp('played_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
-    primaryKey({ columns: [t.host, t.infoHash] }),
+    primaryKey({ columns: [t.host, t.infoHash, t.season, t.episode] }),
     index('stream_torrents_slot_idx').on(t.kind, t.tmdbId, t.season, t.episode, t.host),
     check('stream_torrents_info_hash_check', sql`${t.infoHash} ~ '^[0-9a-f]{40}$'`),
     check('stream_torrents_kind_check', sql`${t.kind} in ('movie', 'tv')`),

@@ -322,7 +322,7 @@ EOF
   # NOTESD_TORRENT=off unless --torrent: a throwaway daemon never joins a real swarm. --torrent turns discovery
   # off (no DHT, no tracker), names the loopback seeder as every torrent's peer and caps upload at 64 kB/s.
   if [ "$torrent" = 1 ]; then
-    env+=(NOTESD_TORRENT=on NOTESD_TORRENT_DISCOVERY=off "NOTESD_TORRENT_PEERS=127.0.0.1:$seed_port" NOTESD_TORRENT_UPLOAD_KBPS=64 NOTESD_TORRENT_KEEP_DAYS=7)
+    env+=(NOTESD_TORRENT=on NOTESD_TORRENT_DISCOVERY=off "NOTESD_TORRENT_PEERS=127.0.0.1:$seed_port" NOTESD_TORRENT_UPLOAD_KBPS=64 NOTESD_TORRENT_KEEP_DAYS=7 NOTESD_TORRENT_BUDGET_GB=5)
   else
     env+=(NOTESD_TORRENT=off)
   fi

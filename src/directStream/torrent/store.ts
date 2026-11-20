@@ -89,6 +89,37 @@ export class TorrentFolder {
     return entries.filter((e) => e.isDirectory() && /^[0-9a-f]{40}$/.test(e.name)).map((e) => e.name);
   }
 
+  /**
+   * The bytes the torrent's folder takes on disk, everything in it: the downloaded files, a remux's segments,
+   * subtitle cue files. Counted by allocated blocks, so a sparse file of an unfinished download counts what it
+   * holds, not its length. 0 when there is no folder.
+   */
+  async size(infoHash: string): Promise<number> {
+    const walk = async (dir: string): Promise<number> => {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return 0;
+      }
+      let total = 0;
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) total += await walk(full);
+        else if (e.isFile()) {
+          try {
+            const s = await stat(full);
+            total += s.blocks > 0 ? s.blocks * 512 : s.size;
+          } catch {
+            // gone meanwhile
+          }
+        }
+      }
+      return total;
+    };
+    return walk(this.dirOf(infoHash));
+  }
+
   /** Whether the torrent has a folder here. */
   async exists(infoHash: string): Promise<boolean> {
     try {
