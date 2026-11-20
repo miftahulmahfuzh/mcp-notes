@@ -27,7 +27,8 @@
 .cp-kind { display: inline-flex; }
 .cp-tags { display: inline-flex; gap: 4px; }
 .cp-tag { font-size: 10px; }
-.cp-live { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+/* Two classes: `.mv-chip`'s own colour (Movies.css, loaded later) would otherwise win and leave light text on the light chip. */
+.mv-chip.cp-live { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .cp-size { flex: none; width: 74px; text-align: right; font-family: var(--mono); font-size: 12px; letter-spacing: .02em; }
 .cp-bulkbtn.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .cp-bulkbtn.on:disabled { opacity: 1; }

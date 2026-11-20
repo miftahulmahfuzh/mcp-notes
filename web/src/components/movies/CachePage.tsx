@@ -47,7 +47,7 @@ const REFRESH_MS = 15_000;
 export const FAST_REFRESH_MS = 3_000;
 
 const WHY_TIP: Record<DiskWhy, string> = {
-  asked: 'Asked for: a Download button or direct_stream_cache',
+  asked: 'You asked for this download (a Download button or direct_stream_cache): it is kept until you delete it',
   ahead: 'The next episode, fetched while this one plays',
   pause: 'Cached on a pause in the player',
 };
@@ -96,7 +96,11 @@ function Tags({ watched, notInterested = false, playing, inUse }: { watched: boo
     <span className="cp-tags">
       {watched && <span className="mv-chip cp-tag">watched</span>}
       {notInterested && <span className="mv-chip cp-tag">not interested</span>}
-      {inUse && <span className="mv-chip cp-tag cp-live">{playing ? 'playing' : 'in use'}</span>}
+      {inUse && (
+        <span className="mv-chip cp-tag cp-live" data-tip={playing ? 'Playing on screen now: it cannot be deleted until the play ends' : 'Being fetched now (a download, the next episode, or a torrent held open): it cannot be deleted until that stops'}>
+          {playing ? 'playing' : 'in use'}
+        </span>
+      )}
     </span>
   );
 }
