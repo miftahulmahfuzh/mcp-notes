@@ -32,7 +32,14 @@ export interface StreamSession {
   torrent: TorrentInfo | null;
   /** How many times the daemon replaced `subtitles` since the play started (Wyzie Synced re-timed a torrent's subtitle). The answer to a position report carries the number now. */
   subtitleRev: number;
+  /** The film or episode the session plays; null when the daemon did not say. A page whose session a restart ended asks to continue it by this. */
+  ref: SessionRef | null;
+  /** The provider the session streams from (`Torrent` for a torrent); null when not said. */
+  provider: string | null;
 }
+
+/** A film, or one episode of a series, as TMDB numbers it. */
+export type SessionRef = { kind: 'movie'; tmdbId: number } | { kind: 'tv'; tmdbId: number; season: number; episode: number };
 
 export interface EpisodeNumber {
   season: number;
@@ -129,6 +136,14 @@ function torrentInfo(value: unknown): TorrentInfo | null {
   return { infoHash, name: text(name) ?? infoHash, index: text(index), seeds: count(seeds), state: torrentState(state) };
 }
 
+function sessionRef(o: Record<string, unknown>): SessionRef | null {
+  const { kind, tmdb_id: tmdbId, season, episode } = o;
+  if (typeof tmdbId !== 'number' || !Number.isInteger(tmdbId) || tmdbId <= 0) return null;
+  if (kind === 'movie') return { kind, tmdbId };
+  if (kind === 'tv' && typeof season === 'number' && Number.isInteger(season) && typeof episode === 'number' && Number.isInteger(episode)) return { kind, tmdbId, season, episode };
+  return null;
+}
+
 function episodeNumber(value: unknown): EpisodeNumber | null {
   if (typeof value !== 'object' || value === null) return null;
   const { season, episode } = value as Record<string, unknown>;
@@ -176,6 +191,8 @@ export function parseSession(json: unknown): StreamSession {
     cached: torrent === null ? cachedInfo(o.cached) : null,
     torrent,
     subtitleRev: count(o.subtitle_rev) ?? 0,
+    ref: sessionRef(o),
+    provider: text(o.provider),
   };
 }
 
@@ -206,6 +223,7 @@ export const torrentMapUrl = (infoHash: string): string => `${torrentUrl(infoHas
 export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
 export const eventsUrl = (id: string): string => `${sessionUrl(id)}/events`;
 export const reportUrl = (id: string): string => `${sessionUrl(id)}/report`;
+export const CONTINUE_URL = '/api/stream/continue';
 
 async function errorCode(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
@@ -360,10 +378,11 @@ export interface SourceSwitch {
  * resolves without the provider on screen, which takes seconds, like a play. Throws SessionError
  * with the daemon's code (`unknown_session`, ...).
  */
-export async function switchSource(id: string, fetchImpl: typeof fetch): Promise<SourceSwitch> {
+export async function switchSource(id: string, fetchImpl: typeof fetch, options: { leaveCache?: boolean } = {}): Promise<SourceSwitch> {
   let res: Response;
   try {
-    res = await fetchImpl(sourceUrl(id), { method: 'POST' });
+    // `leave_cache`: a play from this machine's cache that keeps stalling goes back to the live stream.
+    res = await fetchImpl(sourceUrl(id), options.leaveCache === true ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ leave_cache: true }) } : { method: 'POST' });
   } catch {
     throw new SessionError('network', 0);
   }
@@ -392,25 +411,117 @@ export async function switchEpisode(id: string, to: 'prev' | 'next', fetchImpl: 
   return body.session_id;
 }
 
+/** What the answer to a position report tells the page. */
+export interface PositionAnswer {
+  /** The session's `subtitle_rev` as the daemon has it now (StreamSession.subtitleRev); null when it did not say. */
+  rev: number | null;
+  /** The daemon does not know the session (it restarted), or could not be reached: the page carries its play on. */
+  gone: boolean;
+}
+
 /**
- * A 404 (no movies store yet, or a session it does not know) and every other failure are ignored.
- * A closing page's report is sent `keepalive`, so it outlives the page. Answers the session's
- * `subtitle_rev` as the daemon has it now (StreamSession.subtitleRev), or null when it did not say.
+ * Never throws. A failed report is not sent again: the position is reported again in 5 s. A closing
+ * page's report is sent `keepalive`, so it outlives the page, and its answer is not read.
  */
-export async function postPosition(id: string, report: PositionReport, fetchImpl: typeof fetch): Promise<number | null> {
+export async function postPosition(id: string, report: PositionReport, fetchImpl: typeof fetch): Promise<PositionAnswer> {
+  let res: Response;
   try {
-    const res = await fetchImpl(positionUrl(id), {
+    res = await fetchImpl(positionUrl(id), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(report),
       ...(report.closed === true ? { keepalive: true } : {}),
     });
-    if (!res.ok || report.closed === true) return null;
-    const body = (await res.json().catch(() => null)) as { subtitle_rev?: unknown } | null;
-    return count(body?.subtitle_rev);
   } catch {
-    // ignored: the position is reported again in 5 s
+    return { rev: null, gone: report.closed !== true };
+  }
+  if (report.closed === true) return { rev: null, gone: false };
+  const body = (await res.json().catch(() => null)) as { subtitle_rev?: unknown; error?: unknown } | null;
+  if (!res.ok) return { rev: null, gone: body?.error === 'unknown_session' || daemonDown(res.status, body) };
+  return { rev: count(body?.subtitle_rev), gone: false };
+}
+
+/** A 502, 503 or 504 with no error of the daemon's own: a proxy in front of a daemon that is not there (the Vite dev server). */
+function daemonDown(status: number, body: { error?: unknown } | null): boolean {
+  return (status === 502 || status === 503 || status === 504) && typeof body?.error !== 'string';
+}
+
+/** A failed call that means the daemon is down or restarting: try again in a moment. */
+export function isDaemonDown(err: unknown): boolean {
+  return err instanceof SessionError && (err.code === 'network' || err.code === 'http_502' || err.code === 'http_503' || err.code === 'http_504');
+}
+
+/** What the page knows of its play, to carry it on in a fresh session after the daemon lost it. */
+export interface PlayMemory {
+  sessionId: string;
+  ref: SessionRef;
+  provider: string | null;
+  /** 40 lower-case hex characters: the torrent it played. */
+  infoHash: string | null;
+  positionS: number | null;
+}
+
+/** POST /api/stream/continue: a fresh session for the play, and whether it is a new one (false: the daemon still held the page's session). */
+export interface ContinueAnswer {
+  continued: boolean;
+  session: StreamSession;
+}
+
+/**
+ * Asks the daemon for a fresh session for a play whose session it lost (a restart): the same title,
+ * the provider or the torrent it was on first, from `positionS`. No page is opened. Throws
+ * SessionError: `network` (the daemon is still down), the daemon's code (`no_source`, ...).
+ */
+export async function continueSession(memory: PlayMemory, fetchImpl: typeof fetch): Promise<ContinueAnswer> {
+  const { ref } = memory;
+  const body = {
+    kind: ref.kind,
+    tmdb_id: ref.tmdbId,
+    ...(ref.kind === 'tv' ? { season: ref.season, episode: ref.episode } : {}),
+    session_id: memory.sessionId,
+    provider: memory.provider,
+    info_hash: memory.infoHash,
+    position_s: memory.positionS === null ? null : Math.round(memory.positionS * 10) / 10,
+  };
+  let res: Response;
+  try {
+    res = await fetchImpl(CONTINUE_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  } catch {
+    throw new SessionError('network', 0);
+  }
+  if (!res.ok) throw new SessionError(await errorCode(res), res.status);
+  const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  return { continued: json?.continued !== false, session: parseSession(json) };
+}
+
+const MEMORY_KEY = 'notesd-stream-play:';
+
+/** The page's memory of the play under a session id (sessionStorage); null when there is none or it cannot be read. */
+export function readPlayMemory(storage: Pick<Storage, 'getItem'> | undefined, sessionId: string): PlayMemory | null {
+  try {
+    const raw = storage?.getItem(MEMORY_KEY + sessionId);
+    if (raw === null || raw === undefined) return null;
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    const ref = typeof o.ref === 'object' && o.ref !== null ? sessionRef(o.ref as Record<string, unknown>) : null;
+    if (ref === null) return null;
+    const hash = typeof o.infoHash === 'string' && INFO_HASH.test(o.infoHash) ? o.infoHash.toLowerCase() : null;
+    const position = typeof o.positionS === 'number' && Number.isFinite(o.positionS) && o.positionS > 0 ? o.positionS : null;
+    return { sessionId, ref, provider: text(o.provider), infoHash: hash, positionS: position };
+  } catch {
     return null;
+  }
+}
+
+/** Keeps the page's memory of its play (sessionStorage, so a reload of the tab finds it). A storage that refuses only means a reload cannot carry the play on. */
+export function writePlayMemory(storage: Pick<Storage, 'setItem'> | undefined, memory: PlayMemory): void {
+  try {
+    const { ref } = memory;
+    storage?.setItem(
+      MEMORY_KEY + memory.sessionId,
+      JSON.stringify({ ref: { kind: ref.kind, tmdb_id: ref.tmdbId, ...(ref.kind === 'tv' ? { season: ref.season, episode: ref.episode } : {}) }, provider: memory.provider, infoHash: memory.infoHash, positionS: memory.positionS }),
+    );
+  } catch {
+    // ignored
   }
 }
 

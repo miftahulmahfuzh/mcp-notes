@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, SUBTITLE_HOLD_MS, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
+import { CACHE_POLL_MS, RECONNECT_GIVE_UP_MS, RECONNECT_RETRY_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, SUBTITLE_HOLD_MS, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
@@ -14,7 +14,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function setup(routes: Record<string, (call: FetchCall) => Response>, opts: { muted?: boolean } = {}) {
+function setup(routes: Record<string, (call: FetchCall) => Response>, opts: { muted?: boolean; memory?: Pick<Storage, 'getItem' | 'setItem'>; onSession?: (id: string) => void } = {}) {
   const { made, createEngine } = fakeEngines();
   const { fetchImpl, calls } = routeFetch(routes);
   const { video, media, play, fire } = fakeVideo();
@@ -28,6 +28,8 @@ function setup(routes: Record<string, (call: FetchCall) => Response>, opts: { mu
     },
     revokeTextUrl: () => {},
     muted: opts.muted,
+    memory: opts.memory,
+    onSession: opts.onSession,
   });
   controllers.push(controller);
   const posts = (url = `${S1}/position`) => calls.filter((c) => c.method === 'POST' && c.url === url).map((c) => c.body);
@@ -59,8 +61,13 @@ describe('parseSession', () => {
       cached: null,
       torrent: null,
       subtitleRev: 0,
+      ref: { kind: 'movie', tmdbId: 550 },
+      provider: 'VidFast',
     });
     expect(parseSession(streamSessionJson({ subtitle_rev: 2 })).subtitleRev).toBe(2);
+    // The title the session plays, which a page whose session a restart ended asks to continue by.
+    expect(parseSession(streamSessionJson({ kind: 'tv', tmdb_id: 37854, season: 18, episode: 787 })).ref).toEqual({ kind: 'tv', tmdbId: 37854, season: 18, episode: 787 });
+    expect(parseSession(streamSessionJson({ kind: 'tv', season: null })).ref).toBeNull();
     // A series' session names its neighbours; anything else there is no neighbour.
     expect(parseSession(streamSessionJson({ prev_episode: { season: 17, episode: 729 }, next_episode: { season: 'x', episode: 1 } }))).toMatchObject({
       prevEpisode: { season: 17, episode: 729 },
@@ -486,8 +493,9 @@ describe('StreamController: refresh and continue (R2.5)', () => {
     t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
     t.made[0].req.handlers.onSessionOver(403);
     t.made[0].req.handlers.onSessionOver(403);
-    expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'session_over', refreshes: 0, errors: ['session_over'] });
-    expect(t.calls.filter((c) => c.url === `${S1}/refresh`)).toHaveLength(0);
+    // The daemon still holds the session, so the refusal was not a restart: nothing is carried on.
+    await vi.waitFor(() => expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'session_over', refreshes: 0, errors: ['session_over'] }));
+    expect(t.calls.filter((c) => c.url === `${S1}/refresh` || c.url === '/api/stream/continue')).toHaveLength(0);
     expect(t.made).toHaveLength(1);
   });
 });
@@ -739,7 +747,7 @@ describe('StreamController: a network error (R1.7) and the buffer (R1.8)', () =>
     for (let attempt = 1; attempt <= NETWORK_RETRY_LIMIT; attempt++) handlers.onRecovering(attempt, 'networkError fragLoadError');
     expect(t.controller.getState().stage).toBe('recovering');
     handlers.onFatal('networkError fragLoadError');
-    expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'networkError fragLoadError', errors: ['networkError fragLoadError'] });
+    await vi.waitFor(() => expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'networkError fragLoadError', errors: ['networkError fragLoadError'] }));
     handlers.onRecovering(1, 'networkError fragLoadError');
     handlers.onRecovered();
     expect(t.controller.getState().stage).toBe('error');
@@ -931,10 +939,21 @@ describe('a film that keeps stalling', () => {
     expect(t.asks()).toHaveLength(1);
   });
 
-  it('never leaves a cache, and a muted check never moves', async () => {
-    const cached = await playing({ [SOURCE]: () => moved() }, { cached: { id: 'c1', state: 'ready', height: 480 } });
+  it('a cached play that keeps stalling goes back to the live stream, and a muted check never moves', async () => {
+    const LOCAL_C1 = '/api/stream/cache/c1/f/master.m3u8';
+    const cached = await playing({ [SOURCE]: () => moved({ from: 'cache', provider: 'HyperLink' }) }, { cached: { id: 'c1', state: 'ready', height: 480 }, manifest_url: LOCAL_C1 });
     for (let i = 0; i < STALLS_TO_SWITCH; i++) await cached.stall();
-    expect(cached.asks()).toHaveLength(0);
+    await vi.waitFor(() => expect(cached.made).toHaveLength(2));
+    expect(cached.asks().map((c) => c.body)).toEqual([{ leave_cache: true }]);
+    expect(cached.made[1].req).toMatchObject({ src: `${S1}/p?u=m2`, startAt: 300 });
+    expect(cached.controller.getState().cached).toBeNull();
+    expect(cached.controller.getState().log).toContain(`${STALLS_TO_SWITCH} stalls in 120 s: leaving the cache for the live stream`);
+    // A pause no longer moves the play back onto the cache that starved.
+    cached.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    cached.media.paused = true;
+    cached.fire('pause');
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS);
+    expect(cached.calls.filter((c) => c.url === `${S1}/cache`)).toHaveLength(0);
     vi.useRealTimers();
     const muted = await playing({ [SOURCE]: () => moved() }, {}, { muted: true });
     for (let i = 0; i < STALLS_TO_SWITCH; i++) await muted.stall();
@@ -1492,5 +1511,110 @@ describe('a growing subtitle (a cue feed)', () => {
     const FEED = '/api/stream/torrent/x/cues/embedded-2';
     expect(parseSession(streamSessionJson({ subtitles: [sessionTrack(FEED, 'en', 'English', { format: 'cues', growing: true })] })).subtitles).toEqual([{ url: FEED, lang: 'en', label: 'English', english: true, growing: true }]);
     expect(parseSession(streamSessionJson({ subtitles: [sessionTrack('/x', 'en', 'English', { growing: 'yes' })] })).subtitles).toEqual([{ url: '/x', lang: 'en', label: 'English', english: true }]);
+  });
+});
+
+describe('a play carries on after the daemon restarts', () => {
+  const S2 = '/api/stream/sessions/S2';
+  const CONTINUE = 'POST /api/stream/continue';
+  const fresh = (over: Record<string, unknown> = {}) => jsonResponse({ ...streamSessionJson({ session_id: 'S2', manifest_url: `${S2}/p?u=m9`, resume_s: 300 }), continued: true, ...over });
+  const tabStore = () => {
+    const kept = new Map<string, string>();
+    return { kept, getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) };
+  };
+
+  async function playing(routes: Record<string, (call: FetchCall) => Response>, session: Record<string, unknown> = {}) {
+    const memory = tabStore();
+    const sessions: string[] = [];
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson(session)), ...routes }, { memory, onSession: (id) => void sessions.push(id) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 300, duration: 1440, paused: false });
+    t.fire('timeupdate');
+    const continues = () => t.calls.filter((c) => c.method === 'POST' && c.url === '/api/stream/continue').map((c) => c.body);
+    return { ...t, memory, sessions, continues };
+  }
+
+  it('a position report the daemon no longer knows gets a fresh session for the same play, at the same place', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const t = await playing({ [`POST ${S1}/position`]: () => jsonResponse({ error: 'unknown_session' }, 404), [CONTINUE]: () => fresh() });
+    t.media.currentTime = 305;
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.continues()).toEqual([{ kind: 'movie', tmdb_id: 550, session_id: 'S1', provider: 'VidFast', info_hash: null, position_s: 305 }]);
+    expect(t.made[0].destroy).toHaveBeenCalled();
+    expect(t.made[1].req).toMatchObject({ src: `${S2}/p?u=m9`, startAt: 305 });
+    expect(t.sessions).toEqual(['S2']);
+    t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', reconnecting: false });
+    // Reports go to the new session from then on; the tab remembers it for a reload.
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    expect(t.posts(`${S2}/position`).length).toBeGreaterThan(0);
+    expect(JSON.parse(t.memory.kept.get('notesd-stream-play:S2')!)).toMatchObject({ ref: { kind: 'movie', tmdb_id: 550 }, provider: 'VidFast' });
+    expect(t.controller.getState().log).toContain('carried on in session S2 at 305 s');
+  });
+
+  it('while the daemon is down it says it is reconnecting and asks again, a torrent by its info hash', async () => {
+    const HASH = 'ab'.repeat(20);
+    let down = true;
+    const t = await playing(
+      {
+        [`POST ${S1}/position`]: () => {
+          throw new Error('connection refused');
+        },
+        [CONTINUE]: () => {
+          if (down) throw new Error('connection refused');
+          return fresh({ provider: 'Torrent', torrent: { info_hash: HASH, file_index: 0, name: 'Film', index: null, state: 'ready', seeds: null } });
+        },
+      },
+      { provider: 'Torrent', torrent: { info_hash: HASH, file_index: 0, name: 'Film', index: 'torrentio', state: 'downloading', seeds: 9 } },
+    );
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    // Play after a pause reports at once.
+    t.fire('play');
+    await vi.waitFor(() => expect(t.controller.getState().reconnecting).toBe(true));
+    await vi.advanceTimersByTimeAsync(RECONNECT_RETRY_MS * 3);
+    expect(t.continues().length).toBeGreaterThanOrEqual(3);
+    expect(t.continues()[0]).toMatchObject({ provider: 'Torrent', info_hash: HASH });
+    expect(t.controller.getState().stage).not.toBe('error');
+    down = false;
+    await vi.advanceTimersByTimeAsync(RECONNECT_RETRY_MS);
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.controller.getState()).toMatchObject({ reconnecting: false, torrent: { infoHash: HASH, state: 'ready' } });
+  });
+
+  it('gives up after three minutes with the ended message', async () => {
+    const t = await playing({
+      [`POST ${S1}/position`]: () => jsonResponse({ error: 'unknown_session' }, 404),
+      [CONTINUE]: () => {
+        throw new Error('connection refused');
+      },
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    // Play after a pause reports at once.
+    t.fire('play');
+    await vi.waitFor(() => expect(t.controller.getState().reconnecting).toBe(true));
+    await vi.advanceTimersByTimeAsync(RECONNECT_GIVE_UP_MS - 10_000);
+    expect(t.controller.getState().stage).not.toBe('error');
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'session_over', reconnecting: false });
+  });
+
+  it('a reload of the page after the restart carries the play on from what the tab remembers', async () => {
+    const memory = tabStore();
+    memory.setItem('notesd-stream-play:S1', JSON.stringify({ ref: { kind: 'tv', tmdb_id: 37854, season: 18, episode: 787 }, provider: 'Beta', infoHash: null, positionS: 1312.4 }));
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse({ error: 'unknown_session' }, 403), [CONTINUE]: () => fresh({ resume_s: 1312.4 }) }, { memory });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    expect(t.calls.find((c) => c.url === '/api/stream/continue')?.body).toEqual({ kind: 'tv', tmdb_id: 37854, season: 18, episode: 787, session_id: 'S1', provider: 'Beta', info_hash: null, position_s: 1312.4 });
+    expect(t.made[0].req).toMatchObject({ src: `${S2}/p?u=m9`, startAt: 1312.4 });
+  });
+
+  it('a title nothing streams any more stops with no_source', async () => {
+    const t = await playing({ [`POST ${S1}/position`]: () => jsonResponse({ error: 'unknown_session' }, 404), [CONTINUE]: () => jsonResponse({ error: 'no_source' }, 502) });
+    t.fire('pause');
+    await vi.waitFor(() => expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'no_source' }));
+    expect(t.made).toHaveLength(1);
   });
 });

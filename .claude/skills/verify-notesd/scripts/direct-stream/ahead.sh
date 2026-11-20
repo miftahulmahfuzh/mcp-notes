@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ahead.sh RUN: the next episode, fetched while this one plays (src/directStream/ahead.ts), on a
 # `verify.sh up --direct-stream` run. It plays an episode of the fake TMDB's series through the fake
-# resolver, reports two minutes of playing as the player page does (one report every 5 s, so it takes
-# a little over two minutes), and reads the end state over HTTP and from the daemon's log: the next
+# resolver, reports playing as the player page does (one report every 5 s) until a 4-minute episode is
+# half through (a little over two minutes), and reads the end state over HTTP and from the daemon's log: the next
 # episode is in this host's stream cache, marked `auto`, and a film fetches nothing.
 # The first failed check stops it with `ahead: FAIL`.
 set -euo pipefail
@@ -40,13 +40,13 @@ next="$(jq -c '.session.next_episode' <<<"$play")"
 [ "$next" != null ] || fail "the session names no next episode: $play"
 ok "S01E01 of series $SERIES plays (session ${sid:0:6}), and names its next episode $next"
 
-echo "== two minutes of playing, a report every 5 s"
+echo "== playing a 4-minute episode past its half, a report every 5 s"
 for i in $(seq 0 25); do
   post "/api/stream/sessions/$film/position" "{\"position_s\":$((i * 5)),\"duration_s\":8000,\"paused\":false}" >/dev/null
-  post "/api/stream/sessions/$sid/position" "{\"position_s\":$((i * 5)),\"duration_s\":1500,\"paused\":false}" >/dev/null
+  post "/api/stream/sessions/$sid/position" "{\"position_s\":$((i * 5)),\"duration_s\":240,\"paused\":false}" >/dev/null
   if [ "$i" = 12 ]; then
-    [ "$(caches "$SERIES")" = "[]" ] || fail "something was cached after one minute: $(caches "$SERIES")"
-    ok "after one minute nothing is fetched"
+    [ "$(caches "$SERIES")" = "[]" ] || fail "something was cached a quarter through: $(caches "$SERIES")"
+    ok "a quarter through the episode nothing is fetched"
   fi
   sleep 5
 done

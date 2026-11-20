@@ -321,13 +321,24 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   and `npm run test:int -- tests/integration/movies.streams.int.test.ts tests/integration/movies.mcp.int.test.ts`.
 - Live (owner's to run): `/direct-stream <title>`, then a double click on the picture leaves full screen.
 
+## A play carries on after the daemon restarts
+- The player page keeps its play (title, provider or info hash, position) and, when the daemon lost
+  the session or is down, asks `POST /api/stream/continue` every 5 s for a fresh session at the same
+  position ("Reconnecting to notesd…"; the ended message only after 3 minutes); a cached play that
+  keeps stalling leaves the cache (`/source` with `leave_cache: true`). Proven by
+  `npx vitest run tests/unit/directStream/continueSession.test.ts web/src/stream/controller.test.tsx web/src/stream/StreamApp.test.tsx`.
+  On `verify.sh up --direct-stream`: play a title, open its page with Playwright, restart the
+  throwaway daemon, and check the page's address moves to a new session id and `window.notesdStream.stage`
+  returns to `ready` at about the same position.
+
 ## The next episode, fetched ahead
 - While an episode plays, the daemon caches the next one (cloud) or fetches it from a torrent
-  (`src/directStream/ahead.ts`): after two minutes of playing reports, one episode ahead, nothing
-  for a film; it gives way to every other download and stops when the stream stalls.
+  (`src/directStream/ahead.ts`): once the episode is half through by its playing reports (ten minutes
+  of playing when the page gives no duration), one episode ahead, nothing for a film or a DASH
+  stream; it gives way to every other download and stops when the stream stalls.
   `verify.sh up --direct-stream`, then
   `.claude/skills/verify-notesd/scripts/direct-stream/ahead.sh RUN` (a little over two minutes:
-  it reports as the page does). It checks that nothing is fetched after one minute, that the next
+  it reports a 4-minute episode as the page does). It checks that nothing is fetched a quarter through, that the next
   episode's `auto` cache is ready, that the film fetched nothing, the daemon's `stream ahead:` line,
   and that the next button plays the cached episode. The torrent path is unit-tested
   (`tests/unit/directStream/ahead.test.ts`, `torrentSource.test.ts` "fetchAhead") and can be seen on

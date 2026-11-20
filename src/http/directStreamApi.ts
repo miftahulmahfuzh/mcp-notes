@@ -117,6 +117,26 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     }
   });
 
+  // The player page, holding a session this daemon lost in a restart: a fresh session for what it was playing. No page is opened.
+  r.post('/api/stream/continue', sameOriginOnly, async (c) => {
+    const body = continueBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) {
+      return c.json({ error: 'invalid_body', message: body.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ') }, 400);
+    }
+    const from = body.data;
+    try {
+      const answer = await service().continueSession(refFromBody(from), {
+        was: from.session_id ?? null,
+        provider: from.provider ?? null,
+        infoHash: from.info_hash?.toLowerCase() ?? null,
+        positionS: from.position_s ?? null,
+      });
+      return c.json({ ...answer.session, continued: answer.continued });
+    } catch (err) {
+      return directStreamErrorResponse(c, err);
+    }
+  });
+
   r.get('/api/stream/sessions/:id', async (c) => {
     const info = await service().info(c.req.param('id'));
     if (info === null) return c.json(UNKNOWN_SESSION, 403);
@@ -142,8 +162,11 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
 
   // The player page, when the film keeps stalling: another provider under the same session id.
   r.post('/api/stream/sessions/:id/source', sameOriginOnly, async (c) => {
+    const body = sourceBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!body.success) return c.json({ error: 'invalid_body', message: 'leave_cache must be true or false.' }, 400);
     try {
-      const answer = await service().switchSource(c.req.param('id'));
+      // A cached play that starves goes back to the live stream; any other moves to another provider.
+      const answer = body.data.leave_cache === true ? await service().leaveCache(c.req.param('id')) : await service().switchSource(c.req.param('id'));
       return c.json({ ...answer.session, switched: answer.switched, reason: answer.reason, from: answer.from });
     } catch (err) {
       return directStreamErrorResponse(c, err);
@@ -201,6 +224,18 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
 }
 
 const episodeBody = z.object({ to: z.enum(['prev', 'next']) });
+const sourceBody = z.object({ leave_cache: z.boolean().optional() });
+/** What the page knows of the play it lost: the title, its old session id, the provider or the torrent, and where the film is. */
+const continueFrom = {
+  session_id: z.string().max(64).nullish(),
+  provider: providerName.nullish(),
+  info_hash: z.string().regex(/^[0-9a-fA-F]{40}$/).nullish(),
+  position_s: resumeS.nullish(),
+};
+const continueBody = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('movie'), tmdb_id: tmdbId, ...continueFrom }),
+  z.object({ kind: z.literal('tv'), tmdb_id: tmdbId, season: z.number().int().min(0).max(1000), episode: z.number().int().min(1).max(10_000), ...continueFrom }),
+]);
 const cacheSessionBody = z.object({ start: z.boolean().optional() });
 
 /** Longest position or duration a report may carry, in seconds (11.5 days: a sanity bound, not a film's length). */
@@ -227,7 +262,11 @@ type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number } | 
 export interface StreamPositionDeps {
   movies: MovieStreamsSource | null;
   /** `letGo`: the page closed or the film ended, so the session lets go of its torrent (torrent phase 3). */
-  directStream?: { session(id: string): PositionSession | null | Promise<PositionSession | null>; letGo?(id: string): void; watched?(id: string, report: { paused: boolean; over: boolean }): void } | null;
+  directStream?: {
+    session(id: string): PositionSession | null | Promise<PositionSession | null>;
+    letGo?(id: string): void;
+    watched?(id: string, report: { paused: boolean; over: boolean; positionS?: number | null; durationS?: number | null }): void;
+  } | null;
   /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
   live?: StreamLive | null;
 }
@@ -236,8 +275,9 @@ export interface StreamPositionDeps {
  * Direct streaming phase 5 (R2.4): the player page's position reports, written on the one
  * `movie_plays` row of its session (src/movies/streams.ts). Same-origin only: it writes.
  * 503 `direct_stream_off` without the service or the movies store; 404 `unknown_session` for a
- * session the daemon does not hold (the page ignores 404s); 404 `unknown_title` when the title
- * cannot be stored (no TMDB credential); 400 `invalid_body`.
+ * session the daemon does not hold (the page then asks to continue its play: POST /api/stream/continue);
+ * 404 `unknown_title` when the title cannot be stored (no TMDB credential); 400 `invalid_body`;
+ * 503 `store_failed` when the database did not take the report (one log line; the page reports again in 5 s).
  *
  * Each report also feeds the live state (src/movies/streamLive.ts): the session is the stream on
  * screen until it ends or closes. A `beat` of a paused page that is already the stream on screen
@@ -246,7 +286,7 @@ export interface StreamPositionDeps {
  * Every 200 carries `subtitle_rev`, the session's count of subtitle changes (Wyzie Synced re-timed
  * it, or an outside subtitle arrived late): the page loads its subtitle again when the number changes.
  */
-export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: () => Date } = {}): Hono {
+export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: () => Date; log?: (line: string) => void } = {}): Hono {
   const r = new Hono();
   r.post('/api/stream/sessions/:id/position', sameOriginOnly, async (c) => {
     const service = deps.directStream ?? null;
@@ -271,7 +311,7 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     // Torrent phase 3: the page is gone or the film is over, so the session lets go of its torrent (a reload takes it again).
     if (over) service.letGo?.(session.id);
     // An episode that is really being watched has its next one fetched to this machine (src/directStream/ahead.ts).
-    service.watched?.(session.id, { paused: report.paused === true, over });
+    service.watched?.(session.id, { paused: report.paused === true, over, positionS: report.position_s, durationS: report.duration_s ?? null });
     if (live !== null && report.beat === true && report.paused === true && !over && live.has(session.id)) {
       const on = live.current();
       if (on !== null) {
@@ -279,11 +319,18 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
         return c.json({ ok: true, play_id: null, ended: false, subtitle_rev: subtitleRev });
       }
     }
-    const written = await new MovieStreams(movies, options).recordPosition(session, {
-      positionS: body.data.position_s,
-      durationS: body.data.duration_s ?? null,
-      ended: body.data.ended ?? false,
-    });
+    let written: Awaited<ReturnType<MovieStreams['recordPosition']>>;
+    try {
+      written = await new MovieStreams(movies, options).recordPosition(session, {
+        positionS: body.data.position_s,
+        durationS: body.data.duration_s ?? null,
+        ended: body.data.ended ?? false,
+      });
+    } catch (err) {
+      // The database did not answer: this report is lost, and the page's next one (5 s on) writes the position.
+      (options.log ?? console.error)(`[notesd] direct stream: the position of session ${session.id.slice(0, 6)} was not stored: ${err instanceof Error ? err.message : String(err)}`);
+      return c.json({ error: 'store_failed', message: 'The position could not be stored now; the next report is tried again.' }, 503);
+    }
     if (written === null) {
       return c.json({ error: 'unknown_title', message: 'The title is not stored and TMDB cannot be asked for it; the play is not recorded.' }, 404);
     }

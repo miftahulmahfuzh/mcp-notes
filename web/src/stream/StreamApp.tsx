@@ -177,6 +177,18 @@ function safeStorage(): Storage | undefined {
   }
 }
 
+/** sessionStorage (this tab only, kept across a reload), or nothing where the browser refuses it. */
+function tabStorage(): Storage | undefined {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The quiet line over the picture while the page asks the daemon to carry its play on. */
+export const RECONNECTING_NOTICE = 'Reconnecting to notesd…';
+
 /** "Subtitle delay +250 ms", as the player says it after G or H. */
 export function delayText(ms: number): string {
   return `Subtitle delay ${ms > 0 ? '+' : ms < 0 ? '−' : ''}${Math.abs(ms)} ms`;
@@ -191,6 +203,7 @@ function browserDeps(): ControllerDeps {
     textUrl: (vtt) => URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' })),
     revokeTextUrl: (url) => URL.revokeObjectURL(url),
     storage: safeStorage(),
+    memory: tabStorage(),
   };
 }
 
@@ -569,6 +582,11 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
           <span className="st-title">{state.title}</span>
           {state.cached !== null && <CachedMark cached={state.cached} />}
           {state.torrent !== null && <TorrentMark torrent={state.torrent} />}
+          {state.reconnecting && (
+            <span className="st-notice" role="status">
+              {RECONNECTING_NOTICE}
+            </span>
+          )}
           {sourceText !== null && (
             <span className="st-notice" role="status">
               {sourceText}

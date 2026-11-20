@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, formatSpeed, loadedGradient, reportLabel, reportText, sourceLine, switchErrorText, SYNCED_NOTICE, SYNCED_NOTICE_MS, torrentLabel } from './StreamApp';
+import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, formatSpeed, loadedGradient, reportLabel, reportText, sourceLine, switchErrorText, RECONNECTING_NOTICE, SYNCED_NOTICE, SYNCED_NOTICE_MS, torrentLabel } from './StreamApp';
 import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -36,6 +36,8 @@ const radio = (el: Element, text: string) =>
   [...el.querySelectorAll('[role="menuitemradio"]')].find((r) => r.textContent === text) ?? null;
 
 beforeEach(() => {
+  // The page remembers its play in this tab's storage; every test starts in a fresh tab.
+  window.sessionStorage.clear();
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
 });
@@ -181,6 +183,29 @@ describe('StreamApp', () => {
     act(() => made[0].req.handlers.onFatal('networkError fragLoadError'));
     await settle();
     expect(el.querySelector('[role="alert"]')?.textContent).toBe('Playback stopped (networkError fragLoadError).');
+  });
+
+  it('a reload after a daemon restart says it is reconnecting, then plays the fresh session and names it in the address', async () => {
+    const { made, createEngine } = fakeEngines();
+    window.sessionStorage.setItem('notesd-stream-play:S1', JSON.stringify({ ref: { kind: 'movie', tmdb_id: 550 }, provider: 'VidFast', infoHash: null, positionS: 600 }));
+    let answer: (r: Response) => void = () => {};
+    const { fetchImpl } = routeFetch({
+      'GET /api/stream/sessions/S1': () => jsonResponse({ error: 'unknown_session' }, 403),
+      'POST /api/stream/continue': () => jsonResponse({ ...streamSessionJson({ session_id: 'S2', resume_s: 600 }), continued: true }),
+    });
+    const held: typeof fetch = (input, init) =>
+      String(input) === '/api/stream/continue' ? new Promise<Response>((resolve) => (answer = (r) => resolve(r))).then(async () => fetchImpl(input, init)) : fetchImpl(input, init);
+    const replace = vi.spyOn(window.history, 'replaceState');
+    const el = render(<StreamApp sessionId="S1" deps={{ fetch: held, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+    await settle();
+    expect(el.querySelector('.st-notice')?.textContent).toBe(RECONNECTING_NOTICE);
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+    answer(new Response());
+    await settle();
+    expect(made).toHaveLength(1);
+    expect(made[0].req.startAt).toBe(600);
+    expect(replace).toHaveBeenCalledWith(null, '', '/stream/S2');
+    expect(el.querySelector('.st-notice')).toBeNull();
   });
 
   it('says so when the address has no session', () => {
