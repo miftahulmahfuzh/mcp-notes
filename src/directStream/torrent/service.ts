@@ -247,19 +247,50 @@ export class TorrentStreams {
     if (hash === null) throw new TorrentError('invalid_hash', 'An info hash is 40 hexadecimal characters.');
     const live = this.active.get(hash);
     if (live === undefined) {
-      for (const row of await this.repo.slots(this.host, hash)) {
-        if (row.state === 'ready' && fileIndexes.every((i) => row.files.some((f) => f.index === i)) && (await this.diskHandle(row)) !== null) return;
-      }
+      if (await this.readyOnDisk(hash, fileIndexes)) return;
       throw new TorrentError('not_open', 'Open the torrent before using its files.');
     }
+    await this.useIn(hash, live, fileIndexes, null);
+  }
+
+  /**
+   * `use` for one named episode of a torrent in the swarm (a season download takes every wanted episode of a pack this
+   * way, one hold each): that episode's row, made now when there is none, takes the files, whatever episode was opened
+   * last. Two episodes on one file (a double episode) each keep their own row. On a finished download read from disk
+   * it does nothing. Throws not_open, not_media, invalid_hash.
+   */
+  async useSlot(pick: TorrentPick, fileIndexes: readonly number[]): Promise<void> {
+    const hash = normalizeInfoHash(pick.infoHash);
+    if (hash === null) throw new TorrentError('invalid_hash', 'An info hash is 40 hexadecimal characters.');
+    const live = this.active.get(hash);
+    if (live === undefined) {
+      if (await this.readyOnDisk(hash, fileIndexes)) return;
+      throw new TorrentError('not_open', 'Open the torrent before using its files.');
+    }
+    live.lastRequestAt = this.nowMs();
+    await this.takeSlot(live, { ...pick, infoHash: hash });
+    await this.useIn(hash, live, fileIndexes, slotKey(slotOf(hash, pick.ref)));
+  }
+
+  /** A ready row of this host that chose every one of these files, whole on disk: nothing to join. */
+  private async readyOnDisk(hash: string, fileIndexes: readonly number[]): Promise<boolean> {
+    for (const row of await this.repo.slots(this.host, hash)) {
+      if (row.state === 'ready' && fileIndexes.every((i) => row.files.some((f) => f.index === i)) && (await this.diskHandle(row)) !== null) return true;
+    }
+    return false;
+  }
+
+  /** `use` on a torrent in the swarm. `key`: the episode's row that takes the files; null: as `use` has always chosen. */
+  private async useIn(hash: string, live: Active, fileIndexes: readonly number[], key: string | null): Promise<void> {
     const chosen = this.mediaFiles(live.handle, fileIndexes);
     // A video that lives as its remux is never fetched again: its original was deleted on purpose.
     const remuxed = new Set([...live.rows.values()].flatMap((r) => r.files.filter((f) => f.remuxed === true).map((f) => f.index)));
     live.handle.select(chosen.filter((f) => !remuxed.has(f.index)).map((f) => f.index));
     live.users += 1;
     live.lastRequestAt = this.nowMs();
-    // The episode whose row already holds these files (a reload takes its torrent again), else the one last opened.
-    const row = [...live.rows.values()].find((r) => chosen.every((c) => r.files.some((f) => f.index === c.index))) ?? this.current(live);
+    // The episode named; else the one whose row already holds these files (a reload takes its torrent again), else the one last opened.
+    const named = key === null ? undefined : live.rows.get(key);
+    const row = named ?? [...live.rows.values()].find((r) => chosen.every((c) => r.files.some((f) => f.index === c.index))) ?? this.current(live);
     const files: StreamTorrentFile[] = row.files.map((f) => ({ ...f }));
     for (const f of chosen) if (!files.some((m) => m.index === f.index)) files.push({ index: f.index, path: f.path, length: f.length });
     const fileIndex = row.fileIndex ?? chosen.find((f) => mediaOf(f.name) === 'video')?.index ?? null;
@@ -301,6 +332,31 @@ export class TorrentStreams {
       }
       await this.settle(hash, live);
     }
+  }
+
+  /**
+   * Gives back the hold one episode took with `useSlot` and stops fetching that episode's own files (the ones no other
+   * episode of the torrent chose, and not whole yet): a season download whose episode was cancelled. The episode's row
+   * and what is on disk stay. With no hold left the torrent goes as after `release`. Unknown or not in the swarm: ignored.
+   */
+  async releaseSlot(infoHash: string, ref: StreamRef): Promise<void> {
+    const hash = normalizeInfoHash(infoHash);
+    const live = hash === null ? undefined : this.active.get(hash);
+    if (hash === null || live === undefined) return;
+    const key = slotKey(slotOf(hash, ref));
+    const row = live.rows.get(key);
+    if (row !== undefined) {
+      const others = new Set([...live.rows.values()].filter((r) => slotKey(r) !== key).flatMap((r) => r.files.map((f) => f.index)));
+      const stop = row.files.map((f) => f.index).filter((i) => !others.has(i) && !live.handle.done(i));
+      if (stop.length > 0) {
+        try {
+          live.handle.deselect?.(stop);
+        } catch (err) {
+          this.log(`[notesd] torrent: could not stop ${row.name}${episodeOf(row)}: ${messageOf(err)}`);
+        }
+      }
+    }
+    await this.release(hash);
   }
 
   /**

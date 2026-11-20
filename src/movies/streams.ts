@@ -323,6 +323,26 @@ export class MovieStreams {
   }
 
   /**
+   * A season's episodes with the day each aired (TMDB's, as the stored title keeps it), in episode order, for a season
+   * download (src/directStream/downloads/season.ts). The title is stored first. Null when it is not stored and cannot be.
+   */
+  async seasonEpisodes(tmdbId: number, season: number): Promise<{ episode: number; airDate: string | null }[] | null> {
+    try {
+      const id = await this.ensureTitle({ kind: 'tv', tmdbId });
+      if (id === null) return null;
+      const meta = await this.movies.repo.loadTitleMetadata(id);
+      if (meta === null) return null;
+      return meta.episodes
+        .filter((e) => e.season === season)
+        .map((e) => ({ episode: e.episode, airDate: e.airDate }))
+        .sort((a, b) => a.episode - b.episode);
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read season ${season} of TMDB tv ${tmdbId}: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /**
    * An anime's key for the anime embeds (src/directStream/anime.ts), or null. Only a title whose
    * original language is Japanese is looked up. The episode is found by its TMDB air date, so the
    * title is stored first (its episode list holds the dates).

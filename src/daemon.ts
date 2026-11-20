@@ -590,6 +590,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     streamCache,
     warp,
     afterDone: () => void deps.streamPreviews?.sweep(),
+    movieStreams,
   });
   // True while a VLC play, a stream on screen or a stream being started exists.
   const playing = (): boolean => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0;
