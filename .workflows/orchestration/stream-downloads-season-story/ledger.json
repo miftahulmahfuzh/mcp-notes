@@ -84,22 +84,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b3740065d9ffac9d75b152e32e8112d270feb0d1",
       "depends_on": [
         4
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "Cache page: Downloading filter, bars, why chips; shelf downloading fields; StreamCache.activity, EpisodeAhead.fetching, aheadFetching; docs regenerated. Decided: ran in the -p5 phase worktree; minted only SD05 (rung 6). proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1121-004324-1072468/evidence",
       "package": "cacheShelf`, `web",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-21T00:47:19+07:00",
       "satisfies": [
         "R4",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD05",
       "title": "The Cache page: Downloading filter, progress bars, why a row downloads"
     },
     {
@@ -187,7 +187,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "db7983c",
       "depends_on": [
         2,
         3,
@@ -195,21 +195,21 @@
       ],
       "difficulty": "HARD",
       "n": 10,
-      "note": null,
+      "note": "office rule replaced: one source order on every network, a torrent step or season pack with no peer on SSID Employee gets one WARP round over the service's WarpHolds (DownloadWarp has no set), let go on done/paused/failed/cancelled; no_peers_here now means no peer even through WARP; no drift, set branch unmoved; phase 9 must apply phase-10.md Handoffs (CLAUDE.md, streaming.md); decisions: ran in the -p10 worktree, minted only SD10 (rung 6); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1121-0013-sd10/evidence",
       "package": "src/directStream/downloads",
       "plan": ".workflows/plan/stream-downloads-season-story/phase-10.md",
-      "reported_at": null,
+      "reported_at": "2026-11-21T00:46:09+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SD10",
       "title": "Office network: a torrent download through WARP before the cloud"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-downloads-season-story",
-  "updated": "2026-11-21T00:27:33+07:00",
+  "updated": "2026-11-21T00:47:19+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-downloads-season-story"
 }
