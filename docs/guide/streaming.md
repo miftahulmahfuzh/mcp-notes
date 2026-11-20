@@ -573,7 +573,9 @@ audio, an English subtitle file).
   An entry changed in the file updates its row. A provider added from a site keeps the site's
   address in `origin_site` and is never rewritten or deleted by the seed. A seed provider the file no
   longer names is deleted at the next start, with its health rows; the plays and sources that name
-  it stay.
+  it stay. A seed entry that changed after the provider was last tried here (a new address) sets
+  its failures in a row to 0 at the next start, so it is ordered and asked like a fresh provider
+  instead of resting on the failures of its old host; its counts stay.
 - Health is per machine, in `stream_provider_health`: for each provider the last outcome
   (`resolved`, `no_stream`, `bot_check`, `error`), counts, failures in a row, the last success and
   failure, the last ten times to a stream, the manifest kind, the best quality and whether an

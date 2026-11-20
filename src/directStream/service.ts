@@ -239,6 +239,8 @@ export interface SyncSeedResult {
   updated: number;
   /** Seed providers the file no longer names, deleted with their health. */
   removed: string[];
+  /** Seed providers whose entry changed since their last try here: their failures in a row were set to 0. */
+  reset: string[];
 }
 
 export interface DirectStreamServiceOptions {
@@ -477,8 +479,8 @@ export class DirectStreamService {
   async syncSeed(): Promise<SyncSeedResult> {
     const animeFile = this.opts.animeSeedFile ?? null;
     const entries = [...(await readSeedFile(this.opts.seedFile)), ...(animeFile === null ? [] : await readSeedFile(animeFile))];
-    const { inserted, updated, removed } = await this.repo.syncSeed(entries, this.now());
-    return { total: entries.length, inserted, updated, removed };
+    const { inserted, updated, removed, reset } = await this.repo.syncSeed(entries, this.now());
+    return { total: entries.length, inserted, updated, removed, reset };
   }
 
   /**

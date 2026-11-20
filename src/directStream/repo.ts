@@ -231,10 +231,14 @@ export class DirectStreamRepo {
    * changed in the file is updated. A seed row the files no longer name is deleted, with its health
    * rows (the foreign key cascades); what played from it (movie_stream_sources, movie_plays, the
    * channels) names it as text and stays. A row a site added (`origin_site` set) is never touched.
-   * An empty seed changes nothing. Returns how many rows were inserted and updated, and the names removed.
+   * A seed provider whose entry changed after it was last tried on a host (a new address: Movies111
+   * and MovieVault moved, and kept the 10 failures in a row of their old hosts) has that host's
+   * failures in a row set to 0, so it is ordered and asked like a fresh one instead of resting.
+   * An empty seed changes nothing. Returns how many rows were inserted and updated, the names
+   * removed and the names whose failures in a row were reset.
    */
-  async syncSeed(entries: readonly SeedProvider[], now: Date = new Date()): Promise<{ inserted: number; updated: number; removed: string[] }> {
-    if (entries.length === 0) return { inserted: 0, updated: 0, removed: [] };
+  async syncSeed(entries: readonly SeedProvider[], now: Date = new Date()): Promise<{ inserted: number; updated: number; removed: string[]; reset: string[] }> {
+    if (entries.length === 0) return { inserted: 0, updated: 0, removed: [], reset: [] };
     const p = streamProviders;
     return this.db.transaction(async (tx) => {
       const gone = await tx
@@ -272,7 +276,19 @@ export class DirectStreamRepo {
         })
         .returning({ inserted: sql<boolean>`(xmax = 0)` });
       const inserted = rows.filter((r) => r.inserted).length;
-      return { inserted, updated: rows.length - inserted, removed: gone.map((r) => r.name).sort() };
+      const h = streamProviderHealth;
+      const reset = await tx
+        .update(h)
+        .set({ consecutiveFailures: 0 })
+        .where(
+          and(
+            sql`${h.consecutiveFailures} > 0`,
+            // Spelled out: both tables have `name` and `updated_at`, and an unqualified column would read the inner one.
+            sql`exists (select 1 from stream_providers sp where sp.name = stream_provider_health.name and sp.origin_site is null and sp.updated_at > stream_provider_health.updated_at)`,
+          ),
+        )
+        .returning({ name: h.name });
+      return { inserted, updated: rows.length - inserted, removed: gone.map((r) => r.name).sort(), reset: [...new Set(reset.map((r) => r.name))].sort() };
     });
   }
 
