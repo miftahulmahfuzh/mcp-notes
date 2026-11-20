@@ -13,6 +13,19 @@
   (direct streaming on, phase 3's fake resolver), seed `movie_stream_sources` with `$V exec` (the
   daemon writes it only after a resolve) and stub `POST /api/stream/play` with Playwright
   `page.route` to choose its answer. Never give a throwaway run the real resolver.
+- Cache page (`/movies/cache`): the drive icon after Films / Series on the Stream grid (aria-label `Cache`).
+  `GET /api/stream/disk` lists this host's torrent downloads and cloud caches per title, season and episode,
+  largest first, blocks on disk; a season pack's shared files count to the season. Trash and the two bulk
+  buttons (`Delete Watched · <size>`, `Delete Not interested · <size>`) delete with no confirmation: the row
+  hides at once, a toast offers Undo for 10 s, the files go when the window closes (or at the next start).
+  Something playing or fetched is `in use` with a disabled trash, and the daemon answers 409 `in_use`. The
+  `stream_disk` tool does the same from chat. Proof: `tests/unit/directStream/cacheShelf.test.ts`,
+  `tests/unit/mcp.streamDiskTool.test.ts`, `web/src/components/movies/CachePage.test.tsx`; on a
+  `$V up --web --torrent` run, `POST /api/stream/torrent` the fixture film and the pack's E01 and E02 under
+  stored titles (`POST /api/movies/ensure` for `tv-247718`), check 409 `in_use` while they download, release
+  them, then in Playwright open the page, unfold the series, trash E01, Undo, trash again and wait 13 s: E01's
+  file and row are gone, E02 and the pack's other files stay. `$V restart` inside a window carries the
+  deletion out at start (daemon.log `cache page: carried out 1 deletion(s) left pending by the restart`).
 - Stream grid upkeep: the grid fills from real plays only (no refresh icon);
   the bookmark icon marks a title "interested" (`interested: true` on `POST /api/movies/:id/user`;
   the Stream side's `interested` pill lists it with no verified source too, as `interested_only`, and

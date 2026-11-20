@@ -676,6 +676,61 @@ streaming, the movie library or the TMDB credential are.
 
 **Two machines.** Each machine builds its own list. Nothing of it is carried to the other machine.
 
+### The Cache page
+
+The drive icon after the Films and Series buttons of the Stream grid opens `/movies/cache`: everything
+this machine keeps on disk for streaming, its torrent downloads (`NOTESD_TORRENT_DIR`, with their remux
+copies and cue files) and its cloud stream cache (`NOTESD_STREAM_CACHE_DIR`). Only this machine's: the
+other laptop's rows are never listed.
+
+- **The header** says the total against the torrent budget, split by kind: `41.2 of 40 GB · torrents
+  35.8 · cloud 5.4`. Sizes are blocks on disk, as the budget's prune measures them, never a file's
+  length, so a download still on its way counts what it holds. A torrent folder no row names (the prune
+  sweeps those) counts in the torrent total but has no row.
+- **One row per title**, largest first: poster, name and year, a magnet when it holds a torrent and a
+  cloud when it holds a cloud cache, `watched` when the title is watched (marked by hand, or every
+  episode or the film finished), `not interested` when marked so, its size, a button to its title page
+  and a trash icon.
+- **A series unfolds** (the caret) to its seasons, and a season to its episodes, folded by default and
+  largest first. A season says whether every episode of it is watched; an episode its own size and
+  watched tag. A season pack's files that no single episode owns (its subtitles, its extras, the
+  edges of files nobody chose, the subtitles notesd kept for it) count to the season: the season's
+  size is its episodes' plus that, and its tooltip says how much. An episode counts its own video,
+  that video's remux and its cue files.
+- **Playing.** A title or episode on screen or being started, a torrent held (a play, the next episode
+  being fetched ahead) and a cloud cache downloading show a `playing` (or `in use`) tag and a disabled
+  trash; every episode of a pack that is held is in use. The daemon refuses them too (`in_use`).
+- **Trash** deletes at once, with no confirmation window: the row goes, and a toast says `Deleted
+  Barbie · 154 MB · Undo` for 10 seconds. Undo brings the row back untouched. The files go when the
+  window closes, which is when the disk space returns.
+- **Delete Watched · 12.3 GB** (the check and broom icon; the size is what it frees) deletes every
+  watched film and series, and of a series not marked watched as a whole only its watched episodes.
+  **Delete Not interested · 2.1 GB** (the crossed eye and broom) deletes every title marked not
+  interested, whole. What is in use is left out. A bulk deletion is one undo: Undo brings back the
+  whole batch.
+
+How a deletion is carried out:
+
+1. The page asks `POST /api/stream/disk/delete`. The daemon writes a pending record to
+   `<NOTES_DATA_DIR>/movies/cache-deletions.json` naming exactly which torrent episodes and which
+   caches go, and leaves them out of every reading from then on. `DELETE
+   /api/stream/disk/deletions/<id>` (Undo) drops the record.
+2. When the window closes the record is carried out; when the daemon stopped inside the window, at the
+   next start. Something that started playing meanwhile is kept, with a log line
+   (`cache page: kept the torrent 3f2a91c0 of Barbie: it plays now`).
+3. A torrent is deleted the way the budget's prune deletes one, through `TorrentStreams`: with no
+   episode of it left, its whole folder (remux and cue files with it) and every row; in a season pack
+   another kept episode still uses, the deleted episodes' rows and the files only they own, so the kept
+   episodes still play from disk. A cloud cache goes through the stream cache (`StreamCache.remove`).
+4. Nothing is blacklisted: a deleted torrent may be fetched again. A title whose remembered torrent
+   was deleted asks again at its next play.
+
+From chat or Claude Code the `stream_disk` tool does the same: "how much cache does Dandadan take?"
+(`action: "list"` with the title), "clear the cache of watched stuff" (`delete_watched`),
+`delete_not_interested`, `delete` with a title (and a season, or a season and an episode), and `undo`
+with the id of a deletion inside its 10 seconds. The routes are in
+[http-api.md](reference/http-api.md#cache-page).
+
 ## Playback
 
 ![A film's page while VLC plays it: "playing" on the poster and the position beside the stars](img/movies/playing.png)
@@ -1217,6 +1272,7 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/directStream/trending/` | The trending list: `sources.ts` (the indexes' top lists, the choice of one listing per title), `repo.ts` (`TrendingRepo`, the only writer of `stream_trending`), `job.ts` (the daily build, the off reasons) |
 | `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position, and how a title was last streamed (`channel`, `channelFailed`, `recordSitePlay`) |
 | `src/movies/streamLive.ts` | The stream on screen, in memory, for `GET /api/movies/player` |
+| `src/directStream/cacheShelf.ts`, `src/directStream/torrent/usage.ts`, `src/http/streamDiskApi.ts`, `src/mcp/streamDiskTool.ts`, `web/src/components/movies/CachePage.tsx` | The Cache page: the reading per title, season and episode, the pending deletions and their undo; how a torrent's folder is split between its episodes; the routes; `stream_disk`; the page |
 | `src/movies/story.ts` | An episode's story |
 | `src/streaming/sitePlays.ts`, `src/http/sitePlayApi.ts` | A play reported by a streaming site, and the titles TMDB does not list |
 | `src/movies/guides.ts` | The pop-ups of a person, a studio and a genre: TMDB's profile and titles with the owner's marks, and `GenreGuides`, the genre guide collated once with web search |
@@ -1257,7 +1313,7 @@ $V vlc RUN quit                                              # VLC "exits"; the 
 $V down RUN
 ```
 
-- Unit tests: `tests/unit/movies/` (parsing, matching, state, continue, guides and the VLC pieces), `web/src/App.movies.test.tsx` and `web/src/App.stream.test.tsx`.
+- Unit tests: `tests/unit/movies/` (parsing, matching, state, continue, guides and the VLC pieces), `web/src/App.movies.test.tsx` and `web/src/App.stream.test.tsx`. The Cache page: `tests/unit/directStream/cacheShelf.test.ts`, `tests/unit/mcp.streamDiskTool.test.ts`, `web/src/components/movies/CachePage.test.tsx`.
 - Integration tests: `tests/integration/movies.*.int.test.ts` (schema, repo, sync, API, stream,
   streams, channels, guides, marks, play, continue, recents, MCP, health, health crash) and
   `tests/integration/trending.int.test.ts`.
@@ -1271,7 +1327,8 @@ $V down RUN
     open (kept as it is when VLC has nothing open). `DOCS_SHOTS_NAMES=1` retakes only the three
     pop-ups, the play menu and its torrent list. When this machine has at least one verified title it also takes the
     Stream side (`stream.png`), the Trending section under it (`trending.png`) and the page of a
-    series streamed last (`stream-title.png`); it presses no Play there either. It only looks: no
+    series streamed last (`stream-title.png`); it presses no Play there either. It also takes the
+    Cache page (`cache.png`) with its largest series unfolded, and presses no trash. It only looks: no
     Play, no mark, no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks one
     billed question for `chat-answer.png`; it stays in the chat history.
   - `npm run docs:shots -- movies` takes only `unmatched.png` and `assign.png`, from a throwaway

@@ -1692,7 +1692,8 @@ another machine (copied in from the old shared database, or made by a second dae
 Postgres) is listed with `available: false`, and its files and its delete answer 404
 `not_on_this_machine`. `DELETE /api/stream/cache/<id>` (or `action: "clear"`) stops the download,
 deletes the folder and the row. The chat bar does not cache: it is a Claude Code request. The
-Movies page has no cache or clear button.
+Movies page starts no cache; its [Cache page](movies.md#the-cache-page) lists what this machine keeps
+and deletes it, a cache with the torrents beside it.
 
 A folder under the cache root that no `stream_caches` row names (a row deleted while its folder
 stayed) can be neither played nor cleared. The clean-up that runs at daemon start and with every
@@ -1960,7 +1961,7 @@ DHT node and no peer.
    finished in the last 24 hours goes only when that was not enough, and one in use (a session, the next episode
    being fetched ahead) never goes. Its remux and cue files go with it. Each deletion is one log line:
    `torrent: cleared <name> (4.2 GB, last played 2026-11-12): the downloads took more than the 40.0 GB budget,
-   38.1 GB now`.
+   38.1 GB now`. The owner deletes one by hand on the [Cache page](movies.md#the-cache-page), the same way.
 9. A season pack keeps every episode chosen from it. `stream_torrents` has one row per host, info hash and
    episode (a film is episode 0 of season 0), each with its own chosen files, state, play and length, so watching
    E02 after E01 keeps E01's file, and E01 plays again from disk. The next episode fetched ahead into the same

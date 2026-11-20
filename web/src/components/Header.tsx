@@ -3,7 +3,7 @@ import type { Note } from '../types';
 import { HISTORY_HINT } from '../lib/timeline';
 import { PROJECTS_HINT } from '../lib/projects';
 import { ADVERSARY_HINT } from '../lib/adversary';
-import { MOVIES_HINT, STREAM_HINT } from '../lib/movies';
+import { CACHE_HINT, MOVIES_HINT, STREAM_HINT } from '../lib/movies';
 
 export interface HeaderProps {
   heading: string;
@@ -23,6 +23,8 @@ export interface HeaderProps {
   movies?: boolean;
   /** The Stream side of the movies page is showing: the hint says Play streams, not VLC. Only read with `movies`. */
   stream?: boolean;
+  /** The Cache page (`/movies/cache`): the hint says a deletion can be undone. Only read with `movies`. */
+  cache?: boolean;
   onJumpLast: () => void;
   onAdd: () => void;
 }
@@ -30,8 +32,8 @@ export interface HeaderProps {
 const WALL_HINT = 'Drop or paste an image anywhere to make a photo note.';
 const BIN_HINT = 'Restore brings a note or an image back. Delete forever removes it and its files.';
 
-export function Header({ heading, countLine, last, lastWhen, showSticker, bin = false, history = false, projects = false, adversary = false, movies = false, stream = false, onJumpLast, onAdd }: HeaderProps) {
-  const hint = bin ? BIN_HINT : history ? HISTORY_HINT : projects ? PROJECTS_HINT : adversary ? ADVERSARY_HINT : movies ? (stream ? STREAM_HINT : MOVIES_HINT) : WALL_HINT;
+export function Header({ heading, countLine, last, lastWhen, showSticker, bin = false, history = false, projects = false, adversary = false, movies = false, stream = false, cache = false, onJumpLast, onAdd }: HeaderProps) {
+  const hint = bin ? BIN_HINT : history ? HISTORY_HINT : projects ? PROJECTS_HINT : adversary ? ADVERSARY_HINT : movies ? (cache ? CACHE_HINT : stream ? STREAM_HINT : MOVIES_HINT) : WALL_HINT;
   const page = bin || history || projects || adversary || movies;
   return (
     <header className="hdr">

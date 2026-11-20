@@ -10,7 +10,7 @@
 // daemon on 7317, the pop-ups of the film's director, its studio and one of its genres (a genre only
 // when its guide is already written: the first click is a model run), its play menu, and the Stream
 // side when this machine has a verified title (stream.png, the page of a streamed series as
-// stream-title.png, the Trending section as trending.png); no Play is pressed there. It only looks: it
+// stream-title.png, the Trending section as trending.png) and the Cache page (cache.png, nothing deleted); no Play is pressed there. It only looks: it
 // clicks filters, opens the trailer pop-up, a person's pop-up, the play menu and its torrent list, and reads pages.
 // It never presses Play, never marks, rates or reviews, and never starts or stops a VLC. The chat
 // picture sends a real, billed question (it is stored in the chat history), so it is retaken only
@@ -331,6 +331,27 @@ export async function live({ page, base, shot, clip, fetchJson }) {
   } else {
     const why = stream === null ? 'this daemon has no Stream side' : stream.enabled ? 'nothing is verified to stream' : 'direct streaming is off';
     console.log(`movies: ${why}, stream.png is kept as it is`);
+  }
+
+  // The Cache page: what this machine keeps on disk for streaming, with the largest series unfolded to its
+  // episodes. It reads only: no trash, no bulk button. Kept as it is when nothing is cached or the route is missing.
+  const disk = await fetchJson('GET', '/api/stream/disk').catch(() => null);
+  if (disk !== null && Array.isArray(disk.titles) && disk.titles.length > 0) {
+    await page.setViewportSize(TALL);
+    await page.goto(`${base}/movies/cache`);
+    await page.getByTestId('cp-total').waitFor();
+    const series = disk.titles.find((t) => t.kind === 'tv' && t.seasons.length > 0);
+    if (series) {
+      await page.getByRole('button', { name: `Unfold ${series.title}` }).click();
+      await page.getByRole('button', { name: `Unfold season ${series.seasons[0].season}` }).click();
+    }
+    await postersLoaded(page);
+    await page.mouse.move(640, 60);
+    await shot('cache');
+    await page.setViewportSize(VIEWPORT);
+    console.log(`movies: cache.png shows ${disk.titles.length} title(s)${series ? `, ${series.title} unfolded` : ''}`);
+  } else {
+    console.log('movies: nothing is cached on this machine (or no Cache page), cache.png is kept as it is');
   }
 
   // A film: facts, Play, the trailer icon, watched flag, stars, review, credits, cast. A taller

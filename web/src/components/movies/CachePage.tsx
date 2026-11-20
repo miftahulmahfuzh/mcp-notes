@@ -13,10 +13,13 @@ export function sizeText(bytes: number): string {
 
 const gb = (bytes: number): string => (bytes / GIB).toFixed(1);
 
-/** "41.2 of 40 GB · torrents 35.8 · cloud 5.4". */
+/** "41.2 of 40 GB · torrents 35.8 · cloud 5.4"; under a gigabyte in all, every figure in its own unit ("154 MB of 40 GB · torrents 120 MB · cloud 34 MB"). */
 export function totalLine(v: DiskView): string {
-  const of = v.budget_bytes === null ? `${gb(v.total_bytes)} GB` : `${gb(v.total_bytes)} of ${Math.round(v.budget_bytes / GIB)} GB`;
-  return `${of} · torrents ${gb(v.torrent_bytes)} · cloud ${gb(v.cloud_bytes)}`;
+  const budget = v.budget_bytes === null ? null : `${Math.round(v.budget_bytes / GIB)} GB`;
+  if (v.total_bytes < GIB) {
+    return `${sizeText(v.total_bytes)}${budget === null ? '' : ` of ${budget}`} · torrents ${sizeText(v.torrent_bytes)} · cloud ${sizeText(v.cloud_bytes)}`;
+  }
+  return `${gb(v.total_bytes)}${budget === null ? ' GB' : ` of ${budget}`} · torrents ${gb(v.torrent_bytes)} · cloud ${gb(v.cloud_bytes)}`;
 }
 
 const sxe = (s: number, e?: number): string => `S${String(s).padStart(2, '0')}${e === undefined ? '' : `E${String(e).padStart(2, '0')}`}`;
@@ -67,7 +70,7 @@ function Tags({ watched, notInterested = false, playing, inUse }: { watched: boo
 function TrashButton({ label, disabled, onClick }: { label: string; disabled: boolean; onClick: () => void }) {
   const tip = disabled ? `${label}: in use now` : `Delete ${label}`;
   return (
-    <button type="button" className="ibtn hov cp-trash" data-tip={tip} data-tip-side="left" aria-label={tip} disabled={disabled} onClick={onClick}>
+    <button type="button" className="ibtn hov cp-trash" data-tip={tip} aria-label={tip} disabled={disabled} onClick={onClick}>
       <Trash weight="duotone" />
     </button>
   );
@@ -252,7 +255,7 @@ function TitleRow({ t, open, toggle, visible, remove, onOpen }: RowProps & { t: 
         <Tags watched={t.watched} notInterested={t.not_interested} playing={t.playing} inUse={t.in_use} />
         <span className="cp-size">{sizeText(t.bytes)}</span>
         {t.stored ? (
-          <button type="button" className="ibtn hov" data-tip="Go to the title page" data-tip-side="left" aria-label={`Open ${t.title}`} onClick={() => onOpen(t.movie_id ?? t.title_id)}>
+          <button type="button" className="ibtn hov" data-tip="Go to the title page" aria-label={`Open ${t.title}`} onClick={() => onOpen(t.movie_id ?? t.title_id)}>
             <ArrowSquareOut weight="duotone" />
           </button>
         ) : (

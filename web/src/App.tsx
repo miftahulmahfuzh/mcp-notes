@@ -980,6 +980,7 @@ export function App() {
                     adversary={view === 'adversary'}
                     movies={view === 'movies'}
                     stream={view === 'movies' && moviesRoute.stream === true}
+                    cache={view === 'movies' && moviesRoute.cache === true}
                     onJumpLast={() => last && jump(last.id)}
                     onAdd={() => void addNote()}
                   />
