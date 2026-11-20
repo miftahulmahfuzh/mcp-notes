@@ -55,6 +55,7 @@ import { buildSubtitleSync, torrentSyncPlace } from './directStream/torrent/subt
 import { buildWhisperTier, ffmpegCutter, sharedTranscriber, WHISPER_IDLE_STOP_MS, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
 import { AUDIO_VERDICTS_FILE, AudioLangCheck, AudioVerdicts, streamAudioGrabber } from './directStream/audioLang.js';
 import { buildStreamCache } from './directStream/cache/service.js';
+import { buildStreamPreviews } from './directStream/previews/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
 import { CACHE_PENDING_FILE, CacheShelf, liveSlots } from './directStream/cacheShelf.js';
@@ -573,6 +574,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           live: () => liveSlots(streamLive, deps.directStream ?? null),
           pendingFile: join(config.dataDir, 'movies', CACHE_PENDING_FILE),
         });
+  // Seek previews (src/directStream/previews/): sheets made by one niced ffmpeg from what is on this machine, the
+  // session on screen first. Null with NOTESD_STREAM_PREVIEWS=off or without direct streaming.
+  deps.streamPreviews = buildStreamPreviews(config, { directStream, streamCache, torrents });
   // True while a VLC play, a stream on screen or a stream being started exists.
   const playing = (): boolean => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0;
   // The daily stream canary: each cloud provider asked for one known film, for its health only; nothing while a play exists.

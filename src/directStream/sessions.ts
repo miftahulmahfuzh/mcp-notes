@@ -127,6 +127,11 @@ export interface StreamSession {
    * otherwise. A heard dub of that very torrent is reported and kept on it, and the play stays.
    */
   pastedTorrent: string | null;
+  /**
+   * Counts the times the session's seek-preview cue list changed (src/directStream/previews/service.ts); 0 at first.
+   * The page reads it in the session and in the answer to its position reports and fetches the previews again when it rises.
+   */
+  previewRev: number;
   lastUsedAt: Date;
 }
 
@@ -200,6 +205,7 @@ export class SessionStore {
       pendingMove: null,
       moving: false,
       pastedTorrent: null,
+      previewRev: 0,
       lastUsedAt: at,
     };
     this.sessions.set(session.id, session);

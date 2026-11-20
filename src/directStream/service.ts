@@ -187,6 +187,12 @@ export interface SessionInfo {
   source_rev: number;
   /** Why the last of those moves was made (`a burned-in watermark`, `the torrent kept stalling`); null before the first. */
   source_note: string | null;
+  /**
+   * Counts the times the session's seek-preview frames changed (GET /api/stream/sessions/:id/previews); 0 for a session
+   * with none yet. The answer to a position report carries it too: when it is higher than the page's, the page fetches
+   * the previews again.
+   */
+  preview_rev: number;
 }
 
 /** What `play` answers (JSON-ready; the route adds `ok: true`). */
@@ -1360,6 +1366,16 @@ export class DirectStreamService {
     return this.sessions.get(id);
   }
 
+  /** The live session, without marking it used (the seek previews' background work must not keep a session alive); null for an unknown or ended id. */
+  peek(id: string): StreamSession | null {
+    return this.sessions.peek(id);
+  }
+
+  /** The fetch the pass-through uses (a test's injected one included): the seek previews' provider source reads a track through forward() with it. */
+  get passThroughFetch(): FetchLike {
+    return this.fetchImpl;
+  }
+
   /** What the player page reads, or null for an unknown or ended id. A torrent session that let go of its torrent (the page closed and is back) takes it again. */
   async info(id: string): Promise<SessionInfo | null> {
     const session = this.sessions.get(id);
@@ -2399,6 +2415,7 @@ export class DirectStreamService {
       subtitle_rev: torrent === null ? session.outside.subtitleRev : torrent.subtitleRev,
       source_rev: session.sourceRev,
       source_note: session.sourceNote,
+      preview_rev: session.previewRev,
     };
   }
 
