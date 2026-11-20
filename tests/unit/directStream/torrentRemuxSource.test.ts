@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StreamRef } from '../../../src/directStream/types.js';
 import { parseRelease, type TorrentCandidate } from '../../../src/directStream/torrent/find/index.js';
 import type { MediaProbe } from '../../../src/directStream/torrent/probe.js';
-import { REMUX_DONE_FILE, remuxDir, TorrentRemux } from '../../../src/directStream/torrent/remux.js';
+import { REMUX_DONE_FILE, REMUX_PROBE_FILE, remuxDir, TorrentRemux } from '../../../src/directStream/torrent/remux.js';
 import { TorrentSource, type DownloadOnDisk, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
 import { eventPlaylist, fakeFfmpeg } from './remuxFakes.js';
 
@@ -39,7 +39,8 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function setup(o: { candidates: TorrentCandidate[]; probes: Record<string, MediaProbe>; ready?: string[]; disk?: DownloadOnDisk | null; ffmpeg?: ReturnType<typeof fakeFfmpeg> }) {
+function setup(o: { candidates: TorrentCandidate[]; probes: Record<string, MediaProbe>; ready?: string[]; remuxOnly?: string[]; disk?: DownloadOnDisk | null; ffmpeg?: ReturnType<typeof fakeFfmpeg> }) {
+  const probed: string[] = [];
   const calls: string[] = [];
   const ffmpeg = o.ffmpeg ?? fakeFfmpeg({ segmentsAtStart: 1 });
   const remux = new TorrentRemux({ dir, spawn: ffmpeg.spawn, pollMs: 5, log: () => undefined });
@@ -57,19 +58,23 @@ function setup(o: { candidates: TorrentCandidate[]; probes: Record<string, Media
     find: async () => o.disk ?? null,
     filePath: (infoHash, index) => ((o.ready ?? []).includes(infoHash) ? `/data/torrents/${infoHash}/${index}.mkv` : null),
     localUrl: (infoHash, index) => `/api/stream/torrent/${infoHash}/f/${index}`,
+    remuxOnly: (infoHash) => (o.remuxOnly ?? []).includes(infoHash),
     setDuration: () => undefined,
   };
   const answer: FindAnswer = { candidates: o.candidates, indexes: [{ index: 'torrentio', outcome: 'ok', detail: '', took_s: 0.1, listed: o.candidates.length }], excluded: [], lastResort: [] };
   const source = new TorrentSource({
     swarm,
     find: async () => answer,
-    probe: async (url) => o.probes[/\/torrent\/([0-9a-f]+)\//.exec(url)?.[1] ?? ''] ?? MP4,
+    probe: async (url) => {
+      probed.push(url);
+      return o.probes[/\/torrent\/([0-9a-f]+)\//.exec(url)?.[1] ?? ''] ?? MP4;
+    },
     tiers: [],
     remux,
     localBase: () => BASE,
     log: () => undefined,
   });
-  return { source, remux, ffmpeg, calls };
+  return { source, remux, ffmpeg, calls, probed };
 }
 
 describe('TorrentSource with the remux (torrent phase 5, R2.8)', () => {
@@ -136,5 +141,26 @@ describe('TorrentSource with the remux (torrent phase 5, R2.8)', () => {
     expect(t.ffmpeg.runs).toHaveLength(0);
     expect(existsSync(path.join(files, REMUX_DONE_FILE))).toBe(true);
     await vi.waitFor(async () => expect(await t.remux.map(h(1))).toEqual({ duration_s: 120, ranges: [[0, 120]] }));
+  });
+
+  it('plays a download whose original was deleted beside its remux from the remux alone, with the probe kept beside it', async () => {
+    const files = remuxDir(dir, h(1), 0);
+    await mkdir(files, { recursive: true });
+    await writeFile(path.join(files, 'index.m3u8'), eventPlaylist(20, true));
+    await writeFile(path.join(files, REMUX_DONE_FILE), '{}');
+    // Kept when the remux started: the original's streams, so the probe never reads the (gone) file again.
+    const kept: MediaProbe = { ...MKV_AC3, direct: true, container: 'mov,mp4,m4a,3gp,3g2,mj2' };
+    await writeFile(path.join(files, REMUX_PROBE_FILE), JSON.stringify(kept));
+    const t = setup({ candidates: [], probes: {}, remuxOnly: [h(1)], disk: { infoHash: h(1), name: 'Film.2026.1080p.BluRay.x264.AC3-GRP', fileIndex: 0, state: 'ready' } });
+    const disk = await t.source.fromDisk(FILM, { audioLang: 'en' });
+    // The probe says MP4 now, yet nothing but the remux is there: the remux plays, never the file route.
+    expect(disk?.torrent).toMatchObject({ manifestKind: 'hls', manifestUrl: `/api/stream/torrent/${h(1)}/hls/0/index.m3u8?remux=1&total_s=120`, state: 'ready', height: 1080 });
+    expect(t.probed).toEqual([]);
+    expect(t.ffmpeg.runs).toHaveLength(0);
+    expect(await t.source.state(disk!.torrent)).toBe('ready');
+    // No probe kept: the replay is passed over rather than reading a file that is not there.
+    await rm(path.join(files, REMUX_PROBE_FILE));
+    expect(await t.source.fromDisk(FILM, { audioLang: 'en' })).toBeNull();
+    expect(t.probed).toEqual([]);
   });
 });

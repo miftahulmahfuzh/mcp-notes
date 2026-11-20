@@ -370,7 +370,8 @@ export interface TorrentSyncRequest extends Omit<SyncRequest, 'key' | 'place'> {
 
 /** A torrent file's place: its outcome beside the kept subtitles, the WAVs in `<torrent>/notesd-sync`, the synced file as the torrent's chosen track. */
 export function torrentSyncPlace(
-  deps: { torrentDir: string; shelf: SubtitleShelf; input: (infoHash: string, fileIndex: number) => string | Promise<string> },
+  /** `input`: a path or an address, or a whole SyncInput (a file that lives as its remux is read from its segments). */
+  deps: { torrentDir: string; shelf: SubtitleShelf; input: (infoHash: string, fileIndex: number) => string | SyncInput | Promise<string | SyncInput> },
   infoHash: string,
   fileIndex: number,
 ): SyncPlace {
@@ -378,7 +379,10 @@ export function torrentSyncPlace(
   return {
     outcomeFile: path.join(deps.shelf.dir(infoHash), `synced-${fileIndex}.json`),
     workDir: path.join(deps.torrentDir, infoHash, SYNC_DIR),
-    input: async () => ({ url: await deps.input(infoHash, fileIndex) }),
+    input: async () => {
+      const from = await deps.input(infoHash, fileIndex);
+      return typeof from === 'string' ? { url: from } : from;
+    },
     save: (vtt) => deps.shelf.save(infoHash, `synced-${fileIndex}.vtt`, vtt, { lang: 'en', label: SYNCED_LABEL }),
   };
 }

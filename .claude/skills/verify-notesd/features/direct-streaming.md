@@ -523,12 +523,17 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   at the resume position or 0, shows the whole film, and holds a seek past the remuxed part until it is there; the map
   answers the remuxed stretch. Other video (MPEG-2, VC-1) is `unplayable`; `NOTESD_TORRENT_REMUX=off` makes every such
   file `unplayable`. A finished remux replays from disk with no ffmpeg.
-- Logic: `npx vitest run tests/unit/directStream/torrentRemux.test.ts tests/unit/directStream/torrentRemux.ffmpeg.test.ts tests/unit/directStream/torrentRemuxRoute.test.ts tests/unit/directStream/torrentRemuxSource.test.ts web/src/stream/hlsEngine.test.tsx`
+- One copy on disk: once the remux is whole and the torrent's file whole, and the torrent has left the swarm (or at
+  start, for a torrent nothing uses), the original is deleted, its file entry marked `remuxed`, one log line
+  `torrent: deleted the original of <name> (<file>, <size>)`; the file route answers 410 `remuxed`, a replay plays
+  the remux from disk with no swarm, and the audio cuts read the remux's segments. Kept while the English text track
+  inside the file is not in a complete cue feed.
+- Logic: `npx vitest run tests/unit/directStream/torrentRemux.test.ts tests/unit/directStream/torrentRemux.ffmpeg.test.ts tests/unit/directStream/torrentRemuxRoute.test.ts tests/unit/directStream/torrentRemuxSource.test.ts tests/unit/directStream/torrent/remuxOnly.test.ts web/src/stream/hlsEngine.test.tsx`
   (the ffmpeg file runs the real ffmpeg on a generated H.264 + AC3 MKV served at a trickle).
 - Throwaway daemon: `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-mkv-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-mkv")`,
   `$V up --web --torrent` (note RUN), then
   `RUN_DIR=$HOME/.local/state/notesd-verify/RUN $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-remux.steps.mjs`:
-  `REMUX PLAY PASS`, `REMUX TRACKS PASS`, `REMUX SEEK PASS`, `REMUX REPLAY PASS`, `REMUX GROWING PASS`, screenshots
+  `REMUX PLAY PASS`, `REMUX TRACKS PASS`, `REMUX SEEK PASS`, `REMUX REPLAY PASS`, `REMUX GROWING PASS`, `REMUX ONE COPY PASS`, screenshots
   `remux-playing` and `remux-growing`. Run `.claude/skills/verify-notesd/scripts/torrent/offer-remux.sh RUN` before
   the steps: it seeds the MKV through phase 1's `<run>/torrent/seed/remux/` and makes it the fake index's answer
   (`<run>/torrent/candidates.json`).

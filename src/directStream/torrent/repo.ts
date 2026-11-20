@@ -151,9 +151,35 @@ export class TorrentsRepo {
     await this.db.update(streamTorrents).set({ state: 'failed', error, completedAt: null, updatedAt: now }).where(key(host, slot));
   }
 
-  /** A ready download whose files are gone: downloading again from nothing. */
+  /** A ready download whose files are gone: downloading again from nothing. A file that lived as its remux is a plain chosen file again. */
   async restarted(host: string, slot: TorrentSlot, now: Date): Promise<void> {
-    await this.db.update(streamTorrents).set({ state: 'downloading', error: null, completedAt: null, bytesDone: 0, updatedAt: now }).where(key(host, slot));
+    await this.db
+      .update(streamTorrents)
+      .set({
+        state: 'downloading',
+        error: null,
+        completedAt: null,
+        bytesDone: 0,
+        updatedAt: now,
+        files: sql`(select coalesce(jsonb_agg(e.f - 'remuxed' order by e.o), '[]'::jsonb) from jsonb_array_elements(${streamTorrents.files}) with ordinality as e(f, o))`,
+      })
+      .where(key(host, slot));
+  }
+
+  /**
+   * The episode's video lives as its whole remux only: its original was deleted, so its file entry is marked
+   * `remuxed` (nothing fetches or seeds it again). `updated_at` is left alone: no play, no choice changed.
+   */
+  async remuxed(host: string, slot: TorrentSlot, fileIndex: number): Promise<StreamTorrentRow> {
+    const [row] = await this.db
+      .update(streamTorrents)
+      .set({
+        files: sql`(select coalesce(jsonb_agg(case when (e.f->>'index')::int = ${fileIndex} then e.f || '{"remuxed":true}'::jsonb else e.f end order by e.o), '[]'::jsonb) from jsonb_array_elements(${streamTorrents.files}) with ordinality as e(f, o))`,
+      })
+      .where(key(host, slot))
+      .returning();
+    if (row === undefined) throw new Error(`no torrent ${slot.infoHash} (${slot.season}x${slot.episode}) on ${host}`);
+    return row;
   }
 
   async played(host: string, slot: TorrentSlot, now: Date): Promise<void> {
@@ -187,5 +213,5 @@ export class TorrentsRepo {
 /** What TorrentStreams needs of the repository (tests pass an in-memory one). */
 export type TorrentRecords = Pick<
   TorrentsRepo,
-  'record' | 'get' | 'slots' | 'byHash' | 'forRef' | 'all' | 'chosen' | 'progress' | 'ready' | 'failed' | 'restarted' | 'played' | 'duration' | 'stale' | 'delete'
+  'record' | 'get' | 'slots' | 'byHash' | 'forRef' | 'all' | 'chosen' | 'progress' | 'ready' | 'failed' | 'restarted' | 'remuxed' | 'played' | 'duration' | 'stale' | 'delete'
 >;

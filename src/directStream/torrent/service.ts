@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { Config } from '../../config.js';
 import type { Db } from '../../db/client.js';
@@ -6,6 +7,8 @@ import { movieTitles, type StreamTorrentFile, type StreamTorrentRow } from '../.
 import { jsonError } from '../passThrough.js';
 import type { StreamRef } from '../types.js';
 import { WebTorrentEngine } from './engine.js';
+import { ffprobeFile } from './probe.js';
+import { RemuxOnly, type RemuxKeeper } from './remuxOnly.js';
 import { slotOf, torrentRef, TorrentsRepo, type TorrentRecords, type TorrentRecordSpec, type TorrentSlot } from './repo.js';
 import { diskFileResponse, notOnThisMachine, swarmFileResponse } from './serve.js';
 import { DiskHandle, TorrentFolder } from './store.js';
@@ -39,6 +42,18 @@ const GIB = 1024 ** 3;
 const gb = (bytes: number): string => (bytes >= GIB ? `${(bytes / GIB).toFixed(1)} GB` : `${Math.round(bytes / 1_048_576)} MB`);
 /** A ready download played (or finished) within this long goes last in the budget's order. */
 export const TORRENT_RECENT_MS = 86_400_000;
+/** ` S01E02` for an episode's row, nothing for a film's. */
+const episodeOf = (row: Pick<StreamTorrentRow, 'kind' | 'season' | 'episode'>): string =>
+  row.kind === 'tv' ? ` S${String(row.season).padStart(2, '0')}E${String(row.episode).padStart(2, '0')}` : '';
+/** The bytes a file takes on disk (its blocks), 0 when it is not there. */
+async function allocated(file: string): Promise<number> {
+  try {
+    const s = await stat(file);
+    return s.isFile() ? (s.blocks > 0 ? s.blocks * 512 : s.size) : 0;
+  } catch {
+    return 0;
+  }
+}
 const sameRef = (a: StreamRef, b: StreamRef): boolean =>
   a.kind === b.kind && a.tmdbId === b.tmdbId && (a.kind === 'movie' || (b.kind === 'tv' && a.season === b.season && a.episode === b.episode));
 
@@ -61,6 +76,11 @@ export interface TorrentStreamsOptions {
    * budget deletes their downloads first. Unset: none is.
    */
   marked?: (titleIds: readonly string[]) => Promise<ReadonlySet<string>>;
+  /**
+   * Says whether a remuxed video's remux can stand in for its original alone (remuxOnly.ts). Set: once it can and nothing
+   * uses the torrent, the original is deleted and the remux is the one copy. Unset (the remux off, tests): never.
+   */
+  remuxes?: RemuxKeeper | null;
   /**
    * Sweep folders no row of this host names (default true). False while the old shared database is still to be
    * merged (`importPending`): a download whose row is only there yet must keep its files.
@@ -118,6 +138,8 @@ export class TorrentStreams {
   private readonly active = new Map<string, Active>();
   private readonly opening = new Map<string, Promise<TorrentHandle>>();
   private readonly playedAt = new Map<string, number>();
+  /** Originals being deleted, by info hash: an open of the torrent waits for it (dropOriginals). */
+  private readonly dropping = new Map<string, Promise<number>>();
   private stopTimer: (() => void) | null = null;
   private lastPrune = 0;
   private pruning: Promise<number> | null = null;
@@ -151,8 +173,12 @@ export class TorrentStreams {
     return this.opts.keepDays;
   }
 
-  /** Clears downloads not played for `keepDays` and starts the tick. Joins nothing. Returns how many were cleared. */
+  /**
+   * Deletes the originals that already stand beside a whole remux of them (sweepRemuxed), clears downloads not played
+   * for `keepDays` and starts the tick. Joins nothing. Returns how many downloads were cleared.
+   */
   async start(): Promise<number> {
+    await this.sweepRemuxed();
     const cleared = await this.prune();
     this.stopTimer ??= this.every(() => void this.tick(), this.tickMs);
     return cleared;
@@ -174,6 +200,8 @@ export class TorrentStreams {
     const infoHash = normalizeInfoHash(pick.infoHash);
     if (infoHash === null) throw new TorrentError('invalid_hash', 'An info hash is 40 hexadecimal characters.');
     if (this.closed) throw new TorrentError('closing', 'The daemon is stopping.');
+    // An original being deleted beside its remux: the open reads the row that says so.
+    await this.dropping.get(infoHash);
     const live = this.active.get(infoHash);
     if (live !== undefined) {
       live.lastRequestAt = this.nowMs();
@@ -207,7 +235,9 @@ export class TorrentStreams {
       throw new TorrentError('not_open', 'Open the torrent before using its files.');
     }
     const chosen = this.mediaFiles(live.handle, fileIndexes);
-    live.handle.select(chosen.map((f) => f.index));
+    // A video that lives as its remux is never fetched again: its original was deleted on purpose.
+    const remuxed = new Set([...live.rows.values()].flatMap((r) => r.files.filter((f) => f.remuxed === true).map((f) => f.index)));
+    live.handle.select(chosen.filter((f) => !remuxed.has(f.index)).map((f) => f.index));
     live.users += 1;
     live.lastRequestAt = this.nowMs();
     // The episode whose row already holds these files (a reload takes its torrent again), else the one last opened.
@@ -387,9 +417,20 @@ export class TorrentStreams {
     const found = await this.rowHere(hash, index);
     if (found instanceof Response) return null;
     const file = found.files.find((f) => f.index === index);
-    if (file === undefined) return null;
+    // A file that lives as its remux has no original; what a neighbour's edge piece left at its path is no file.
+    if (file === undefined || file.remuxed === true) return null;
     if (found.state !== 'ready' && this.active.get(hash)?.handle.done(index) !== true) return null;
     return this.folder.complete(hash, file.path, file.length);
+  }
+
+  /** True when this host's chosen video lives as its whole remux only (its original was deleted): play and read the remux. */
+  async remuxOnly(infoHash: string, index: number): Promise<boolean> {
+    const hash = normalizeInfoHash(infoHash);
+    const keeper = this.opts.remuxes ?? null;
+    if (hash === null || keeper === null) return false;
+    const found = await this.rowHere(hash, index);
+    if (found instanceof Response) return false;
+    return found.files.some((f) => f.index === index && f.remuxed === true) && keeper.playable(hash, index);
   }
 
   /**
@@ -404,6 +445,9 @@ export class TorrentStreams {
     if (found instanceof Response) return found;
     const file = found.files.find((f) => f.index === index);
     if (file === undefined) return jsonError(404, 'not_selected', 'That file of the torrent is not one this machine downloads.');
+    if (file.remuxed === true) {
+      return jsonError(410, 'remuxed', 'This file lives as its remux now (its original was deleted): play /api/stream/torrent/<hash>/hls/<index>/index.m3u8.');
+    }
     const live = this.active.get(hash);
     if (found.state === 'ready' || live?.handle.done(index) === true) {
       const onDisk = await this.folder.complete(hash, file.path, file.length);
@@ -475,9 +519,9 @@ export class TorrentStreams {
   /**
    * Deletes this host's downloads not played for `keepDays`, with their folders, then every folder under the torrent
    * dir that no row of this host names and nothing uses now (a torrent left behind by a crash or an older daemon),
-   * then whole torrents until the folder is under the budget (`budgetBytes`). Files under the root (the tracker book,
-   * the tracker lists) are never touched. The folder sweep is skipped with `sweepOrphans: false` (the shared import
-   * still pending). Runs at start, every TORRENT_PRUNE_EVERY_MS and after a download is finished; one at a time.
+   * then each original that may go beside its whole remux (dropOriginals), then whole torrents until the folder is
+   * under the budget (`budgetBytes`). Files under the root (the tracker book, the tracker lists) are never touched.
+   * The folder sweep is skipped with `sweepOrphans: false` (the shared import still pending). Runs at start, every TORRENT_PRUNE_EVERY_MS and after a download is finished; one at a time.
    * Never throws.
    */
   async prune(): Promise<number> {
@@ -487,10 +531,102 @@ export class TorrentStreams {
     return this.pruning;
   }
 
+  /** In the swarm, or being opened: in use. */
+  private held(hash: string): boolean {
+    return this.active.has(hash) || this.opening.has(hash);
+  }
+
+  /**
+   * Once at start: every original that already stands beside a whole remux of it, in a torrent nothing uses, is deleted
+   * (dropOriginals), and the remux plays in its place. A file marked as living as its remux whose remux is gone downloads
+   * again; what an edge piece left at such a file's path goes. Returns how many originals went. Never throws.
+   */
+  async sweepRemuxed(): Promise<number> {
+    if ((this.opts.remuxes ?? null) === null) return 0;
+    let dropped = 0;
+    try {
+      for (const hash of new Set((await this.hostRows()).map((r) => r.infoHash))) dropped += await this.dropOriginals(hash, { sweep: true });
+    } catch (err) {
+      this.log(`[notesd] torrent: could not look for originals beside their remux: ${messageOf(err)}`);
+    }
+    return dropped;
+  }
+
+  /**
+   * A remuxed film keeps one copy: the original of each ready video of the torrent (`fileIndex`: that one only) whose
+   * whole remux can stand in for it alone (remuxOnly.ts: the remux finished and covers the film, its probe is kept, the
+   * English text track inside the file is in a complete cue feed) is deleted, and its file entry marked `remuxed`, so
+   * nothing fetches or seeds it again and the state survives a restart. Never while the torrent is in the swarm or
+   * being opened (it is done when it leaves). One log line per original deleted, with its size. Called when a torrent
+   * leaves the swarm, when a remux becomes whole (TorrentRemux.whenDone) and at start. Returns how many went. Never throws.
+   */
+  async dropOriginals(infoHash: string, options: { fileIndex?: number; sweep?: boolean } = {}): Promise<number> {
+    const keeper = this.opts.remuxes ?? null;
+    const hash = normalizeInfoHash(infoHash);
+    if (keeper === null || hash === null || this.closed) return 0;
+    const before = this.dropping.get(hash) ?? Promise.resolve(0);
+    const work = before
+      .then(() => this.dropNow(hash, keeper, options))
+      .catch((err: unknown) => {
+        this.log(`[notesd] torrent: could not delete the originals of ${hash.slice(0, 8)} beside their remux: ${messageOf(err)}`);
+        return 0;
+      });
+    this.dropping.set(hash, work);
+    try {
+      return await work;
+    } finally {
+      if (this.dropping.get(hash) === work) this.dropping.delete(hash);
+    }
+  }
+
+  private async dropNow(hash: string, keeper: RemuxKeeper, options: { fileIndex?: number; sweep?: boolean }): Promise<number> {
+    if (this.held(hash)) return 0;
+    let dropped = 0;
+    for (const row of await this.repo.slots(this.host, hash)) {
+      if (row.state !== 'ready' || row.fileIndex === null) continue;
+      if (options.fileIndex !== undefined && row.fileIndex !== options.fileIndex) continue;
+      const video = row.files.find((f) => f.index === row.fileIndex);
+      if (video === undefined) continue;
+      const label = `${row.name}${episodeOf(row)}`;
+      if (video.remuxed === true) {
+        if (options.sweep !== true) continue;
+        if (!keeper.playable(hash, video.index)) {
+          await this.repo.restarted(this.host, row, this.now());
+          this.log(`[notesd] torrent: ${label} lived as its remux, and the remux is gone; it downloads again on the next play`);
+          continue;
+        }
+        // What a neighbour's edge piece (or a stop between the mark and the delete) left at the original's path.
+        const left = this.folder.diskPath(hash, video.path);
+        const size = left === null ? 0 : await allocated(left);
+        if (size > 0 && (await this.folder.dropFiles(hash, [video.path])) > 0) {
+          this.log(`[notesd] torrent: deleted what was left at the original's path of ${label} (${gb(size)}): it lives as its remux`);
+        }
+        continue;
+      }
+      // Only a file with a finished remux; a file Chrome plays as is has none and keeps its original.
+      if (!keeper.playable(hash, video.index)) continue;
+      const original = await this.folder.complete(hash, video.path, video.length);
+      if (original === null) continue;
+      const blocker = await keeper.blocker(hash, video.index, original, row.durationS);
+      if (blocker !== null) {
+        if (options.sweep === true) this.log(`[notesd] torrent: kept the original of ${label} beside its remux: ${blocker}`);
+        continue;
+      }
+      // Something took the torrent while the remux was looked at: it goes when the torrent leaves the swarm.
+      if (this.held(hash)) break;
+      const size = await allocated(original);
+      await this.repo.remuxed(this.host, row, video.index);
+      await this.folder.dropFiles(hash, [video.path]);
+      dropped += 1;
+      this.log(`[notesd] torrent: deleted the original of ${label} (${path.basename(video.path)}, ${gb(size)}): its whole remux plays in its place, one copy on disk`);
+    }
+    return dropped;
+  }
+
   private async pruneNow(): Promise<number> {
     this.lastPrune = this.nowMs();
     let cleared = 0;
-    const held = (hash: string): boolean => this.active.has(hash) || this.opening.has(hash);
+    const held = (hash: string): boolean => this.held(hash);
     try {
       // A torrent goes when none of its episodes was played (else finished, else made) within keepDays.
       const before = this.nowMs() - this.opts.keepDays * 86_400_000;
@@ -515,6 +651,14 @@ export class TorrentStreams {
       }
     } catch (err) {
       this.log(`[notesd] torrent: could not clear folders no download names: ${messageOf(err)}`);
+    }
+    // An original kept back before (its cue feed was not complete yet) may go now, before whole torrents are weighed.
+    if ((this.opts.remuxes ?? null) !== null) {
+      try {
+        for (const hash of new Set((await this.hostRows()).map((r) => r.infoHash))) await this.dropOriginals(hash);
+      } catch (err) {
+        this.log(`[notesd] torrent: could not look for originals beside their remux: ${messageOf(err)}`);
+      }
     }
     try {
       cleared += await this.keepBudget(held);
@@ -638,6 +782,11 @@ export class TorrentStreams {
     if (row.fileIndex === null || row.files.length === 0) return null;
     const paths = new Map<number, string>();
     for (const f of row.files) {
+      if (f.remuxed === true) {
+        // It plays as its remux: here as long as the remux is. Nothing reads its original.
+        if (this.opts.remuxes?.playable(row.infoHash, f.index) !== true) return null;
+        continue;
+      }
       const onDisk = await this.folder.complete(row.infoHash, f.path, f.length);
       if (onDisk === null) return null;
       paths.set(f.index, onDisk);
@@ -673,8 +822,7 @@ export class TorrentStreams {
       if (done && row.state !== 'ready') {
         live.rows.set(slotKey(row), await this.repo.ready(this.host, row, row.fileLength ?? 0, this.now()));
         readyNow = true;
-        const episode = row.kind === 'tv' ? ` S${String(row.season).padStart(2, '0')}E${String(row.episode).padStart(2, '0')}` : '';
-        this.log(`[notesd] torrent: ${row.name}${episode} is on disk (${Math.round((row.fileLength ?? 0) / 1_048_576)} MB)`);
+        this.log(`[notesd] torrent: ${row.name}${episodeOf(row)} is on disk (${Math.round((row.fileLength ?? 0) / 1_048_576)} MB)`);
       } else if (!done) {
         const bytes = sumRanges(live.handle.ranges(row.fileIndex));
         if (Math.abs(bytes - row.bytesDone) >= PROGRESS_STEP_BYTES) {
@@ -720,13 +868,16 @@ export class TorrentStreams {
     }
     try {
       // A file is unchosen only when no episode's row of this torrent chose it (a season pack keeps every episode).
+      // A file that lives as its remux is not kept either: what is at its path is an edge piece's bytes.
       const stored = await this.repo.slots(this.host, hash);
-      const chosen = new Set([...rows, ...stored].flatMap((r) => r.files.map((f) => f.index)));
+      const chosen = new Set([...rows, ...stored].flatMap((r) => r.files.filter((f) => f.remuxed !== true).map((f) => f.index)));
       await this.folder.dropFiles(hash, live.handle.files.filter((f) => !chosen.has(f.index)).map((f) => f.path));
     } catch (err) {
       this.log(`[notesd] torrent: could not delete the edges of unchosen files of ${name}: ${messageOf(err)}`);
     }
     this.log(`[notesd] torrent: left the swarm of ${name} (${hash.slice(0, 8)}): ${why}`);
+    // Out of the swarm, nothing reads the originals through it: one beside a whole remux can go now.
+    await this.dropOriginals(hash);
   }
 
   /** The row of the episode last opened. */
@@ -844,6 +995,8 @@ export function buildTorrentStreams(
     keepDays: t.keepDays,
     budgetBytes: t.budgetGb * GIB,
     discovery: t.discovery,
+    // With the remux on, a remuxed film keeps its remux only once nothing needs the original (remuxOnly.ts).
+    remuxes: t.remux ? new RemuxOnly({ dir: t.dir, probe: ffprobeFile({ ffprobeBin: config.movies.ffprobeBin }) }) : null,
     marked: async (ids) => {
       if (ids.length === 0) return new Set<string>();
       const found = await db

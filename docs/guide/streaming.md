@@ -1991,6 +1991,7 @@ answers `torrent_off`. The routes are in [http-api.md](reference/http-api.md#tor
 | `not_media` | A chosen file is neither a video nor a subtitle file |
 | `not_selected` | That file of the torrent was not chosen, so it is not served |
 | `not_in_swarm` | The download is unfinished and nothing holds it now: play it again to carry on |
+| `remuxed` | The video lives as its whole remux only (its original was deleted): play the remux playlist (410) |
 | `not_on_this_machine` | The download was made on another host; its files are not here |
 | `torrent_off` | `NOTESD_TORRENT=off` on this machine |
 
@@ -2102,6 +2103,8 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 - **Playing again from disk.** A title whose torrent download is whole on this machine plays from disk at once, with
   no index asked and no swarm joined (no `Index:` or `Torrent:` attempt, `torrent.state` `ready`). The file is read again first: one
   that turns out to be a dub, or that Chrome cannot play, is passed over and the play goes on as if it were not there.
+  A film that lives as its remux only (see [One copy on disk](#one-copy-on-disk)) is not read again: the probe kept
+  beside the remux says what it holds, and its remux plays.
 - **Subtitles** come from the subtitle tiers, asked in order (kept, files, embedded, service, borrow, whisper: the
   sections below describe each) until one answers anything; every tier answers only English tracks, or the torrent's one
   subtitle file that names no language. Each tier asked is an attempt `Subtitles: <tier>` (`resolved`, `no_stream`,
@@ -2257,10 +2260,43 @@ plain file. When the probe says the file is not one Chrome plays as is, the sess
   than H.264, HEVC, AV1 or VP9 (MPEG-2, VC-1, MPEG-4 Part 2) is `unplayable` without running ffmpeg.
 - **Stopping and replaying.** A session that lets go of its torrent stops its ffmpeg, and the half-made remux is
   deleted once ffmpeg has exited; it starts over the next time. A finished remux stays with the download and plays again from disk with no ffmpeg; it goes when the
-  download is cleared.
+  download is cleared. What the probe read of the file (its streams, its length, its subtitle tracks) is kept beside
+  it as `probe.json`.
 - **HEVC** plays where the streaming Chrome decodes it. Where it cannot, the page stops with `mediaError ...` in its
   log, and the shuffle button (S) moves to the next torrent.
 - `NOTESD_TORRENT_REMUX=off` makes such a file `unplayable` again; `NOTESD_FFMPEG_BIN` names the ffmpeg.
+
+#### One copy on disk
+
+A finished remux is a second copy of the film beside the file it was made from: on 2026-11-20 the torrent folder
+held 41 GB, about 6 GB of it remuxes next to their originals. So once a file's remux is whole and the torrent's file
+is whole too, the original is deleted and the remux is the film's one copy (`remuxOnly.ts`).
+
+- **Whole.** `done.json` is there (ffmpeg read the whole file and exited cleanly), the playlist is closed, `init.mp4`
+  and every segment it names are on disk, and the segments cover the film's length to within two segments (or 0.5%
+  of a long film).
+- **Nothing else needs the original.** The remux holds no subtitle stream, so when the file has an English text track
+  the embedded tier would show, its cue feed must be complete first; until then the original stays. Everything else
+  works from the remux: a replay from disk plays it with the probe kept beside it, and the audio cuts of Whisper, Wyzie
+  Synced and `/sync-subtitle` read its own segments over the daemon's route, through the same segment reader as a cloud
+  stream ([What the film's sound is read from](#what-the-films-sound-is-read-from); ffmpeg on the playlist alone seeks
+  nowhere in fMP4 and reads the film's start for a stretch past its end). The OpenSubtitles hash of the file can no
+  longer be made, so a replay that has no kept subtitle asks the subtitle service by the IMDb id only.
+- **When.** Never while the torrent is in the swarm or being opened (a session playing it, the next episode of a pack
+  fetched ahead): the original goes when the torrent leaves the swarm. A remux that becomes whole while nothing holds
+  the torrent (a replay from disk, remuxed from the file on disk) frees its original at once. At start, every
+  original already standing beside a whole remux in a torrent nothing uses is freed, and the six-hourly clearing looks
+  again before it weighs the budget; one kept back at start is named in the log with the reason (`kept the original of <name> beside its remux: its English subtitle track (stream 2) is not
+  extracted to the end yet, ...`). A remux made before `probe.json` was kept is read once with ffprobe from the
+  original, and its probe is kept then.
+- **The record.** The file's entry in its `stream_torrents` row is marked `remuxed`, so the state survives a restart.
+  The torrent is no longer seeded for that file and never fetches it again: a later use of the torrent (a page
+  reloaded while the pack downloads another episode) leaves it unselected, and what an edge piece of a neighbouring
+  episode writes at its path is deleted when the torrent leaves the swarm. The file route answers 410 `remuxed`. Should
+  the remux itself go missing, the download starts over on the next play.
+- Each original deleted is one log line with its size: `torrent: deleted the original of <name> (<file>, 4.2 GB): its
+  whole remux plays in its place, one copy on disk`. With `NOTESD_TORRENT_REMUX=off` no original is deleted, and a film
+  that already lives as its remux does not play from disk.
 
 ### Subtitles for a torrent
 
@@ -2462,7 +2498,7 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   candidate; it never calls `/sync`, so it costs none of the key's sync requests.
 - **Limits.** It needs Whisper's Python (`scripts/install.sh`); without it the tool answers
   `subtitle_check_off`. Idle, a torrent is checked only from a finished download (`no_audio`
-  otherwise). A checked cloud file was judged against one provider's cut; another provider of the
+  otherwise); one that lives as its remux only is heard from the remux's segments. A checked cloud file was judged against one provider's cut; another provider of the
   same title may run differently, and is checked on its own when asked.
 
 #### What the film's sound is read from
@@ -2531,6 +2567,8 @@ subtitle service, is asked.
 - **Times are the file's own** (`-copyts`): the cues are not moved by the file's start, and G/H
   still move them for the viewer.
 - Whisper (the last tier) appends its cues to a feed of the same kind, `whisper-<file index>`.
+- **A remuxed file.** The remux holds no subtitle stream, so a file whose remux is whole keeps its original until this
+  track's feed is complete ([One copy on disk](#one-copy-on-disk)); after that the complete feed is all a replay reads.
 
 ### Whisper: the last resort
 
@@ -2569,7 +2607,7 @@ nothing.
 Limits: a line right after a long stretch of music can be missed, a cue stays on screen at most 7 s,
 names come out as heard, and the first audio stream is the one transcribed, also in a dual-audio
 file whose original track is not the first (the remux plays the original; Whisper still hears the
-first). `scripts/install.sh` installs Whisper ([install.md](install.md));
+first). A film that lives as its remux only is heard from the remux, whose one audio track is the original. `scripts/install.sh` installs Whisper ([install.md](install.md));
 `NOTESD_TORRENT_WHISPER=off` turns it off.
 
 ### When the indexes have nothing: 1337x, ext.to and RuTracker
@@ -2776,6 +2814,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - A release whose index name reads as a dub is kept out of normal ranking but offered as `ranked.lastResort` (`find/rank.ts`): `TorrentSource.resolve` tries these in their own round only after every proper candidate fails, and the header probe decides by the real audio (a dual-audio file carrying the original plays; a true dub stays `dubbed`). The original audio track is always the one that plays: the remux maps it (`pickAudioStream`), and a directly-playable dual-audio file whose original is not the default is remuxed, or refused as `dubbed` when no remux can force it (`playsOriginalDirect` in `torrent/source.ts`).
   - Cloudflare WARP for torrents (`src/directStream/torrentWarp.ts`, `src/streaming/warp.ts` over `claude/streaming/warp.mjs`, the one place WARP and the SSID are read or switched): the owner switches WARP with the `warp` tool or `/warp`. A torrent ask (index or pasted magnet) where every torrent tried ended at `NO_FILE_LIST` (`noPeersAtAll`), on SSID `Employee` with WARP off, gains an attempt `WARP`: a hint, or with `TORRENT_WARP_AUTO` WARP on, the swarm failures forgotten (`TorrentSource.forgetNoPeers`) and one more ask, kept on only when that played. Never for a cloud stream. `NOTESD_STREAM_WARP=off` (verify.sh pins it) builds none of it; the owner's switch works either way.
   - Torrents (`src/directStream/torrent/*`): `TorrentsRepo` is the only writer of `stream_torrents`. A torrent is in the swarm only while something uses it, and only its video and subtitle files are selected, read or served; nothing from a torrent is ever run. Tests use `DEFAULT_TORRENT_CONFIG` (off) or a fake engine; the real-engine test seeds over loopback with DHT and trackers off.
+  - A remuxed film keeps one copy (`torrent/remuxOnly.ts`, `TorrentStreams.dropOriginals`): once a file's remux is whole and its torrent file whole, the original is deleted and its file entry marked `remuxed` (by `TorrentsRepo.remuxed`), never while the torrent is in the swarm or being opened, and never before the English text track inside the file is in a complete cue feed. A `remuxed` file is never selected again, its file route answers 410, a replay from disk plays its remux with the kept `probe.json`, and the audio cuts read the remux's segments through `withHlsSegments` (`remuxAudioInput`), never ffmpeg on the playlist alone.
 
 ## Where the code is
 
@@ -2802,7 +2841,7 @@ rule it states; the few that must never change are also in the repository's `CLA
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
 | `src/directStream/torrent/` | Torrents: the WebTorrent engine (`engine.ts`), the torrent folder (`store.ts`), downloads, users and the swarm (`service.ts`), Range answers (`serve.ts`), `stream_torrents` (`repo.ts`) |
-| `src/directStream/torrent/remux.ts`, `src/http/streamTorrentRemuxApi.ts` | The torrent remux: ffmpeg into a growing HLS playlist, its files and map |
+| `src/directStream/torrent/remux.ts`, `src/directStream/torrent/remuxOnly.ts`, `src/http/streamTorrentRemuxApi.ts` | The torrent remux: ffmpeg into a growing HLS playlist, its files and map; when its original may go |
 | `src/directStream/torrent/subtitles/` | A torrent session's subtitle tiers: the chain (`chain.ts`), kept files (`disk.ts`), files in the torrent (`files.ts`), the subtitle services (`service.ts`, `wyzie.ts`), a cloud provider's subtitle (`borrow.ts`) |
 | `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
 | `src/directStream/torrent/subtitles/embedded.ts`, `feed.ts`, `src/http/streamTorrentCuesApi.ts` | The subtitle track inside a torrent's file: track choice, the ffmpeg extraction, the growing cue feed and its route |

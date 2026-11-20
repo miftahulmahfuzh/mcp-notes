@@ -97,7 +97,14 @@ export class MemoryTorrentRecords implements TorrentRecords {
   }
 
   async restarted(host: string, slot: TorrentSlot, now: Date): Promise<void> {
-    Object.assign(this.must(host, slot), { state: 'downloading', error: null, completedAt: null, bytesDone: 0, updatedAt: now });
+    const row = this.must(host, slot);
+    Object.assign(row, { state: 'downloading', error: null, completedAt: null, bytesDone: 0, updatedAt: now, files: row.files.map(({ remuxed: _, ...f }) => f) });
+  }
+
+  async remuxed(host: string, slot: TorrentSlot, fileIndex: number): Promise<StreamTorrentRow> {
+    const row = this.must(host, slot);
+    row.files = row.files.map((f) => (f.index === fileIndex ? { ...f, remuxed: true as const } : f));
+    return this.copy(row);
   }
 
   async played(host: string, slot: TorrentSlot, now: Date): Promise<void> {

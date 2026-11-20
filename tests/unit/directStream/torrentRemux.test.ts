@@ -7,6 +7,7 @@ import {
   canRemux,
   pickAudioStream,
   REMUX_DONE_FILE,
+  REMUX_PROBE_FILE,
   remuxArgs,
   remuxDir,
   RemuxError,
@@ -127,6 +128,24 @@ describe('TorrentRemux', () => {
     expect(await restarted.map(HASH)).toEqual({ duration_s: 5400.5, ranges: [[0, 12]] });
   });
 
+  it('keeps the probe beside the remux and tells its listeners once the remux is whole', async () => {
+    const f = fakeFfmpeg({ segmentsAtStart: 1 });
+    const remux = remuxWith(f.spawn);
+    const done: string[] = [];
+    remux.whenDone((infoHash, fileIndex) => done.push(`${infoHash}:${fileIndex}`));
+    await remux.start(request());
+    expect(await remux.savedProbe(HASH, 3)).toBeNull(); // RemuxProbe alone is not a whole MediaProbe
+    expect(existsSync(path.join(remuxDir(dir, HASH, 3), REMUX_PROBE_FILE))).toBe(true);
+    expect(done).toEqual([]);
+    f.runs[0]!.exit(0);
+    await vi.waitFor(() => expect(done).toEqual([`${HASH}:3`]));
+    // A remux finished before the probe was kept gets it on its next play from disk.
+    await rm(path.join(remuxDir(dir, HASH, 3), REMUX_PROBE_FILE));
+    const probe = { container: 'matroska,webm', video: { codec: 'h264', height: 1080 }, audio: [{ codec: 'ac3', lang: 'eng' }], subtitles: [], durationS: 12, direct: false };
+    await remuxWith(f.spawn).start(request({ probe }));
+    expect(await remux.savedProbe(HASH, 3)).toEqual(probe);
+  });
+
   it('fails the start with ffmpeg\'s last words when it ends before a segment', async () => {
     const f = fakeFfmpeg({ exitAtStart: 1 });
     const err = await remuxWith(f.spawn).start(request()).catch((e: unknown) => e);
@@ -161,7 +180,7 @@ describe('TorrentRemux', () => {
     expect(await remux.map(HASH)).toBeNull();
     await remux.resume(HASH, 3);
     expect(f.runs).toHaveLength(2);
-    await vi.waitFor(async () => expect((await readdir(remuxDir(dir, HASH, 3))).sort()).toEqual(['index.m3u8', 'init.mp4', 'seg-00000.m4s']));
+    await vi.waitFor(async () => expect((await readdir(remuxDir(dir, HASH, 3))).sort()).toEqual(['index.m3u8', 'init.mp4', 'probe.json', 'seg-00000.m4s']));
   });
 
   it('deletes the half-made remux once a stopped ffmpeg has exited, and leaves a finished one', async () => {

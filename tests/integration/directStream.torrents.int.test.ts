@@ -97,6 +97,22 @@ describe('stream_torrents', () => {
     expect(await repo.get('host-a', HASH)).toMatchObject({ state: 'downloading', error: null, bytesDone: 0 });
   });
 
+  it('marks a video that lives as its remux, keeps the other files and their order, and forgets the mark when it downloads again', async () => {
+    const later = new Date(T0.getTime() + 60_000);
+    await repo.record('host-a', { infoHash: HASH, ref: REF, name: NAME, release: null, trackers: [] }, T0);
+    const files = [
+      { index: 3, path: `${NAME}/${NAME}.en.srt`, length: 40 },
+      { index: 1, path: `${NAME}/${NAME}.mkv`, length: 3000 },
+    ];
+    await repo.chosen('host-a', SLOT, { files, fileIndex: 1, fileLength: 3000 }, T0);
+    await repo.ready('host-a', SLOT, 3000, T0);
+    const marked = await repo.remuxed('host-a', SLOT, 1);
+    expect(marked.files).toEqual([files[0], { ...files[1], remuxed: true }]);
+    expect(marked).toMatchObject({ state: 'ready', updatedAt: T0 });
+    await repo.restarted('host-a', SLOT, later);
+    expect((await repo.get('host-a', HASH))?.files).toEqual(files);
+  });
+
   it('finds what was not played for the window: by played_at, else completed_at, else created_at', async () => {
     const day = 86_400_000;
     await repo.record('host-a', { infoHash: 'a'.repeat(40), ref: REF, name: 'never played', release: null, trackers: [] }, new Date(T0.getTime() - 9 * day));

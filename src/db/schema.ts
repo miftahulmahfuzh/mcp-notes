@@ -1684,11 +1684,16 @@ export const streamCaches = pgTable(
 /** What a torrent download is doing (src/directStream/torrent/). The CHECK below keeps the same list. */
 export const STREAM_TORRENT_STATES = ['downloading', 'ready', 'failed'] as const
 export type StreamTorrentState = (typeof STREAM_TORRENT_STATES)[number]
-/** One chosen file of a torrent download: its index in the torrent, its path inside it, its size. */
+/**
+ * One chosen file of a torrent download: its index in the torrent, its path inside it, its size. `remuxed`: the video
+ * lives as its whole remux only (`notesd-remux/<index>/`); its original was deleted, and the torrent is no longer
+ * seeded or fetched for it (TorrentStreams.dropOriginals).
+ */
 export interface StreamTorrentFile {
   index: number
   path: string
   length: number
+  remuxed?: true
 }
 
 /**

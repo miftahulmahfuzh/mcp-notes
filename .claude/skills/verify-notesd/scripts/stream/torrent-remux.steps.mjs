@@ -5,8 +5,8 @@
 //   FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-mkv-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-mkv")
 //   $V up --web --torrent                       (note RUN), then .claude/skills/verify-notesd/scripts/torrent/offer-remux.sh RUN
 //   RUN_DIR=$HOME/.local/state/notesd-verify/<RUN> $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-remux.steps.mjs
-// Logs "REMUX PLAY PASS" (J1), "REMUX TRACKS PASS" (J2), "REMUX SEEK PASS" (J3), "REMUX REPLAY PASS" (J4) and
-// "REMUX GROWING PASS" (J5); the first failed check throws and fails the run.
+// Logs "REMUX PLAY PASS" (J1), "REMUX TRACKS PASS" (J2), "REMUX SEEK PASS" (J3), "REMUX REPLAY PASS" (J4),
+// "REMUX GROWING PASS" (J5) and "REMUX ONE COPY PASS" (J6); the first failed check throws and fails the run.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -156,4 +156,42 @@ export default async ({ page, base, shot, log }) => {
   await shot('remux-growing')
   log('REMUX GROWING PASS on a growing playlist the page shows 120 s, holds a seek past the edge at 60 s, and plays on from there once the remux reaches it')
   await page.unroute(`**/api/stream/torrent/${hash}/hls/${index}/index.m3u8*`)
+
+  // J6: one copy on disk. Both pages close: the finished torrent leaves the swarm and its original goes, the remux stays;
+  // the next play is from disk on the remux alone (no swarm), and the file route says the file lives as its remux.
+  await page.goto('about:blank')
+  for (const s of [first, second]) {
+    await page.request.post(`${base}/api/stream/sessions/${s.session_id}/position`, { headers: { origin: new URL(base).origin }, data: { position_s: 70, closed: true } })
+  }
+  const videoFiles = () => {
+    const found = []
+    const walk = (d) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        if (e.isDirectory()) {
+          if (!e.name.startsWith('notesd-')) walk(path.join(d, e.name))
+        } else if (/\.(mkv|mp4)$/i.test(e.name)) found.push(path.join(d, e.name))
+      }
+    }
+    walk(path.join(torrentsDir, hash))
+    return found
+  }
+  for (let i = 0; i < 60 && videoFiles().length > 0; i++) await page.waitForTimeout(500)
+  const daemonLog = readFileSync(path.join(RUN_DIR, 'daemon.log'), 'utf8')
+  const deleted = daemonLog.split('\n').filter((l) => l.includes('torrent: deleted the original of'))
+  log(`REMUX ONE COPY ${JSON.stringify({ videos: videoFiles(), deleted })}`)
+  check(videoFiles().length === 0, `the original video file is gone from ${torrentsDir}/${hash} once the torrent left the swarm`)
+  check(existsSync(path.join(dir, 'done.json')) && existsSync(path.join(dir, 'probe.json')), 'the remux and the probe kept beside it stay')
+  check(deleted.length === 1 && /\(.+\.mkv, \d+ MB\)/.test(deleted[0]), 'one log line names the original deleted, with its size')
+  const route = await page.request.get(`${base}/api/stream/torrent/${hash}/f/${index}`)
+  check(route.status() === 410 && (await route.json()).error === 'remuxed', `the file route answers 410 remuxed (got ${route.status()})`)
+  const third = await play(page, base)
+  check(third.manifest_url === first.manifest_url && third.manifest_kind === 'hls' && third.torrent?.state === 'ready', `the replay plays the remux from disk (got ${third.manifest_kind} ${third.manifest_url} ${third.torrent?.state})`)
+  const swarm = await (await page.request.get(`${base}/api/stream/torrent`)).json()
+  check(swarm.swarm.length === 0, `no swarm is joined for the replay (got ${JSON.stringify(swarm.swarm)})`)
+  await page.goto(`${base}/stream/${third.session_id}`)
+  await page.waitForFunction(() => {
+    const v = document.querySelector('video')
+    return !!v && !v.paused && v.currentTime > 2 && v.webkitAudioDecodedByteCount > 0
+  }, null, { timeout: 60_000 })
+  log('REMUX ONE COPY PASS the original went once the torrent left the swarm; the replay plays the remux alone, from disk, with no swarm')
 }

@@ -5,6 +5,7 @@ import type { DirectStreamService } from '../service.js';
 import type { SessionTorrent, StreamSession } from '../sessions.js';
 import { titleCheckedName, titleKey, type TitleSubtitleShelf } from '../titleSubtitles.js';
 import type { TorrentStreams } from '../torrent/service.js';
+import { remuxAudioInput } from '../torrent/remux.js';
 import type { SubtitleShelf } from '../torrent/subtitles/disk.js';
 import { refLabel, type StreamRef } from '../types.js';
 import { outsideCandidates, type CandidateServices } from './candidates.js';
@@ -44,7 +45,7 @@ export type CheckTarget = ({ session: string } | { ref: StreamRef; source?: 'tor
 export interface SubjectDeps {
   directStream: Pick<DirectStreamService, 'session' | 'resolve' | 'audioInput' | 'ownSubtitleText'>;
   /** Null with torrents off: only cloud streams are checked. */
-  torrents: Pick<TorrentStreams, 'find' | 'filePath' | 'localUrl'> | null;
+  torrents: (Pick<TorrentStreams, 'find' | 'filePath' | 'localUrl'> & Partial<Pick<TorrentStreams, 'remuxOnly'>>) | null;
   torrentShelf: SubtitleShelf | null;
   titleShelf: TitleSubtitleShelf;
   services: CandidateServices;
@@ -121,7 +122,8 @@ export class CheckSubjects {
     const { torrents, torrentShelf } = this.deps;
     if (source !== 'cloud' && torrents !== null && torrentShelf !== null) {
       const download = await torrents.find(ref);
-      if (download !== null && (await torrents.filePath(download.infoHash, download.fileIndex)) !== null) {
+      const here = download !== null && ((await torrents.filePath(download.infoHash, download.fileIndex)) !== null || (await torrents.remuxOnly?.(download.infoHash, download.fileIndex)) === true);
+      if (download !== null && here) {
         return this.torrentSubject(ref, { infoHash: download.infoHash, fileIndex: download.fileIndex, release: download.release ?? download.name, durationS: download.durationS }, null);
       }
     }
@@ -152,7 +154,13 @@ export class CheckSubjects {
       sessionId: open?.sessionId ?? null,
       durationS: file.durationS,
       audioLang: open?.audioLang ?? (await this.deps.audioLang(ref).catch(() => null)),
-      input: async () => ({ url: (await torrents.filePath(infoHash, fileIndex)) ?? this.deps.localBase() + torrents.localUrl(infoHash, fileIndex) }),
+      input: async () => {
+        const onDisk = await torrents.filePath(infoHash, fileIndex);
+        if (onDisk !== null) return { url: onDisk };
+        // Its original was deleted beside its whole remux: the remux's own segments are heard (hlsCut.ts).
+        if ((await torrents.remuxOnly?.(infoHash, fileIndex)) === true) return remuxAudioInput(this.deps.localBase(), infoHash, fileIndex);
+        return { url: this.deps.localBase() + torrents.localUrl(infoHash, fileIndex) };
+      },
       current: async () => {
         const view = (open === null ? await shelf.kept(infoHash) : open.torrent.subtitles)[0];
         if (view === undefined) return null;

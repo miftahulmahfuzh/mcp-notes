@@ -126,6 +126,30 @@ describe('WhisperTier', () => {
     expect(transcriber.stops).toBe(1);
   });
 
+  it('asks what to cut from for every stretch: a film whose original went beside its remux is heard from the remux', async () => {
+    const asked: { url: string; hls?: unknown }[] = [];
+    const feed = new FakeFeed();
+    const transcriber = new FakeTranscriber();
+    const remuxed = { url: 'http://127.0.0.1:1/remux/index.m3u8', hls: { manifest_kind: 'hls' as const, manifest_url: 'http://127.0.0.1:1/remux/index.m3u8', headers: { referer: null, origin: null, user_agent: null } } };
+    let calls = 0;
+    const whisper = new WhisperTier({
+      stretchS: 300,
+      workDirOf: () => workDir,
+      // The original is deleted after the first stretch.
+      fileUrl: async () => (++calls === 1 ? 'http://127.0.0.1:1/f/0' : remuxed),
+      openFeed: async () => feed,
+      cutter: async (request) => {
+        asked.push({ url: request.url, ...(request.hls === undefined ? {} : { hls: request.hls }) });
+        return { ok: true, lengthS: request.startS >= 600 ? 0 : 300 };
+      },
+      transcriber,
+      log: () => undefined,
+    });
+    await whisper.find(ctx({ probe: { durationS: 600 } }));
+    await until(() => feed.completed === 1);
+    expect(asked).toEqual([{ url: 'http://127.0.0.1:1/f/0' }, remuxed]);
+  });
+
   it('answers before any stretch is transcribed', async () => {
     const controller = new AbortController();
     const transcriber = new FakeTranscriber();

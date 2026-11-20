@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { DEFAULT_TORRENT_WHISPER_SCRIPT, type TorrentWhisperConfig } from '../../../config.js';
 import type { ResolvedSource } from '../../types.js';
+import { withHlsSegments } from '../../hlsCut.js';
 
 /**
  * Whisper, the last subtitle tier of a torrent session (TORRENT_STREAM_SOURCE phase 8).
@@ -87,6 +88,9 @@ export interface Transcriber extends WhisperDetector {
   /** Ends the worker if one runs; the next transcribe starts a new one. */
   stop(): Promise<void>;
 }
+
+/** What one stretch is cut from: an address or a path, or that and the HLS stream to read it from (StretchRequest's). */
+export type WhisperInput = string | Pick<StretchRequest, 'url' | 'inputArgs' | 'hls'>;
 
 export interface StretchRequest {
   /** The file route, absolute (ffmpeg reads it with Range requests). */
@@ -578,8 +582,12 @@ export interface WhisperTierOptions {
   stretchS: number;
   /** A torrent's `notesd-whisper` folder (`<torrent dir>/<info hash>/notesd-whisper`): progress files and the WAV of the stretch in progress. */
   workDirOf: (infoHash: string) => string;
-  /** The file route of a torrent's file, absolute (`http://127.0.0.1:<port>/api/stream/torrent/<hash>/f/<index>`). */
-  fileUrl: (infoHash: string, fileIndex: number) => string;
+  /**
+   * What a torrent's file is cut from, asked again for every stretch: its file route, absolute
+   * (`http://127.0.0.1:<port>/api/stream/torrent/<hash>/f/<index>`), or, for a file that lives as its remux, the remux's
+   * segments (remuxAudioInput: `url` and `hls`, which `withHlsSegments` reads).
+   */
+  fileUrl: (infoHash: string, fileIndex: number) => WhisperInput | Promise<WhisperInput>;
   openFeed: OpenWhisperFeed;
   cutter: AudioCutter;
   transcriber: Transcriber;
@@ -655,7 +663,6 @@ export class WhisperTier {
     const stretchS = stored?.stretchS ?? this.opts.stretchS;
     const done = new Set(stored?.done ?? []);
     let endS = stored?.endS ?? ctx.probe.durationS;
-    const url = this.opts.fileUrl(ctx.infoHash, ctx.fileIndex);
     const first = firstStretch(ctx.resumeS, stretchS, endS);
     let failures = 0;
     await mkdir(this.opts.workDirOf(ctx.infoHash.toLowerCase()), { recursive: true });
@@ -665,7 +672,9 @@ export class WhisperTier {
     const one = async (startS: number): Promise<'next' | 'end'> => {
       const wav = path.join(this.opts.workDirOf(ctx.infoHash.toLowerCase()), `${key}-${startS}.wav`);
       try {
-        const cut = await this.opts.cutter({ url, startS, lengthS: stretchS, out: wav }, signal);
+        // Asked again each time: the original may be deleted beside its whole remux while the transcript runs.
+        const from = await this.opts.fileUrl(ctx.infoHash, ctx.fileIndex);
+        const cut = await this.opts.cutter({ ...(typeof from === 'string' ? { url: from } : from), startS, lengthS: stretchS, out: wav }, signal);
         signal.throwIfAborted();
         if (!cut.ok) throw new Error(`the audio at ${startS} s could not be cut: ${cutFailureText(cut.reason)}`);
         // With the film's length known, only its last stretch may come back short: a short cut before it failed (a host
@@ -746,7 +755,7 @@ export interface BuildWhisperTierOptions {
   /** `config.torrent.dir`: the tier keeps its files under `<dir>/<info hash>/notesd-whisper`. */
   torrentDir: string;
   ffmpegBin: string;
-  fileUrl: (infoHash: string, fileIndex: number) => string;
+  fileUrl: WhisperTierOptions['fileUrl'];
   openFeed: OpenWhisperFeed;
   /** Default: claude/streaming/torrent/whisper.py in this checkout. */
   script?: string;
@@ -775,7 +784,8 @@ export async function buildWhisperTier(options: BuildWhisperTierOptions): Promis
     workDirOf: (infoHash) => path.join(options.torrentDir, infoHash, WHISPER_DIR),
     fileUrl: options.fileUrl,
     openFeed: options.openFeed,
-    cutter: ffmpegCutter({ ffmpegBin: options.ffmpegBin }),
+    // A file that lives as its remux is cut from the remux's segments (hlsCut.ts); anything else by ffmpeg as before.
+    cutter: withHlsSegments(ffmpegCutter({ ffmpegBin: options.ffmpegBin }), { ffmpegBin: options.ffmpegBin }),
     transcriber:
       options.transcriber ??
       new WorkerTranscriber({

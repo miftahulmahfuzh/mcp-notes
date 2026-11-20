@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { TorrentConfig } from '../../config.js';
 import { contentTypeOf, fileResponse } from '../cache/serve.js';
+import type { MediaProbe } from './probe.js';
 
 /**
  * The remux of a torrent file Chrome cannot play as is (torrent phase 5, R2.8): an MKV, AC3/E-AC3/DTS sound, HEVC.
@@ -12,7 +13,8 @@ import { contentTypeOf, fileResponse } from '../cache/serve.js';
  * converts the audio track in the title's original language to AAC stereo, and writes an HLS playlist of fMP4
  * segments in `<torrent dir>/<info hash>/notesd-remux/<file index>/`. The playlist is an EVENT one: it grows a segment
  * at a time and is served with EXT-X-ENDLIST only once ffmpeg has read the whole file and exited cleanly
- * (`done.json`). A finished remux is kept beside the download and plays again from disk with no ffmpeg.
+ * (`done.json`). A finished remux is kept beside the download and plays again from disk with no ffmpeg; once nothing
+ * needs the original any more, TorrentStreams deletes it and the remux is the one copy (remuxOnly.ts).
  */
 
 /** Video ffmpeg copies into an fMP4 segment and Chrome decodes (HEVC where the machine's Chrome does). MPEG-2, VC-1, MPEG-4 Part 2 are not. */
@@ -27,6 +29,11 @@ export const REMUX_KILL_GRACE_MS = 5_000;
 export const REMUX_PLAYLIST = 'index.m3u8';
 /** Written once ffmpeg exited 0 under -xerror: the remux is whole. */
 export const REMUX_DONE_FILE = 'done.json';
+/**
+ * What the remuxed file holds, as the header probe read it (the original's streams, length and subtitle tracks), written
+ * when its remux starts: a file that lives as its remux only is played again, and its embedded cues checked, from this.
+ */
+export const REMUX_PROBE_FILE = 'probe.json';
 /** The only names the file route serves. */
 export const REMUX_FILE_NAME = /^(?:index\.m3u8|init\.mp4|seg-\d{5}\.m4s)$/;
 const STDERR_TAIL_CHARS = 2_000;
@@ -98,6 +105,41 @@ export function remuxDir(torrentDir: string, infoHash: string, fileIndex: number
 export function remuxPlaylistUrl(infoHash: string, fileIndex: number, durationS: number | null): string {
   const total = durationS !== null && durationS > 0 ? `&total_s=${round1(durationS)}` : '';
   return `/api/stream/torrent/${infoHash}/hls/${fileIndex}/${REMUX_PLAYLIST}?remux=1${total}`;
+}
+
+/**
+ * What an audio cutter (Whisper, Wyzie Synced, /sync-subtitle) reads a file that lives as its remux from: the remux's
+ * own segments over this daemon's route, through hlsCut.ts's `withHlsSegments`. Never ffmpeg on the playlist alone:
+ * its seek in an fMP4 playlist reads nothing, and a stretch past the end comes back with the film's start.
+ */
+export function remuxAudioInput(base: string, infoHash: string, fileIndex: number): { url: string; hls: { manifest_kind: 'hls'; manifest_url: string; headers: { referer: null; origin: null; user_agent: null } } } {
+  const url = `${base}/api/stream/torrent/${infoHash}/hls/${fileIndex}/${REMUX_PLAYLIST}`;
+  return { url, hls: { manifest_kind: 'hls', manifest_url: url, headers: { referer: null, origin: null, user_agent: null } } };
+}
+
+/** The probe a remux kept beside it (REMUX_PROBE_FILE), or null when there is none or it cannot be read as one. */
+export async function readRemuxProbe(dir: string): Promise<MediaProbe | null> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path.join(dir, REMUX_PROBE_FILE), 'utf8'));
+  } catch {
+    return null;
+  }
+  if (typeof raw !== 'object' || raw === null) return null;
+  const p = raw as Partial<MediaProbe>;
+  const shaped =
+    typeof p.container === 'string' &&
+    Array.isArray(p.audio) &&
+    Array.isArray(p.subtitles) &&
+    typeof p.direct === 'boolean' &&
+    (p.video === null || (typeof p.video === 'object' && typeof p.video?.codec === 'string')) &&
+    (p.durationS === null || typeof p.durationS === 'number');
+  return shaped ? (p as MediaProbe) : null;
+}
+
+/** Writes the probe beside the remux (best effort: without it the file's original is never deleted). */
+export async function writeRemuxProbe(dir: string, probe: RemuxProbe): Promise<void> {
+  await writeFile(path.join(dir, REMUX_PROBE_FILE), `${JSON.stringify(probe)}\n`);
 }
 
 /** Whether a remux can make the file playable: its video is one Chrome decodes from an fMP4 segment. Any audio ffmpeg reads becomes AAC. */
@@ -239,6 +281,8 @@ export class TorrentRemux {
   private readonly requests = new Map<string, RemuxRequest>();
   /** Half-made remuxes being deleted after a stop; a new run of the same file waits for its folder to be gone. */
   private readonly clearing = new Map<string, Promise<void>>();
+  /** Told of each remux that became whole (`done.json` written): TorrentStreams may then delete its original. */
+  private readonly doneListeners: Array<(infoHash: string, fileIndex: number) => void> = [];
   private readonly log: (line: string) => void;
 
   constructor(private readonly opts: TorrentRemuxOptions) {
@@ -269,6 +313,8 @@ export class TorrentRemux {
     }
     const dir = remuxDir(this.opts.dir, req.infoHash, req.fileIndex);
     if (existsSync(path.join(dir, REMUX_DONE_FILE))) {
+      // A remux made before the probe was kept beside it gets it now, so its original can go once nothing needs it.
+      if (!existsSync(path.join(dir, REMUX_PROBE_FILE))) await writeRemuxProbe(dir, req.probe).catch(() => undefined);
       this.runs.set(key, { key, infoHash: req.infoHash, fileIndex: req.fileIndex, dir, durationS: req.probe.durationS, state: 'done', users: 1, process: null, firstSegment: Promise.resolve() });
       this.latest.set(req.infoHash, key);
       this.log(`[notesd] torrent remux: ${label} plays from disk`);
@@ -288,6 +334,16 @@ export class TorrentRemux {
     this.latest.set(req.infoHash, key);
     this.log(`[notesd] torrent remux: ${label} started (${req.probe.video?.codec ?? ''} copied, audio to AAC)`);
     return play;
+  }
+
+  /** Calls `listener` each time a remux becomes whole, after its `done.json` is written. */
+  whenDone(listener: (infoHash: string, fileIndex: number) => void): void {
+    this.doneListeners.push(listener);
+  }
+
+  /** The probe kept beside a file's remux (what the original held), or null. */
+  savedProbe(infoHash: string, fileIndex: number): Promise<MediaProbe | null> {
+    return readRemuxProbe(remuxDir(this.opts.dir, infoHash, fileIndex));
   }
 
   /** start() again with what the file was last started with (a session that took its torrent again). No-op for a file never started. */
@@ -388,6 +444,7 @@ export class TorrentRemux {
     await this.clearing.get(run.key);
     await rm(run.dir, { recursive: true, force: true });
     await mkdir(run.dir, { recursive: true });
+    await writeRemuxProbe(run.dir, req.probe).catch((err: unknown) => this.log(`[notesd] torrent remux: the probe of ${run.infoHash} file ${run.fileIndex} could not be kept: ${messageOf(err)}`));
     if (run.state !== 'running') throw new RemuxError('remux_failed', 'the daemon closed before ffmpeg started');
     const proc = this.opts.spawn(
       remuxArgs({ input: req.input, dir: run.dir, videoCodec: (req.probe.video?.codec ?? '').toLowerCase(), audioStream: pickAudioStream(req.probe.audio, req.audioLang) }),
@@ -429,6 +486,13 @@ export class TorrentRemux {
     }
     run.state = 'done';
     this.log(`[notesd] torrent remux: ${label} done (${round1(covered)} s)`);
+    for (const listener of this.doneListeners) {
+      try {
+        listener(run.infoHash, run.fileIndex);
+      } catch (err) {
+        this.log(`[notesd] torrent remux: ${label}: ${messageOf(err)}`);
+      }
+    }
   }
 }
 

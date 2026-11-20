@@ -22,6 +22,7 @@ describe('CheckSubjects', () => {
   let screen: { sessionId: string; durationS: number | null; positionS?: number } | null;
   let resolved: number;
   let onDisk: boolean;
+  let remuxOnly: boolean;
 
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'subjects-'));
@@ -32,6 +33,7 @@ describe('CheckSubjects', () => {
     screen = null;
     resolved = 0;
     onDisk = true;
+    remuxOnly = false;
   });
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
@@ -67,6 +69,7 @@ describe('CheckSubjects', () => {
         find: async () => ({ infoHash: HASH, host: 'here', name: 'Show S01', release: 'Show S01 1080p BluRay', fileIndex: 1, fileLength: 1, state: 'ready', durationS: 2564 }),
         filePath: async () => (onDisk ? '/data/torrents/show.mkv' : null),
         localUrl: (hash: string, index: number) => '/api/stream/torrent/' + hash + '/f/' + index,
+        remuxOnly: async () => remuxOnly,
       } as unknown as SubjectDeps['torrents'],
       torrentShelf,
       titleShelf,
@@ -117,6 +120,16 @@ describe('CheckSubjects', () => {
     expect(s.mode).toBe('idle');
     expect(await s.input()).toEqual({ url: 'http://127.0.0.1:7317/api/stream/torrent/' + HASH + '/f/1' });
     expect(await s.current()).toMatchObject({ label: 'English (Whisper)', skip: expect.stringContaining('grows') });
+  });
+
+  it('idle: a finished download whose original went beside its remux is heard from the remux segments', async () => {
+    onDisk = false;
+    remuxOnly = true;
+    const s = await subjects().build({ ref: REF });
+    expect(s).toMatchObject({ mode: 'idle', source: 'torrent' });
+    const playlist = 'http://127.0.0.1:7317/api/stream/torrent/' + HASH + '/hls/1/index.m3u8';
+    expect(await s.input()).toEqual({ url: playlist, hls: { manifest_kind: 'hls', manifest_url: playlist, headers: { referer: null, origin: null, user_agent: null } } });
+    expect(resolved).toBe(0);
   });
 
   it("idle: this machine's finished download is checked from disk, with its kept subtitle", async () => {

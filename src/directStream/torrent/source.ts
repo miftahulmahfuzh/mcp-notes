@@ -112,6 +112,8 @@ export interface TorrentSwarm {
   filePath(infoHash: string, index: number): string | null | Promise<string | null>;
   /** `/api/stream/torrent/<hash>/f/<index>`. */
   localUrl(infoHash: string, index: number): string;
+  /** True when the file lives as its whole remux only (its original was deleted, remuxOnly.ts). Absent: never. */
+  remuxOnly?(infoHash: string, index: number): boolean | Promise<boolean>;
   /** The video's length once the probe knows it: `/map` then answers seconds (phase 4's grey bar). */
   setDuration(infoHash: string, seconds: number, fileIndex?: number): unknown;
   /** Gives back a hold taken with `use`; with none left the swarm is left at once (a torrent that lost the race, or did not play). Absent: `release`. */
@@ -951,10 +953,15 @@ export class TorrentSource {
    */
   async fromDisk(ref: StreamRef, options: { audioLang: string | null; resumeS?: number | null }): Promise<{ torrent: SessionTorrent; source: ResolvedSource; attempts: ResolveAttempt[] } | null> {
     let download: DownloadOnDisk | null;
+    let remuxOnly = false;
     try {
       download = await this.opts.swarm.find(ref);
       if (download === null || download.state !== 'ready') return null;
-      if ((await this.opts.swarm.filePath(download.infoHash, download.fileIndex)) === null) return null;
+      if ((await this.opts.swarm.filePath(download.infoHash, download.fileIndex)) === null) {
+        // Its original was deleted beside its whole remux: the remux plays, with the probe kept beside it.
+        remuxOnly = (await this.opts.swarm.remuxOnly?.(download.infoHash, download.fileIndex)) === true;
+        if (!remuxOnly) return null;
+      }
     } catch (err) {
       this.log(`[notesd] torrent: could not read this machine's downloads of ${refLabel(ref)}: ${messageOf(err)}`);
       return null;
@@ -966,7 +973,9 @@ export class TorrentSource {
     const manifestUrl = this.opts.swarm.localUrl(download.infoHash, download.fileIndex);
     let probe: MediaProbe;
     try {
-      probe = await this.opts.probe(`${this.opts.localBase()}${manifestUrl}`, TORRENT_PROBE_TIMEOUT_MS);
+      const kept = remuxOnly ? ((await this.opts.remux?.savedProbe(download.infoHash, download.fileIndex)) ?? null) : null;
+      if (remuxOnly && kept === null) throw new Error('it lives as its remux, and no probe of it is kept beside the remux');
+      probe = kept ?? (await this.opts.probe(`${this.opts.localBase()}${manifestUrl}`, TORRENT_PROBE_TIMEOUT_MS));
     } catch (err) {
       this.log(`[notesd] torrent: the download ${download.infoHash} of ${refLabel(ref)} could not be read: ${messageOf(err)}`);
       return null;
@@ -978,7 +987,7 @@ export class TorrentSource {
     }
     let page: { manifestUrl: string; manifestKind: 'mp4' | 'hls' };
     try {
-      page = await this.fileForPage(download.infoHash, download.fileIndex, probe, options.audioLang);
+      page = await this.fileForPage(download.infoHash, download.fileIndex, probe, options.audioLang, undefined, remuxOnly);
     } catch (err) {
       this.log(`[notesd] torrent: the download ${download.infoHash} of ${refLabel(ref)} could not be remuxed: ${messageOf(err)}`);
       return null;
@@ -1056,7 +1065,8 @@ export class TorrentSource {
   /** `ready` once the chosen file is whole on disk, else `downloading`. */
   async state(torrent: SessionTorrent): Promise<SessionTorrent['state']> {
     try {
-      return (await this.opts.swarm.filePath(torrent.infoHash, torrent.fileIndex)) === null ? 'downloading' : 'ready';
+      if ((await this.opts.swarm.filePath(torrent.infoHash, torrent.fileIndex)) !== null) return 'ready';
+      return (await this.opts.swarm.remuxOnly?.(torrent.infoHash, torrent.fileIndex)) === true ? 'ready' : 'downloading';
     } catch {
       return torrent.state;
     }
@@ -1073,12 +1083,19 @@ export class TorrentSource {
     probe: MediaProbe,
     audioLang: string | null,
     timeoutMs?: number,
+    remuxOnly = false,
   ): Promise<{ manifestUrl: string; manifestKind: 'mp4' | 'hls' }> {
     const fileUrl = this.opts.swarm.localUrl(infoHash, fileIndex);
     const remux = this.opts.remux ?? null;
+    // A file that lives as its remux has no original to hand out: its finished remux plays, whatever the probe says.
+    if (remux === null) {
+      if (remuxOnly) throw new Error('it lives as its remux, and the remux is off');
+      // With no remux, refusalOf already refused a file Chrome cannot play, so this only serves truly direct ones.
+      return { manifestUrl: fileUrl, manifestKind: 'mp4' };
+    }
     // playsOriginalDirect, not probe.direct: a dual-audio file whose original is not the default is remuxed, so the
-    // original track plays. With no remux, refusalOf already refused such a file, so this only serves truly direct ones.
-    if (playsOriginalDirect(probe, audioLang) || remux === null) return { manifestUrl: fileUrl, manifestKind: 'mp4' };
+    // original track plays.
+    if (!remuxOnly && playsOriginalDirect(probe, audioLang)) return { manifestUrl: fileUrl, manifestKind: 'mp4' };
     const input = (await this.opts.swarm.filePath(infoHash, fileIndex)) ?? `${this.opts.localBase()}${fileUrl}`;
     const play = await remux.start({ infoHash, fileIndex, input, probe, audioLang }, timeoutMs === undefined ? {} : { timeoutMs });
     return { manifestUrl: play.manifestUrl, manifestKind: 'hls' };

@@ -35,7 +35,7 @@ import { createGuideWriter, GenreGuides } from './movies/guides.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
-import { buildTorrentRemux } from './directStream/torrent/remux.js';
+import { buildTorrentRemux, remuxAudioInput } from './directStream/torrent/remux.js';
 import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
 import { TorrentMarksRepo } from './directStream/torrent/marks.js';
 import { buildTrackerLists } from './directStream/torrent/trackerLists.js';
@@ -369,8 +369,13 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       const place = {
         torrentDir: config.torrent.dir,
         shelf: new SubtitleShelf(config.torrent.dir),
-        input: async (infoHash: string, fileIndex: number): Promise<string> =>
-          (await torrents.filePath(infoHash, fileIndex)) ?? `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`,
+        input: async (infoHash: string, fileIndex: number) => {
+          const base = `http://127.0.0.1:${boundPort ?? config.port}`;
+          const onDisk = await torrents.filePath(infoHash, fileIndex);
+          if (onDisk !== null) return onDisk;
+          // A film that lives as its remux (its original deleted) is heard from the remux's segments.
+          return (await torrents.remuxOnly(infoHash, fileIndex)) ? remuxAudioInput(base, infoHash, fileIndex) : `${base}${torrents.localUrl(infoHash, fileIndex)}`;
+        },
       };
       torrentSource = buildTorrentSource(config, torrents, {
         localBase: () => `http://127.0.0.1:${boundPort ?? config.port}`,
@@ -454,6 +459,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Building it joins nothing: the WebTorrent engine starts with the first torrent opened.
   // As with the stream cache, a download whose row is still only in the old shared database keeps its folder.
   const torrents = buildTorrentStreams(config, directStream, db, { sweepOrphans: !importPending });
+  // A remux that became whole: its original goes now when nothing uses the torrent, else when the torrent leaves the swarm.
+  if (torrents !== null) torrentRemux?.whenDone((infoHash, fileIndex) => void torrents.dropOriginals(infoHash, { fileIndex }));
   // The public tracker lists (wider-torrent-sources phase 3): one store, read by every torrent opened and every scrape,
   // and the job that refreshes it once a day from startBackground. Off with NOTESD_TORRENT_TRACKER_LISTS, torrents or
   // discovery off: no store, and a job that does nothing.
@@ -469,8 +476,13 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       : new EmbeddedSubtitles({
           ffmpegBin: config.torrent.ffmpegBin,
           feeds: torrentCues,
-          input: async (infoHash, fileIndex) =>
-            (await torrents.filePath(infoHash, fileIndex)) ?? `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`,
+          input: async (infoHash, fileIndex) => {
+            const onDisk = await torrents.filePath(infoHash, fileIndex);
+            if (onDisk !== null) return onDisk;
+            // The remux holds no subtitle stream; the original went only once this track's cue feed was complete.
+            if (await torrents.remuxOnly(infoHash, fileIndex)) throw new Error('it lives as its remux, which holds no subtitle track');
+            return `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`;
+          },
         });
   // Torrent phase 8: Whisper, the last subtitle tier. Null with NOTESD_TORRENT_WHISPER=off or before
   // install.sh has made its Python; the chain then ends at phase 6's borrow. The worker starts on the
@@ -482,7 +494,11 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           whisper: config.torrent.whisper,
           torrentDir: config.torrent.dir,
           ffmpegBin: config.torrent.ffmpegBin,
-          fileUrl: (infoHash, fileIndex) => `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`,
+          // Asked for every stretch: a film whose original was deleted beside its whole remux is heard from the remux.
+          fileUrl: async (infoHash, fileIndex) => {
+            const base = `http://127.0.0.1:${boundPort ?? config.port}`;
+            return (await torrents.remuxOnly(infoHash, fileIndex)) ? remuxAudioInput(base, infoHash, fileIndex) : `${base}${torrents.localUrl(infoHash, fileIndex)}`;
+          },
           ...(sharedWhisper === null ? {} : { transcriber: sharedTranscriber(sharedWhisper) }),
           openFeed: async (infoHash, fileIndex) => {
             const track = whisperTrackId(fileIndex);
