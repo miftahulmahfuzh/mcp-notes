@@ -29,11 +29,20 @@
 .cp-tag { font-size: 10px; }
 .cp-live { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .cp-size { flex: none; width: 74px; text-align: right; font-family: var(--mono); font-size: 12px; letter-spacing: .02em; }
+.cp-bulkbtn.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.cp-bulkbtn.on:disabled { opacity: 1; }
+.cp-dl { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.cp-why { font-size: 10px; }
+.cp-bar { flex: none; width: 84px; }
+.cp-bar > span { transition: width .6s ease; }
+.cp-dl[data-state="queued"] .cp-bar > span, .cp-dl[data-state="paused"] .cp-bar > span { opacity: .45; }
+.cp-pct { flex: none; width: 32px; text-align: right; font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--muted); }
 .cp-trash:disabled { opacity: .3; cursor: default; }
 .cp-toast { position: fixed; left: 50%; bottom: 104px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 4px; padding: 9px 12px 9px 16px; border: 1px solid var(--fg); background: var(--bg); color: var(--fg); font-family: var(--mono); font-size: 11.5px; letter-spacing: .03em; }
 .cp-cachebtn { position: relative; }
 @media (max-width: 640px) {
   .cp-tags, .cp-kinds { display: none; }
+  .cp-bar { width: 44px; }
   .cp-seasons { padding-left: 12px; margin-left: 6px; }
   .cp-episodes { padding-left: 12px; }
 }

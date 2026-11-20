@@ -564,7 +564,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     streamEvidence,
   };
   // The Cache page (src/directStream/cacheShelf.ts): this host's torrents and cloud caches on disk, deleted after an undo
-  // window. Null with neither torrents nor the stream cache. startBackground carries out what a restart left pending.
+  // window, and what downloads now and why. Null with neither torrents nor the stream cache. startBackground carries out
+  // what a restart left pending.
   deps.cacheShelf =
     (torrents === null && streamCache === null) || movies === null
       ? null
@@ -572,6 +573,19 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           host: movies.host,
           torrents,
           caches: streamCache,
+          // The download queue's unfinished rows (StreamDownloads.list(): this host's only), as `asked` downloads.
+          downloads: {
+            list: async () => {
+              const queue = deps.streamDownloads ?? null;
+              if (queue === null) return [];
+              return (await queue.list()).flatMap((d) =>
+                d.state === 'queued' || d.state === 'running' || d.state === 'paused'
+                  ? [{ kind: d.kind, tmdbId: d.tmdb_id, season: d.season ?? 0, episode: d.episode ?? 0, state: d.state, progress: d.progress }]
+                  : [],
+              );
+            },
+          },
+          ahead: () => deps.directStream?.aheadFetching() ?? null,
           titles: (ids) => titleWatchViews(db, ids, { host: movies.host, imageBase: config.movies.tmdb.imageBase }),
           live: () => liveSlots(streamLive, deps.directStream ?? null),
           pendingFile: join(config.dataDir, 'movies', CACHE_PENDING_FILE),

@@ -12,6 +12,7 @@ export type StreamDiskApi = Pick<CacheShelf, 'view' | 'remove' | 'undo'>;
 const DESCRIPTION =
   "What this machine keeps on disk for streaming (torrent downloads and the cloud stream cache), per title, season and episode, and deleting it: the wall's Cache page (/movies/cache). " +
   'action list: the total against the torrent budget, split torrents / cloud, and every title holding cache, largest first, with its size, kinds (torrent, cloud), watched and not_interested tags, in_use (it plays or is being fetched: it cannot be deleted now), and for a series its seasons and episodes. Pass title to see one title only ("how much cache does Dandadan take?"). ' +
+  'What downloads now: `downloading` at the top counts the films and episodes downloading; such an episode (or film) carries downloading {progress 0 to 1, state queued, running or paused, why: asked (the owner asked: a Download button, direct_stream_cache), ahead (the next episode, fetched while one plays) or pause (cached on a pause in the player)}, and a season or title rolls them up {count, progress (the mean), why (every reason), state}; null when nothing of it downloads. A download asked for with nothing on disk yet is listed at 0 bytes ("what is downloading?"). ' +
   'action delete with title (a name, a movie id such as M-23T4 (an episode\'s id names its episode) or a title key such as tv-1399), plus season, or season and episode: deletes that title\'s (season\'s, episode\'s) cache. action delete_watched: every watched film and series, and a series\' watched episodes ("clear the cache of watched stuff"). action delete_not_interested: every title marked not interested. ' +
   'A deletion is carried out 10 seconds after the call (the Cache page shows an undo for that long); action undo with the id from the answer cancels it inside that window. Nothing is blacklisted: a deleted torrent can be fetched again. Sizes are blocks on disk. ' +
   'Only this machine\'s cache is listed or deleted. Off on this server: stream_disk_off.';
@@ -65,6 +66,7 @@ function titleView(t: ShelfTitle, wall: string): Record<string, unknown> {
     watched: t.watched,
     not_interested: t.not_interested,
     in_use: t.in_use,
+    downloading: t.downloading,
     ...(t.kind === 'tv'
       ? {
           seasons: t.seasons.map((s) => ({
@@ -73,7 +75,8 @@ function titleView(t: ShelfTitle, wall: string): Record<string, unknown> {
             shared: s.shared_bytes > 0 ? sizeText(s.shared_bytes) : undefined,
             watched: s.watched,
             in_use: s.in_use,
-            episodes: s.episodes.map((e) => ({ episode: e.episode, movie_id: e.movie_id, name: e.name, size: sizeText(e.bytes), kinds: e.kinds, watched: e.watched, in_use: e.in_use })),
+            downloading: s.downloading,
+            episodes: s.episodes.map((e) => ({ episode: e.episode, movie_id: e.movie_id, name: e.name, size: sizeText(e.bytes), kinds: e.kinds, watched: e.watched, in_use: e.in_use, downloading: e.downloading })),
           })),
         }
       : {}),
@@ -104,6 +107,7 @@ async function diskAction(a: DiskArgs, d: StreamDiskApi, wall: string): Promise<
     torrents: sizeText(view.torrent_bytes),
     cloud: sizeText(view.cloud_bytes),
     budget: view.budget_bytes === null ? null : sizeText(view.budget_bytes),
+    downloading: view.downloading,
     delete_watched_frees: sizeText(view.bulk.watched.bytes),
     delete_not_interested_frees: sizeText(view.bulk.not_interested.bytes),
   };
