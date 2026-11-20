@@ -2151,7 +2151,7 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
 
 - **Live and idle.** With a stream of the title on screen, the audio is that stream's and the fix is
   put on its session: `subtitle_rev` goes up and the open page loads it on its next position report,
-  without touching the film. With none, this machine's finished torrent download of the title is
+  without touching the film, and sets the G/H delay kept for the title back to 0. With none, this machine's finished torrent download of the title is
   checked, else a cloud source resolved out of sight as the dialogue reader does, and the fix is kept
   for the next play.
 - **Which one, and when nothing is checked.** Idle, `source: "torrent"` or `"cloud"` (a codename in

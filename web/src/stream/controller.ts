@@ -76,8 +76,8 @@ export const PAUSE_CACHE_DELAY_MS = 2_000;
 export const CACHE_POLL_MS = 4_000;
 /** How often a torrent session asks for its peers, its speed and what is on disk, while it downloads and the tab shows. */
 export const TORRENT_POLL_MS = 2_000;
-/** The label of a subtitle Wyzie Synced re-timed (`English (Wyzie, synced)`). */
-const SYNCED_LABEL = /\bsynced\)\s*$/i;
+/** The label of a subtitle re-timed to the film's audio: Wyzie Synced's (`English (Wyzie, synced)`), /sync-subtitle's (`English (checked)`). */
+const SYNCED_LABEL = /\b(?:synced|checked)\)\s*$/i;
 /** `sourceNotice` after an ask that found nothing; the page words it for a cloud source or a torrent. */
 export const NO_OTHER_SOURCE = 'No other source';
 const LOG_MAX = 20;
