@@ -4,6 +4,7 @@ import type WebTorrent from 'webtorrent';
 import type { Torrent, TorrentFile } from 'webtorrent';
 import type { TorrentFolder } from './store.js';
 import { installPeerGuard } from './handshakeGuard.js';
+import { installTrackerGuard } from './trackerGuard.js';
 import {
   BYTES_PER_KB,
   kilobits,
@@ -265,6 +266,8 @@ export class WebTorrentEngine implements TorrentEngine {
     const discovery = this.opts.discovery;
     // A peer whose torrent was already left must never end the process (handshakeGuard.ts): installed before the first swarm is joined.
     await installPeerGuard(this.opts.log);
+    // Nor an HTTP tracker's body that arrives after its torrent was left (trackerGuard.ts).
+    await installTrackerGuard(this.opts.log);
     const client = new Ctor({
       dht: discovery,
       tracker: discovery ? {} : false,

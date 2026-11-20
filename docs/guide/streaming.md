@@ -1867,6 +1867,10 @@ DHT node and no peer.
 9. A late peer never ends the daemon. A torrent that was left (a torrent that lost the race) may
    still get a peer's handshake bytes just after; the engine ignores a handshake for a torrent it no longer
    holds (`handshakeGuard.ts`).
+10. Nor does a tracker's late answer. An HTTP tracker still sending its answer when its torrent is left (a racer that
+   lost, a pack without the episode) had its read aborted with nothing to catch it, and the daemon ended
+   (`DOMException [AbortError]` at bittorrent-tracker's `destroyCleanup`, during a Jujutsu Kaisen play); such a
+   failure is now dropped, and any other goes to the request's own callback (`trackerGuard.ts`).
 
 A download belongs to the machine that made it. A row of another host (copied in from the old shared
 database, or made by a second daemon on the same Postgres) is listed with `available: false`, and its
