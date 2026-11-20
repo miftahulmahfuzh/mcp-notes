@@ -956,8 +956,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 - **Position.** The film starts at the session's `resume_s`. The page reports
   `{ position_s, duration_s, ended, paused }` to `POST /api/stream/sessions/<id>/position` every
   5 seconds while it is open (a paused page sends a `beat`, which only says it is still there), on
-  pause, on play, at the end, and once more as it closes (`closed`). A failed report, a 404
-  included, is ignored; from a good answer the page reads only `subtitle_rev` (see above).
+  pause, on play, at the end, and once more as it closes (`closed`). A failed report is ignored,
+  a 503 `store_failed` included (the database did not take it; the daemon logs one line and the
+  next report writes the position); from a good answer the page reads only `subtitle_rev` (see above).
 - **On the Movies page.** Those reports are also what the Movies page shows: the title's poster
   has a pulsing frame and a "playing" chip while it streams, and a steady one that reads "paused"
   while it is paused, on the Stream side and in the Library. The title's page shows the same on its

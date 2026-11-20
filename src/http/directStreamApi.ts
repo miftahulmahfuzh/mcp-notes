@@ -240,8 +240,9 @@ export interface StreamPositionDeps {
  * Direct streaming phase 5 (R2.4): the player page's position reports, written on the one
  * `movie_plays` row of its session (src/movies/streams.ts). Same-origin only: it writes.
  * 503 `direct_stream_off` without the service or the movies store; 404 `unknown_session` for a
- * session the daemon does not hold (the page ignores 404s); 404 `unknown_title` when the title
- * cannot be stored (no TMDB credential); 400 `invalid_body`.
+ * session the daemon does not hold (the page ignores 404s);
+ * 404 `unknown_title` when the title cannot be stored (no TMDB credential); 400 `invalid_body`;
+ * 503 `store_failed` when the database did not take the report (one log line; the page reports again in 5 s).
  *
  * Each report also feeds the live state (src/movies/streamLive.ts): the session is the stream on
  * screen until it ends or closes. A `beat` of a paused page that is already the stream on screen
@@ -250,7 +251,7 @@ export interface StreamPositionDeps {
  * Every 200 carries `subtitle_rev`, the session's count of subtitle changes (Wyzie Synced re-timed
  * it, or an outside subtitle arrived late): the page loads its subtitle again when the number changes.
  */
-export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: () => Date } = {}): Hono {
+export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: () => Date; log?: (line: string) => void } = {}): Hono {
   const r = new Hono();
   r.post('/api/stream/sessions/:id/position', sameOriginOnly, async (c) => {
     const service = deps.directStream ?? null;
@@ -283,11 +284,18 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
         return c.json({ ok: true, play_id: null, ended: false, subtitle_rev: subtitleRev });
       }
     }
-    const written = await new MovieStreams(movies, options).recordPosition(session, {
-      positionS: body.data.position_s,
-      durationS: body.data.duration_s ?? null,
-      ended: body.data.ended ?? false,
-    });
+    let written: Awaited<ReturnType<MovieStreams['recordPosition']>>;
+    try {
+      written = await new MovieStreams(movies, options).recordPosition(session, {
+        positionS: body.data.position_s,
+        durationS: body.data.duration_s ?? null,
+        ended: body.data.ended ?? false,
+      });
+    } catch (err) {
+      // The database did not answer: this report is lost, and the page's next one (5 s on) writes the position.
+      (options.log ?? console.error)(`[notesd] direct stream: the position of session ${session.id.slice(0, 6)} was not stored: ${err instanceof Error ? err.message : String(err)}`);
+      return c.json({ error: 'store_failed', message: 'The position could not be stored now; the next report is tried again.' }, 503);
+    }
     if (written === null) {
       return c.json({ error: 'unknown_title', message: 'The title is not stored and TMDB cannot be asked for it; the play is not recorded.' }, 404);
     }
