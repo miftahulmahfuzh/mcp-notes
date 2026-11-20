@@ -167,22 +167,27 @@ export class TorrentStreams {
   /**
    * Whether a swarm answers: joins it only to see a peer send the file list, then leaves and deletes what the
    * join made. Nothing is selected, downloaded, recorded or shown as a download (no stream_torrents row), so a
-   * probe of a torrent nobody asked to play leaves no trace. A torrent already in the swarm for a play, and a
-   * finished download on this host, answer from what they hold without being touched. Throws TorrentError
-   * (no_metadata after `timeoutMs`, invalid_hash, closing); the caller decides what each means.
+   * probe of a torrent nobody asked to play leaves no trace. A torrent already in the swarm for a play (or being
+   * opened for one), and a finished download on this host, answer from what they hold without being touched. Files
+   * the peek did not make are never deleted: a torrent with a row or a folder here leaves the swarm with its folder
+   * as it was. Throws TorrentError (no_metadata after `timeoutMs`, invalid_hash, closing); the caller decides what
+   * each means.
    */
   async peek(infoHash: string, trackers: readonly string[], options: { timeoutMs: number }): Promise<{ files: number; videos: number; peers: number | null; live: boolean }> {
     const hash = normalizeInfoHash(infoHash);
     if (hash === null) throw new TorrentError('invalid_hash', 'An info hash is 40 hexadecimal characters.');
     if (this.closed) throw new TorrentError('closing', 'The daemon is stopping.');
     const count = (files: readonly { name: string }[]): number => files.filter((f) => mediaOf(f.name) === 'video').length;
-    const held = this.active.get(hash)?.handle ?? this.engine.get(hash);
-    if (held !== null && held !== undefined) return { files: held.files.length, videos: count(held.files), peers: held.stats().peers, live: held.live };
+    const opening = this.opening.get(hash);
+    const held = this.active.get(hash)?.handle ?? this.engine.get(hash) ?? (opening === undefined ? null : await opening);
+    if (held !== null) return { files: held.files.length, videos: count(held.files), peers: held.stats().peers, live: held.live };
     const row = await this.repo.get(this.host, hash);
     if (row !== null && row.state === 'ready' && row.files.length > 0) {
       const names = row.files.map((f) => ({ name: path.basename(f.path) }));
       return { files: names.length, videos: count(names), peers: null, live: false };
     }
+    // Only what this peek makes is deleted when it leaves.
+    const ours = row === null && !(await this.folder.exists(hash));
     const joined = this.engine.add({ infoHash: hash, trackers, name: null }, options);
     const done = joined.then(() => undefined, () => undefined);
     this.peeking.set(hash, done);
@@ -191,7 +196,7 @@ export class TorrentStreams {
       return { files: handle.files.length, videos: count(handle.files), peers: handle.stats().peers, live: true };
     } finally {
       try {
-        await this.engine.remove(hash, { deleteFiles: true });
+        await this.engine.remove(hash, { deleteFiles: ours });
       } catch (err) {
         this.log(`[notesd] torrent: could not leave the swarm of a trending probe (${hash.slice(0, 8)}): ${messageOf(err)}`);
       }

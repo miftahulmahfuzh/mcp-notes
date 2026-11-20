@@ -1774,7 +1774,9 @@ and serves it from its own disk to the player page.
 
 The Stream side of the Movies page lists, once a day, the most seeded films and series on these indexes and
 probes their swarms: see [Trending on torrents](movies.md#trending-on-torrents). That job never plays or
-downloads anything; it reads the indexes' top lists and uses `TorrentStreams.peek`.
+downloads anything; it reads the indexes' top lists and uses `TorrentStreams.peek`. A probe of a torrent
+being played or opened answers from it and leaves it alone, and a probe deletes only the files its own join
+made: a torrent with a row or a folder on this machine keeps them.
 
 ![Trending on torrents, on the Stream side: the index's seed count and what the swarm said when it was opened](img/movies/trending.png)
 

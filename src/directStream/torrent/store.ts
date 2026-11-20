@@ -89,6 +89,15 @@ export class TorrentFolder {
     return entries.filter((e) => e.isDirectory() && /^[0-9a-f]{40}$/.test(e.name)).map((e) => e.name);
   }
 
+  /** Whether the torrent has a folder here. */
+  async exists(infoHash: string): Promise<boolean> {
+    try {
+      return (await stat(this.dirOf(infoHash))).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
   /** Deletes the torrent's folder and everything in it. */
   async remove(infoHash: string): Promise<void> {
     await rm(this.dirOf(infoHash), { recursive: true, force: true });
