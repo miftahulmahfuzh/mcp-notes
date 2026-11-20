@@ -1540,6 +1540,13 @@ Postgres) is listed with `available: false`, and its files and its delete answer
 deletes the folder and the row. The chat bar does not cache: it is a Claude Code request. The
 Movies page has no cache or clear button.
 
+A folder under the cache root that no `stream_caches` row names (a row deleted while its folder
+stayed) can be neither played nor cleared. The clean-up that runs at daemon start and with every
+cache request deletes it once nothing has been written in it for three days, the time an `auto`
+cache is kept; a younger one is left, since its row may still be on its way. Nothing is swept while
+the one-time import of the old shared database waits to be merged: rows of this machine may come
+with it.
+
 | Answer | Meaning |
 | --- | --- |
 | `cache_unsupported` | The source cannot be cached (see the table) |

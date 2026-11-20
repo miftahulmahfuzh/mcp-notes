@@ -35,6 +35,11 @@ export interface StreamCacheOptions {
   jobs?: number;
   /** A plain file's chunk size (plan.ts MP4_CHUNK_BYTES). */
   chunkBytes?: number;
+  /**
+   * False: folders no row names are left alone. The daemon passes it while the one-time import of the old
+   * shared database is still to be merged (src/db/sharedImport.ts): this host's rows may yet arrive. Default true.
+   */
+  sweepOrphans?: boolean;
 }
 
 /**
@@ -225,7 +230,37 @@ export class StreamCache {
     } catch (err) {
       this.log(`[notesd] stream cache: could not clear old paused-play caches: ${messageOf(err)}`);
     }
+    await this.sweepOrphans();
     return cleared;
+  }
+
+  /**
+   * Deletes the folders under the cache root that no row names (a cleared row whose folder stayed, a row lost
+   * with a database): nothing can play or clear them. Only a folder nothing has written for AUTO_CACHE_KEEP_MS
+   * goes, so a row that is still on its way (a download just made, the import of the old shared database) keeps
+   * its files; only a folder named like a cache id is touched, and never one a download runs or waits for.
+   * Never throws. Returns how many were deleted.
+   */
+  async sweepOrphans(): Promise<number> {
+    if (this.opts.sweepOrphans === false) return 0;
+    let swept = 0;
+    try {
+      const folders = (await this.store.folders()).filter((id) => CACHE_ID_PATTERN.test(id));
+      if (folders.length === 0) return 0;
+      const named = new Set((await this.repo.caches()).map((row) => row.id.toLowerCase()));
+      const before = this.now().getTime() - AUTO_CACHE_KEEP_MS;
+      for (const id of folders) {
+        if (named.has(id.toLowerCase()) || this.running.has(id) || this.waiting.some((w) => w.id === id)) continue;
+        const writtenAt = await this.store.writtenAt(id);
+        if (writtenAt === null || writtenAt.getTime() > before) continue;
+        await this.store.remove(id);
+        swept += 1;
+        this.log(`[notesd] stream cache: deleted the folder ${id}: no cache names it, and nothing wrote to it for three days`);
+      }
+    } catch (err) {
+      this.log(`[notesd] stream cache: could not look for folders without a cache: ${messageOf(err)}`);
+    }
+    return swept;
   }
 
   /**
@@ -503,6 +538,8 @@ export interface StreamCacheOverrides {
   fetch?: FetchLike;
   now?: () => Date;
   log?: (line: string) => void;
+  /** StreamCacheOptions.sweepOrphans. */
+  sweepOrphans?: boolean;
 }
 
 /**

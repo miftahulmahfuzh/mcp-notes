@@ -411,7 +411,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   }
   // Stream cache (stream-cache phase 5): null with direct streaming off. Downloads start only when
   // asked; startBackground carries unfinished ones on.
-  const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(db));
+  // While the old shared database is still to be merged, this host's cache rows may yet arrive: no folder is swept.
+  const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(db), { sweepOrphans: !importPending });
   // Torrents (torrent-stream-source phase 1): null with NOTESD_TORRENT=off or direct streaming off.
   // Building it joins nothing: the WebTorrent engine starts with the first torrent opened.
   const torrents = buildTorrentStreams(config, directStream, db);

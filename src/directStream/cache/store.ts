@@ -86,6 +86,26 @@ export class CacheStore {
     for (const name of await readdir(this.dir(id))) await rm(this.file(id, name), { recursive: true, force: true });
   }
 
+  /** The names of the folders under the root; empty when there is no root yet. Files beside the folders are not listed. */
+  async folders(): Promise<string[]> {
+    try {
+      return (await readdir(this.root, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    } catch {
+      return [];
+    }
+  }
+
+  /** When anything in a folder was last written: the newest of the folder's own time and its files'. Null when it is gone. */
+  async writtenAt(id: string): Promise<Date | null> {
+    try {
+      let newest = (await stat(this.dir(id))).mtimeMs;
+      for (const name of await readdir(this.dir(id))) newest = Math.max(newest, (await stat(this.file(id, name))).mtimeMs);
+      return new Date(newest);
+    } catch {
+      return null;
+    }
+  }
+
   async remove(id: string): Promise<void> {
     await rm(this.dir(id), { recursive: true, force: true });
   }
