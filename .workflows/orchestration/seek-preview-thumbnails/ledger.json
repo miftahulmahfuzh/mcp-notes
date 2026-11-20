@@ -1,0 +1,111 @@
+{
+  "branch": "feature/seek-preview-thumbnails",
+  "coordinator": "orch-seek-preview-thumbnails",
+  "coordinator_session_id": "8b7eea81-1693-4747-8426-0aab07bced73",
+  "created": "2026-11-20T20:29:06+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": null,
+      "package": "src/directStream/previews`, `src/http",
+      "plan": ".workflows/plan/seek-preview-thumbnails/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Preview core: builder, store, routes, the cloud-cache source"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/directStream/torrent`, `src/directStream/previews",
+      "plan": ".workflows/plan/seek-preview-thumbnails/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Torrent previews: file, remux, partial download"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": null,
+      "package": "claude/streaming/direct`, `src/directStream",
+      "plan": ".workflows/plan/seek-preview-thumbnails/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "A provider's own preview track"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "web/src/stream",
+      "plan": ".workflows/plan/seek-preview-thumbnails/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The hover box on the player page"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "docs`, `scripts/docs`, `.claude/skills/verify-notesd",
+      "plan": ".workflows/plan/seek-preview-thumbnails/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Guide, pictures, feature map and the end-to-end proof"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/seek-preview-thumbnails/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "seek-preview-thumbnails",
+  "updated": "2026-11-20T20:29:06+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/seek-preview-thumbnails"
+}
