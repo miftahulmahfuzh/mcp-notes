@@ -357,6 +357,19 @@ export class StreamCache {
     };
   }
 
+  /** True while the cache downloads or waits its turn: the Cache page shows it as in use and does not delete it. */
+  busy(id: string): boolean {
+    const key = id.toLowerCase();
+    return this.running.has(key) || this.waiting.some((w) => w.id === key);
+  }
+
+  /** This host's caches with the bytes each takes on disk (blocks), for the Cache page. Never the other host's. */
+  async diskUsage(): Promise<{ row: StreamCacheRow; bytes: number }[]> {
+    const out: { row: StreamCacheRow; bytes: number }[] = [];
+    for (const row of await this.repo.caches()) if (row.host === this.host) out.push({ row, bytes: await this.store.diskSize(row.id) });
+    return out;
+  }
+
   /** Stops the download, deletes the folder and the row. Throws unknown_cache, or not_on_this_machine for the other host's. */
   async remove(id: string): Promise<void> {
     const row = await this.rowOf(id);

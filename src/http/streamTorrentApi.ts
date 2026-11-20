@@ -68,6 +68,7 @@ export function torrentErrorResponse(c: Context, err: unknown): Response {
     case 'not_on_this_machine':
       return c.json({ ...body, host: err.extra.host ?? null }, 404);
     case 'not_open':
+    case 'in_use':
       return c.json(body, 409);
     case 'unsafe_path':
       return c.json(body, 422);

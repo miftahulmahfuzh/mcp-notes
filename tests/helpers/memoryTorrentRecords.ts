@@ -127,6 +127,12 @@ export class MemoryTorrentRecords implements TorrentRecords {
     return this.rows.length < before;
   }
 
+  async deleteSlot(host: string, slot: TorrentSlot): Promise<boolean> {
+    const before = this.rows.length;
+    this.rows.splice(0, this.rows.length, ...this.rows.filter((r) => !(r.host === host && r.infoHash === slot.infoHash && r.season === slot.season && r.episode === slot.episode)));
+    return this.rows.length < before;
+  }
+
   private at(host: string, slot: TorrentSlot): StreamTorrentRow | undefined {
     return this.rows.find((r) => r.host === host && r.infoHash === slot.infoHash && r.season === slot.season && r.episode === slot.episode);
   }

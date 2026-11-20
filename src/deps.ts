@@ -14,6 +14,7 @@ import type { WarpSwitch } from './streaming/warp.js';
 import type { DirectStreamService } from './directStream/service.js';
 import type { StreamCache } from './directStream/cache/service.js';
 import type { TorrentStreams } from './directStream/torrent/service.js';
+import type { CacheShelf } from './directStream/cacheShelf.js';
 import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import type { TorrentRemux } from './directStream/torrent/remux.js';
 import type { SubtitleCheckService } from './directStream/subtitleCheck/subjects.js';
@@ -94,6 +95,12 @@ export interface AppDeps {
    * NOTESD_TORRENT=off. startBackground starts its tick and closes it.
    */
   torrents?: TorrentStreams | null;
+  /**
+   * The Cache page (src/directStream/cacheShelf.ts): this host's torrents and cloud caches on disk, and their deletion
+   * after an undo window. Built next to `torrents` and `streamCache`; null or absent with both off (the routes and the
+   * `stream_disk` tool then answer stream_disk_off). startBackground carries out what a restart left pending.
+   */
+  cacheShelf?: CacheShelf | null;
   /**
    * The growing cue feeds of torrent sessions (torrent-stream-source phase 7: the subtitle track inside
    * a torrent's file; phase 8: Whisper). Built next to `torrents`; null or absent with torrents off,

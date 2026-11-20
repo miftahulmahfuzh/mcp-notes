@@ -203,6 +203,12 @@ export class TorrentsRepo {
       );
   }
 
+  /** Deletes this host's row of one episode of a torrent (a film: its one row). The torrent's other episodes stay. */
+  async deleteSlot(host: string, slot: TorrentSlot): Promise<boolean> {
+    const rows = await this.db.delete(streamTorrents).where(key(host, slot)).returning({ infoHash: streamTorrents.infoHash });
+    return rows.length > 0;
+  }
+
   /** Deletes every row of the torrent on this host (all its episodes). */
   async delete(host: string, infoHash: string): Promise<boolean> {
     const rows = await this.db.delete(streamTorrents).where(torrentKey(host, infoHash)).returning({ infoHash: streamTorrents.infoHash });
@@ -213,5 +219,5 @@ export class TorrentsRepo {
 /** What TorrentStreams needs of the repository (tests pass an in-memory one). */
 export type TorrentRecords = Pick<
   TorrentsRepo,
-  'record' | 'get' | 'slots' | 'byHash' | 'forRef' | 'all' | 'chosen' | 'progress' | 'ready' | 'failed' | 'restarted' | 'remuxed' | 'played' | 'duration' | 'stale' | 'delete'
+  'record' | 'get' | 'slots' | 'byHash' | 'forRef' | 'all' | 'chosen' | 'progress' | 'ready' | 'failed' | 'restarted' | 'remuxed' | 'played' | 'duration' | 'stale' | 'delete' | 'deleteSlot'
 >;

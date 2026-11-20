@@ -22,10 +22,12 @@ export interface MoviesGridProps {
   lead?: ReactNode;
   /** Shown last in the filter row, after the text filter: the page's tool buttons. */
   tail?: ReactNode;
+  /** After the Films / Series buttons, in their group: the Stream side's Cache button. */
+  afterKinds?: ReactNode;
 }
 
 /** The library or the Stream side: one row of controls (the page's switch, state pills with counts, kind icons, a text filter, the page's tools), then one poster per title. */
-export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, onMark, side = 'library', lead = null, tail = null }: MoviesGridProps) {
+export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, onMark, side = 'library', lead = null, tail = null, afterKinds = null }: MoviesGridProps) {
   const counts = stateCounts(titles, filter, side);
   const shown = sortTitles(
     titles.filter((t) => matchesFilter(t, filter, side)),
@@ -73,6 +75,7 @@ export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, on
               </button>
             );
           })}
+          {afterKinds}
         </div>
         <label className="mv-ftext">
           <MagnifyingGlass weight="duotone" />

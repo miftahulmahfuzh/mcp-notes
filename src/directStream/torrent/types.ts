@@ -237,6 +237,7 @@ export type TorrentErrorCode =
   | 'no_metadata'
   | 'unsafe_path'
   | 'engine_error'
+  | 'in_use'
   | 'closing';
 
 export class TorrentError extends Error {

@@ -106,6 +106,26 @@ export class CacheStore {
     }
   }
 
+  /** The bytes the cache's folder takes on disk (allocated blocks, as the torrent budget counts); 0 when there is no folder. */
+  async diskSize(id: string): Promise<number> {
+    let total = 0;
+    let names: string[];
+    try {
+      names = await readdir(this.dir(id));
+    } catch {
+      return 0;
+    }
+    for (const name of names) {
+      try {
+        const s = await stat(this.file(id, name));
+        if (s.isFile()) total += s.blocks > 0 ? s.blocks * 512 : s.size;
+      } catch {
+        // gone meanwhile
+      }
+    }
+    return total;
+  }
+
   async remove(id: string): Promise<void> {
     await rm(this.dir(id), { recursive: true, force: true });
   }

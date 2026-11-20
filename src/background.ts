@@ -252,6 +252,17 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     );
   }
 
+  // The Cache page: a deletion whose undo window a restart cut short is carried out now.
+  const cacheShelf = deps.cacheShelf ?? null;
+  if (cacheShelf !== null) {
+    void cacheShelf.start().then(
+      (n) => {
+        if (n > 0) console.log(`[notesd] cache page: carried out ${n} deletion(s) left pending by the restart`);
+      },
+      (err: unknown) => console.error(`[notesd] cache page: could not carry out pending deletions: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  }
+
   // Hourly egress line: which query shapes pulled the most rows/bytes from the database.
   const meter = dbInstruments(deps.db)?.meter;
   const egressTimer = meter ? setInterval(() => console.log(meter.summaryLine()), 60 * 60_000) : null;
@@ -287,6 +298,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       deps.torrentSync?.close(),
       deps.subtitleCheck?.close(),
       torrents?.close(),
+      cacheShelf?.close(),
     ]);
   };
 }

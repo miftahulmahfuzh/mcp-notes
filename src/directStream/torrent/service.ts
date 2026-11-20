@@ -12,6 +12,7 @@ import { RemuxOnly, type RemuxKeeper } from './remuxOnly.js';
 import { slotOf, torrentRef, TorrentsRepo, type TorrentRecords, type TorrentRecordSpec, type TorrentSlot } from './repo.js';
 import { diskFileResponse, notOnThisMachine, swarmFileResponse } from './serve.js';
 import { DiskHandle, TorrentFolder } from './store.js';
+import { removalPlan, slotId, splitUsage, type FolderEntry, type SlotKey, type TorrentUsage } from './usage.js';
 import {
   BYTES_PER_KB,
   mediaOf,
@@ -496,6 +497,75 @@ export class TorrentStreams {
 
   localUrl(infoHash: string, index: number): string {
     return `/api/stream/torrent/${infoHash}/f/${index}`;
+  }
+
+  /**
+   * True while the torrent is being opened or something holds it (a stream session, the next episode fetched ahead, the
+   * open route): the Cache page shows it as playing and nothing deletes it. A torrent only waiting to leave the swarm
+   * (nobody uses it) is not in use.
+   */
+  inUse(infoHash: string): boolean {
+    const hash = normalizeInfoHash(infoHash);
+    if (hash === null) return false;
+    return this.opening.has(hash) || (this.active.get(hash)?.users ?? 0) > 0;
+  }
+
+  /** A file of the torrent as `TorrentFolder.usage` names it (relative, `/` between names); null when it would leave the folder. */
+  private relOf(hash: string): (filePath: string) => string | null {
+    const dir = this.folder.dirOf(hash);
+    return (filePath) => {
+      const disk = this.folder.diskPath(hash, filePath);
+      return disk === null ? null : path.relative(dir, disk).split(path.sep).join('/');
+    };
+  }
+
+  /**
+   * What this host's torrents take on disk, for the Cache page: per torrent its rows (one per episode) and its bytes split
+   * between them (blocks on disk, as the budget counts), and the bytes of folders no row names. Never the other host's.
+   */
+  async diskUsage(): Promise<{ torrents: { infoHash: string; rows: StreamTorrentRow[]; usage: TorrentUsage }[]; unnamedBytes: number; budgetBytes: number | null }> {
+    const byHash = new Map<string, StreamTorrentRow[]>();
+    for (const stored of await this.hostRows()) {
+      const row = this.active.get(stored.infoHash)?.rows.get(slotKey(stored)) ?? stored;
+      byHash.set(row.infoHash, [...(byHash.get(row.infoHash) ?? []), row]);
+    }
+    const torrents: { infoHash: string; rows: StreamTorrentRow[]; usage: TorrentUsage }[] = [];
+    for (const [hash, rows] of byHash) torrents.push({ infoHash: hash, rows, usage: splitUsage(rows, await this.folder.usage(hash), this.relOf(hash)) });
+    let unnamedBytes = 0;
+    for (const hash of await this.folder.hashes()) if (!byHash.has(hash)) unnamedBytes += await this.folder.size(hash);
+    return { torrents, unnamedBytes, budgetBytes: this.opts.budgetBytes ?? null };
+  }
+
+  /**
+   * Deletes these episodes of a torrent (a film: season 0, episode 0) from this host, the way the prune does: with no
+   * episode of it left, the whole folder (with its remux and cue files) and every row; else each deleted episode's row
+   * and the files only deleted episodes own (its video, its remux, its cues), keeping what a kept episode chose and
+   * the pack's shared files. A torrent only waiting to leave the swarm leaves it first. Nothing is blacklisted: the
+   * torrent may be fetched again. Throws in_use while it is being opened or something holds it. Returns the bytes freed.
+   */
+  async removeSlots(infoHash: string, slots: readonly SlotKey[]): Promise<number> {
+    const hash = normalizeInfoHash(infoHash);
+    if (hash === null) throw new TorrentError('invalid_hash', 'An info hash is 40 hexadecimal characters.');
+    if (this.inUse(hash)) throw new TorrentError('in_use', 'This torrent plays or is being fetched now.');
+    const live = this.active.get(hash);
+    if (live !== undefined) await this.leave(hash, live, 'its download was deleted from the Cache page');
+    const rows = await this.repo.slots(this.host, hash);
+    const gone = new Set(slots.map(slotId));
+    const deleting = rows.filter((r) => gone.has(slotId(r)));
+    if (deleting.length === 0) return 0;
+    const entries: FolderEntry[] = await this.folder.usage(hash);
+    const plan = removalPlan(rows, gone, entries, this.relOf(hash));
+    const name = rows[0]?.name ?? hash.slice(0, 8);
+    if (plan.all) {
+      await this.folder.remove(hash);
+      await this.repo.delete(this.host, hash);
+    } else {
+      await this.folder.removeInside(hash, plan.rels);
+      for (const row of deleting) await this.repo.deleteSlot(this.host, row);
+    }
+    const what = deleting.some((r) => r.kind === 'tv') ? ` ${deleting.map((r) => `S${String(r.season).padStart(2, '0')}E${String(r.episode).padStart(2, '0')}`).join(', ')}` : '';
+    this.log(`[notesd] torrent: deleted ${name}${what} (${gb(plan.bytes)}) from the Cache page`);
+    return plan.bytes;
   }
 
   /** The timer's work: progress, finished downloads, idle torrents leaving, and now and then the prune. */

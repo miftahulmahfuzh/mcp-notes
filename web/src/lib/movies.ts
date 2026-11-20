@@ -849,8 +849,12 @@ export function detailIsFor(d: TitleDetail | null, segment: string | null): d is
   return movieId !== null && (d.movie_id === movieId || episodeByMovieId(d, movieId) !== null);
 }
 
+/** The Cache page's heading. */
+export const CACHE_HEADING = 'Cache.';
+
 export function moviesHeading(s: MoviesView, route: MoviesRoute): string {
   if (route.unmatched) return UNMATCHED_HEADING;
+  if (route.cache === true) return CACHE_HEADING;
   if (detailIsFor(s.detail, route.title)) return `${s.detail.title}.`;
   if (route.title === null && sideOf(route) === 'stream') return STREAM_HEADING;
   return MOVIES_HEADING;
@@ -864,6 +868,7 @@ export function moviesCountLine(s: MoviesView, route: MoviesRoute): string {
     const n = s.unmatched.length;
     return n === 0 ? 'Every file on this machine matched a title.' : `${plural(n, 'file')} on this machine matched no title. Assign one by hand.`;
   }
+  if (route.cache === true) return 'What this machine keeps on disk for streaming: torrents and the cloud cache.';
   if (route.title !== null) {
     if (s.detailError !== null) return moviesErrorText(s.detailError, route.title);
     if (!detailIsFor(s.detail, route.title)) return 'Loading.';
@@ -932,6 +937,7 @@ export interface MoviesAskExtra {
 export function moviesChatMessage(text: string, route: MoviesRoute, detail: TitleDetail | null, extra: MoviesAskExtra = {}): string {
   let where: string;
   if (route.unmatched) where = 'unmatched files';
+  else if (route.cache === true) where = 'stream cache on disk';
   else if (route.title === null) where = sideOf(route) === 'stream' ? 'stream' : 'library';
   else if (detailIsFor(detail, route.title)) where = `${detail.title}${detail.year !== null ? ` (${detail.year})` : ''} · ${detail.movie_id ?? route.title}`;
   else where = route.title;

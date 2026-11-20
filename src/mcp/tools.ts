@@ -1,3 +1,4 @@
+import type { StreamDiskApi } from './streamDiskTool.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
@@ -50,6 +51,8 @@ export interface ToolDeps {
   directStream?: DirectStreamToolDeps | null;
   /** The stream cache behind direct_stream_cache (stream-cache phase 5). Omitted or null: it answers direct_stream_off. */
   streamCache?: StreamCacheToolDeps | null;
+  /** The Cache page's shelf behind stream_disk. Omitted or null: it answers stream_disk_off. */
+  streamDisk?: StreamDiskApi | null;
   /** The subtitle check behind direct_stream_sync_subtitle (/sync-subtitle). Omitted or null: it answers subtitle_check_off (direct streaming off, or Whisper not installed). */
   subtitleCheck?: SubtitleCheckToolDeps | null;
 }

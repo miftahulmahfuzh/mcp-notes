@@ -318,6 +318,19 @@ export const HTTP_GROUPS: HttpGroup[] = [
     },
   },
   {
+    title: 'Cache page',
+    intro:
+      'What this machine keeps on disk for streaming (its torrent downloads and its cloud stream cache), per title, season and episode, and its deletion after an undo window: the Cache page at `/movies/cache` and the `stream_disk` tool. Only this host\'s rows and folders. Every route answers 503 `stream_disk_off` when neither torrents nor the stream cache are on. Guide: [movies.md](../movies.md#the-cache-page).',
+    routes: {
+      'GET /api/stream/disk':
+        '`{host, total_bytes, torrent_bytes, cloud_bytes, unnamed_bytes, budget_bytes, titles, bulk: {watched, not_interested}, pending, undo_ms}`. Sizes are blocks on disk, as the torrent budget counts them; `unnamed_bytes` are torrent folders no row names. `titles`, largest first, are `{title_id, movie_id, kind, tmdb_id, title, year, poster_url, stored, bytes, torrent_bytes, cloud_bytes, kinds, watched, not_interested, playing, in_use, seasons, shared_bytes}`; a series\' `seasons` (largest first) are `{season, bytes, shared_bytes, kinds, watched, playing, in_use, episodes}` and its episodes `{season, episode, movie_id, name, bytes, kinds, watched, playing, in_use}`. A season pack\'s files no single episode owns count to the season (`shared_bytes`). `bulk.watched` and `bulk.not_interested` are `{bytes, titles}`: what each bulk button frees. `pending` lists the deletions still inside their undo window (`{id, label, bytes, execute_at, skipped}`); what they delete is left out of everything else.',
+      'POST /api/stream/disk/delete':
+        '`{title_id, season?, episode?}` (a title, a season or one episode) or `{bulk: "watched" | "not_interested"}`: deletes it after the undo window (`undo_ms`, 10 s) with no confirmation. 202 `{deletion: {id, label, bytes, execute_at, skipped}}`; its rows are hidden at once and its files go when the window closes, or at the next start when the daemon stopped first. A torrent goes the way the budget prune deletes one (its folder with its remux and cue files, or, in a season pack another kept episode still uses, the deleted episodes\' own files and rows); a cloud cache through the stream cache. Nothing is blacklisted. `watched` takes watched films and series whole and a series\' watched episodes; `not_interested` whole titles; both leave out what is in use (`skipped`). 409 `in_use` when the title, season or episode plays, is being started, or its torrent or cache is fetched now; 404 `nothing_cached`; 400 `invalid_json` / `invalid_body`. Same-origin only.',
+      'DELETE /api/stream/disk/deletions/:id':
+        'Undo: cancels a pending deletion, whose rows come back as they were. `{ok: true, deletion}`. 404 `unknown_deletion` once it was carried out or undone. Same-origin only.',
+    },
+  },
+  {
     title: 'Debug',
     routes: {
       'GET /api/debug/egress': 'Rows and approximate bytes returned per query shape since the daemon started, largest first, plus the Neon quota breaker (`quota.tripped`, `quota.resumes_at`). `{enabled: false}` with `NOTESD_EGRESS_METER=off`. Loopback only. See [architecture.md](../architecture.md#neon).',

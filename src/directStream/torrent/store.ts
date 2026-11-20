@@ -120,6 +120,67 @@ export class TorrentFolder {
     return walk(this.dirOf(infoHash));
   }
 
+  /**
+   * Every file under the torrent's folder with the bytes it takes on disk (allocated blocks, as `size` counts them), by its
+   * path relative to the folder, with `/` between names. Empty when there is no folder.
+   */
+  async usage(infoHash: string): Promise<{ rel: string; bytes: number }[]> {
+    const out: { rel: string; bytes: number }[] = [];
+    const walk = async (dir: string, prefix: string): Promise<void> => {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        const rel = prefix === '' ? e.name : `${prefix}/${e.name}`;
+        if (e.isDirectory()) await walk(full, rel);
+        else if (e.isFile()) {
+          try {
+            const s = await stat(full);
+            out.push({ rel, bytes: s.blocks > 0 ? s.blocks * 512 : s.size });
+          } catch {
+            // gone meanwhile
+          }
+        }
+      }
+    };
+    await walk(this.dirOf(infoHash), '');
+    return out;
+  }
+
+  /**
+   * Deletes these entries (files or folders) of the torrent's folder, named by their path relative to it (as `usage`
+   * lists them), then the folders they leave empty. A path that would leave the folder is skipped. Returns how many went.
+   */
+  async removeInside(infoHash: string, rels: readonly string[]): Promise<number> {
+    const dir = this.dirOf(infoHash);
+    let removed = 0;
+    for (const rel of rels) {
+      const target = path.resolve(dir, ...rel.split('/'));
+      if (!target.startsWith(`${dir}${path.sep}`)) continue;
+      try {
+        await stat(target);
+      } catch {
+        continue;
+      }
+      await rm(target, { recursive: true, force: true });
+      removed += 1;
+      let parent = path.dirname(target);
+      while (parent.startsWith(`${dir}${path.sep}`)) {
+        try {
+          await rmdir(parent);
+        } catch {
+          break; // not empty
+        }
+        parent = path.dirname(parent);
+      }
+    }
+    return removed;
+  }
+
   /** Whether the torrent has a folder here. */
   async exists(infoHash: string): Promise<boolean> {
     try {

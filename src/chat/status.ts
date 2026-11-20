@@ -80,6 +80,13 @@ export const STREAMING_TOOL_NAMES = ['streaming_find', 'streaming_play'] as cons
 
 export type StreamingToolName = (typeof STREAMING_TOOL_NAMES)[number];
 
+/**
+ * stream_disk (src/mcp/streamDiskTool.ts): what this machine keeps on disk for streaming and deleting it, the Cache page's
+ * twin ("how much cache does Dandadan take?", "clear the cache of watched stuff"). In allowedChatTools(): its deletions
+ * wait out an undo window like the page's.
+ */
+export const STREAM_DISK_TOOL_NAME = 'stream_disk';
+
 /** Cloudflare WARP's switch (src/mcp/warpTool.ts): status, on, off, with the Wi-Fi network's name. */
 export const WARP_TOOL_NAME = 'warp';
 
@@ -175,6 +182,7 @@ export function allowedChatTools(): string[] {
     ...MOVIE_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...STREAMING_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     `${MCP_PREFIX}${WARP_TOOL_NAME}`,
+    `${MCP_PREFIX}${STREAM_DISK_TOOL_NAME}`,
     ...DIRECT_STREAM_TOOL_NAMES.filter((name) => !CLAUDE_CODE_ONLY_TOOL_NAMES.includes(name)).map((name) => `${MCP_PREFIX}${name}`),
     // dword's six tool names (dword_schema, dword_sql, and DWORD_TOOL_NAMES above) arrive here
     // already, because CONNECTOR_SYSTEMS includes 'dword' (DWORD_CONNECTOR_PLAN phase 1).
@@ -300,6 +308,10 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'adding stream providers';
     case 'direct_stream_discover':
       return 'looking for titles to stream';
+    case 'stream_disk': {
+      const action = (input as { action?: unknown } | null)?.action;
+      return action === 'list' || action === undefined ? 'reading the stream cache on disk' : action === 'undo' ? 'undoing a cache deletion' : 'deleting stream cache';
+    }
     case 'dword_vocab_lookup':
       return 'looking up a word';
     case 'dword_vocab_add':

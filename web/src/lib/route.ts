@@ -21,6 +21,8 @@ export const ADVERSARY_PATH = '/adversary';
 export const MOVIES_PATH = '/movies';
 /** `/movies/unmatched`. Title ids are `M-xxxx` (or `movie-<n>` / `tv-<n>`), so this segment never names a title. */
 export const MOVIES_UNMATCHED_SEGMENT = 'unmatched';
+/** `/movies/cache`: the Cache page of the Stream side. Never a title id, for the same reason. */
+export const MOVIES_CACHE_SEGMENT = 'cache';
 
 export interface Route {
   history: boolean;
@@ -128,11 +130,15 @@ export interface MoviesRoute {
   title: string | null;
   unmatched: boolean;
   stream?: boolean;
+  /** `/movies/cache`: what this machine keeps on disk for streaming (a Stream-side page; `title` null). */
+  cache?: boolean;
 }
 
 export const NO_MOVIES_ROUTE: MoviesRoute = { title: null, unmatched: false };
 /** The Stream grid, `/movies?side=stream`. */
 export const STREAM_ROUTE: MoviesRoute = { title: null, unmatched: false, stream: true };
+/** The Cache page, `/movies/cache`. */
+export const CACHE_ROUTE: MoviesRoute = { title: null, unmatched: false, stream: true, cache: true };
 /** `?side=stream`: a query, not a path segment, so `/movies/<id>` and `/movies/unmatched` keep their meaning. */
 export const MOVIES_SIDE_PARAM = 'side';
 const STREAM_SIDE = 'stream';
@@ -150,12 +156,14 @@ export function moviesRouteFromLocation(loc: Loc): MoviesRoute | null {
     return mislinked === null ? null : { title: mislinked[0], unmatched: false };
   }
   if (seg === MOVIES_UNMATCHED_SEGMENT) return { title: null, unmatched: true };
+  if (seg === MOVIES_CACHE_SEGMENT) return CACHE_ROUTE;
   const title = seg === '' ? null : seg;
   return param(loc.search, MOVIES_SIDE_PARAM) === STREAM_SIDE ? { title, unmatched: false, stream: true } : { title, unmatched: false };
 }
 
 export function moviesHref(r: MoviesRoute): string {
   if (r.unmatched) return `${MOVIES_PATH}/${MOVIES_UNMATCHED_SEGMENT}`;
+  if (r.cache === true) return `${MOVIES_PATH}/${MOVIES_CACHE_SEGMENT}`;
   const base = r.title ? `${MOVIES_PATH}/${encodeURIComponent(r.title)}` : MOVIES_PATH;
   return r.stream === true ? `${base}?${MOVIES_SIDE_PARAM}=${STREAM_SIDE}` : base;
 }

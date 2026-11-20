@@ -894,6 +894,22 @@ export async function listTitlesByIds(db: Db, ids: readonly string[], ctx: ReadC
   return [...full, ...light];
 }
 
+/**
+ * These stored titles with their derived state and, for a series, every season and episode with theirs (the title
+ * page's reading, without its credits and history), by title id. Unknown ids are absent. The Cache page reads it.
+ */
+export async function titleWatchViews(db: Db, ids: readonly string[], ctx: ReadContext): Promise<Map<string, { item: TitleListItem; seasons: SeasonView[] }>> {
+  const out = new Map<string, { item: TitleListItem; seasons: SeasonView[] }>();
+  if (ids.length === 0) return out;
+  const rows = await db.select().from(movieTitles).where(inArray(movieTitles.id, [...ids]));
+  const parts = await loadParts(db, rows, ctx);
+  for (const t of rows) {
+    const built = buildTitle(t, parts.get(t.id) ?? emptyParts(), ctx, IMAGE_SIZES.grid);
+    out.set(t.id, { item: built.item, seasons: built.seasons });
+  }
+  return out;
+}
+
 /** TMDB's original language of these stored titles ("hi"), by title id; null when it is not known. Unknown ids are absent. */
 export async function titleLanguages(db: Db, ids: readonly string[]): Promise<Map<string, string | null>> {
   if (ids.length === 0) return new Map();

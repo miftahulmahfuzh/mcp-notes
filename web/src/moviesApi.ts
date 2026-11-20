@@ -859,3 +859,104 @@ export async function ensureTitle(kind: TitleKind, tmdbId: number): Promise<stri
   if (r === null || typeof r.movie_id !== 'string') throw new Error('not_stored');
   return r.movie_id;
 }
+
+// ---------- the Cache page (GET /api/stream/disk) ----------
+
+export type DiskKind = 'torrent' | 'cloud';
+
+export interface DiskEpisode {
+  season: number;
+  episode: number;
+  movie_id: string | null;
+  name: string | null;
+  bytes: number;
+  kinds: DiskKind[];
+  watched: boolean;
+  playing: boolean;
+  in_use: boolean;
+}
+
+export interface DiskSeason {
+  season: number;
+  bytes: number;
+  shared_bytes: number;
+  kinds: DiskKind[];
+  watched: boolean;
+  playing: boolean;
+  in_use: boolean;
+  episodes: DiskEpisode[];
+}
+
+export interface DiskTitle {
+  title_id: string;
+  movie_id: string | null;
+  kind: TitleKind;
+  tmdb_id: number;
+  title: string;
+  year: number | null;
+  poster_url: string | null;
+  stored: boolean;
+  bytes: number;
+  torrent_bytes: number;
+  cloud_bytes: number;
+  kinds: DiskKind[];
+  watched: boolean;
+  not_interested: boolean;
+  playing: boolean;
+  in_use: boolean;
+  seasons: DiskSeason[];
+  shared_bytes: number;
+}
+
+export interface DiskDeletion {
+  id: string;
+  label: string;
+  bytes: number;
+  execute_at: string;
+  skipped: string[];
+}
+
+export interface DiskView {
+  host: string;
+  total_bytes: number;
+  torrent_bytes: number;
+  cloud_bytes: number;
+  unnamed_bytes: number;
+  budget_bytes: number | null;
+  titles: DiskTitle[];
+  bulk: { watched: { bytes: number; titles: number }; not_interested: { bytes: number; titles: number } };
+  pending: DiskDeletion[];
+  undo_ms: number;
+}
+
+export type DiskScope = { title_id: string; season?: number; episode?: number } | { bulk: 'watched' | 'not_interested' };
+
+/** What this machine keeps on disk for streaming. Throws ApiError `stream_disk_off`. */
+export async function fetchStreamDisk(signal?: AbortSignal): Promise<DiskView> {
+  const v = await getJson<Partial<DiskView>>('/api/stream/disk', signal);
+  return {
+    host: v.host ?? '',
+    total_bytes: v.total_bytes ?? 0,
+    torrent_bytes: v.torrent_bytes ?? 0,
+    cloud_bytes: v.cloud_bytes ?? 0,
+    unnamed_bytes: v.unnamed_bytes ?? 0,
+    budget_bytes: v.budget_bytes ?? null,
+    titles: list(v.titles).map((t) => ({ ...t, seasons: list(t.seasons).map((s) => ({ ...s, episodes: list(s.episodes) })) })),
+    bulk: v.bulk ?? { watched: { bytes: 0, titles: 0 }, not_interested: { bytes: 0, titles: 0 } },
+    pending: list(v.pending),
+    undo_ms: v.undo_ms ?? 10_000,
+  };
+}
+
+/** Deletes a title, season or episode (or a bulk set) after the undo window. Throws ApiError `in_use`, `nothing_cached`. */
+export async function deleteStreamDisk(scope: DiskScope): Promise<DiskDeletion> {
+  const r = await postJson<{ deletion: DiskDeletion }>('/api/stream/disk/delete', scope);
+  if (r === null) throw new Error('no answer');
+  return r.deletion;
+}
+
+/** Cancels a pending deletion. Throws ApiError `unknown_deletion` once it was carried out. */
+export async function undoStreamDisk(id: string): Promise<void> {
+  const res = await fetch(`/api/stream/disk/deletions/${encodeURIComponent(id)}`, { method: 'DELETE', headers: JSON_HEADERS });
+  if (!res.ok) throw await failure(res);
+}
