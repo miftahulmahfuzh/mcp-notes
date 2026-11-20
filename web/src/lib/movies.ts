@@ -133,6 +133,11 @@ export function episodeCode(season: number | null, episode: number | null): stri
   return `S${pad(season)}E${pad(episode)}`;
 }
 
+/** `S02`: a season as the owner reads it on the page. */
+export function seasonCode(season: number): string {
+  return `S${pad(season)}`;
+}
+
 export function seasonsText(n: number | null): string {
   return n === null ? '' : plural(n, 'season');
 }

@@ -89,6 +89,27 @@
     - J4 with no stored title → add the harness's own `POST /api/movies/ensure` before the seed; code unchanged (rung 2: exit criterion 'J1 to J5 pass'; features/movies.md names ensure for tv-247718)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phase 1 of this set (P1-NOTES-SD01); the coordinator's integrator reconciles them. No successor to unblock: phase 7's task is minted by its own session.
 
+- [x] **P1-NOTES-SD07** Phase 7: The story on the page: the season row's button, sections and sources in the modal
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `EpisodeList.tsx` (a book icon on each season head, season > 0, named exactly `Narrate the full story of S02`, filled when stored), `MovieDetail.tsx` (opening `StoryModal` for a season), `StoryModal.tsx` (dialog `Story of <title> S02`, sections headed `S02E03 · name`, the not-found line, a `Sources` region of links, web wait text, `no_story_source`, foot by origin), `MovieModal.css`, `web/src/moviesApi.ts` story types and `writeStory`'s season form, `seasonCode`. Exit: `StoryModal.test.tsx` and `EpisodeList.test.tsx` cover the season button, sections, the not-found line and the source links; `npm test` passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-downloads-season-story/PLAN.md` (phase 7 of 9)
+  - **Satisfies**: R6 — we need to add "Narrate the full story of SXX" on the Season row in title page (written from web sources, not from a subtitle) · criteria: R6.1, R6.3
+  - **Depends on**: P1-NOTES-SD06
+  - **Plan**: `.workflows/plan/P1-NOTES-SD07.md`
+  - **Completed**: 2026-11-20 23:48
+  - **Method**: /implement
+  - **Files**: web/src/moviesApi.ts, web/src/lib/movies.ts, web/src/components/movies/StoryModal.tsx, web/src/components/movies/StoryModal.test.tsx, web/src/components/movies/MovieModal.css, web/src/components/movies/EpisodeList.tsx, web/src/components/movies/EpisodeList.test.tsx, web/src/components/movies/MovieDetail.tsx, .workflows/todos.md, .workflows/plan/P1-NOTES-SD07.md
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1120-234319-819505/evidence
+  - **Drift**:
+    - None in the code: every anchor the plan quotes matched the tree as phase 6 left it.
+    - origin/feature/stream-downloads-season-story has not moved past this branch's base (407ee5e): nothing to rebase onto.
+  - **Decided**:
+    - Index names worktree …/stream-downloads-season-story; this session ran in its swarm phase worktree …-p7 on phase-7-… → proceed there (rung 6: the swarm's per-phase worktree convention)
+    - Step 3 in a swarm sharing one todos counter → minted only phase 7's task as P1-NOTES-SD07, index TaskID column left to the coordinator (rung 6: precedent of P1-NOTES-SD01/SD02/SD06)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1, 2 and 6 of this set; the coordinator's integrator reconciles them. No successor to unblock: phase 8's task is minted by its own session.
+
 - [x] **P1-NOTES-SP05** Phase 5: Guide, pictures, feature map and the end-to-end proof
   - **Difficulty**: NORMAL
   - **Type**: Feature
