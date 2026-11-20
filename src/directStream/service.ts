@@ -229,6 +229,8 @@ interface PlayInFlight extends PlayTrack {
 export const PLAY_PAGE_GRACE_MS = 30_000;
 /** The outcome of a play answered `pending` is kept this long for the caller to ask again. */
 export const PLAY_OUTCOME_KEEP_MS = 10 * 60_000;
+/** At most this many such outcomes are kept; the oldest goes first. */
+export const PLAY_OUTCOMES_MAX = 50;
 
 export interface SyncSeedResult {
   total: number;
@@ -498,13 +500,12 @@ export class DirectStreamService {
   async playWithin(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, waitMs: number): Promise<{ pending: false; result: PlayResult } | PendingPlay> {
     const ref = toStreamRef(input);
     const key = playKey(ref, options.provider ?? null, options.magnet ?? null);
+    this.sweepOutcomes();
     const kept = this.outcomes.get(key);
     if (kept !== undefined && !this.inFlightNow(key)) {
       this.outcomes.delete(key);
-      if (this.now().getTime() - kept.at < PLAY_OUTCOME_KEEP_MS) {
-        if (kept.result === null) throw kept.error;
-        return { pending: false, result: kept.result };
-      }
+      if (kept.result === null) throw kept.error;
+      return { pending: false, result: kept.result };
     }
     const entry = this.begin(ref, options);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -590,14 +591,14 @@ export class DirectStreamService {
       (result) => {
         entry.opened = { sessionId: result.session.session_id, at: this.now().getTime() };
         entry.stage = 'opened: waiting for the player page';
-        if (entry.waited) this.outcomes.set(key, { at: this.now().getTime(), result, error: null });
+        if (entry.waited) this.keepOutcome(key, result, null);
         return result;
       },
       (err: unknown) => {
         entry.failed = true;
         if (this.inFlight.get(key) === entry) this.inFlight.delete(key);
         this.logFailedPlay(entry, err);
-        if (entry.waited) this.outcomes.set(key, { at: this.now().getTime(), result: null, error: err });
+        if (entry.waited) this.keepOutcome(key, null, err);
         throw err;
       },
     );
@@ -605,6 +606,24 @@ export class DirectStreamService {
     entry.promise.catch(() => undefined);
     this.inFlight.set(key, entry);
     return entry;
+  }
+
+  /** Keeps the outcome of a play answered `pending` for its next ask: for PLAY_OUTCOME_KEEP_MS, and never more than PLAY_OUTCOMES_MAX of them. */
+  private keepOutcome(key: string, result: PlayResult | null, error: unknown): void {
+    this.sweepOutcomes();
+    this.outcomes.delete(key);
+    this.outcomes.set(key, { at: this.now().getTime(), result, error });
+    // A Map lists its keys oldest first: the outcomes nobody came back for go first.
+    for (const oldest of this.outcomes.keys()) {
+      if (this.outcomes.size <= PLAY_OUTCOMES_MAX) break;
+      this.outcomes.delete(oldest);
+    }
+  }
+
+  /** Drops the kept outcomes nobody asked for again within PLAY_OUTCOME_KEEP_MS. */
+  private sweepOutcomes(): void {
+    const now = this.now().getTime();
+    for (const [key, kept] of this.outcomes) if (now - kept.at >= PLAY_OUTCOME_KEEP_MS) this.outcomes.delete(key);
   }
 
   /**

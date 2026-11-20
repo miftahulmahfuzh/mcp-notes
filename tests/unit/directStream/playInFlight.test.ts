@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { DirectStreamRepo } from '../../../src/directStream/repo.js';
-import { DirectStreamService, PLAY_PAGE_GRACE_MS, playKey } from '../../../src/directStream/service.js';
+import { DirectStreamService, PLAY_OUTCOME_KEEP_MS, PLAY_OUTCOMES_MAX, PLAY_PAGE_GRACE_MS, playKey } from '../../../src/directStream/service.js';
 import type { CacheSubtitleView } from '../../../src/directStream/cachePlay.js';
 import { parseRelease, type TorrentCandidate } from '../../../src/directStream/torrent/find/index.js';
 import type { MediaProbe } from '../../../src/directStream/torrent/probe.js';
@@ -244,6 +244,47 @@ describe('one play in flight per title, named provider and pasted magnet', () =>
     expect(one.session.torrent?.info_hash).toBe(A);
     expect(two.session.torrent?.info_hash).toBe(B);
     expect(t.runs).toEqual(['open', 'open']);
+  });
+});
+
+describe('the outcomes kept for plays answered pending', () => {
+  const film = (n: number) => ({ kind: 'movie' as const, tmdbId: 1000 + n });
+  const settle = async (t: ReturnType<typeof setup>, opens: number): Promise<void> => {
+    for (let i = 0; i < 500 && t.runs.filter((r) => r === 'open').length < opens; i++) await t.tick();
+  };
+
+  it('keeps at most PLAY_OUTCOMES_MAX of them, the oldest going first', async () => {
+    const held = gate();
+    const t = setup({ hold: held.wait });
+    const many = PLAY_OUTCOMES_MAX + 5;
+    for (let n = 0; n < many; n++) expect((await t.svc.playWithin(film(n), { provider: 'cloud' }, 0)).pending).toBe(true);
+    held.open();
+    await settle(t, many);
+    await t.tick();
+    const resolves = () => t.runs.filter((r) => r === 'resolve').length;
+    expect(resolves()).toBe(many);
+    // Past the grace: none of them counts as starting any more, so an ask reads the kept outcome or plays anew.
+    t.advance(PLAY_PAGE_GRACE_MS);
+    expect(t.svc.starting()).toEqual([]);
+    // The newest outcome is still kept: asked again, it answers with no second play.
+    expect((await t.svc.playWithin(film(many - 1), { provider: 'cloud' }, 5_000)).pending).toBe(false);
+    expect(resolves()).toBe(many);
+    // The oldest was dropped: asked again, the title is played anew.
+    expect((await t.svc.playWithin(film(0), { provider: 'cloud' }, 5_000)).pending).toBe(false);
+    expect(resolves()).toBe(many + 1);
+  });
+
+  it('forgets an outcome nobody asked for again within PLAY_OUTCOME_KEEP_MS', async () => {
+    const held = gate();
+    const t = setup({ hold: held.wait });
+    expect((await t.svc.playWithin(film(1), { provider: 'cloud' }, 0)).pending).toBe(true);
+    held.open();
+    await settle(t, 1);
+    await t.tick();
+    t.advance(PLAY_OUTCOME_KEEP_MS);
+    expect(t.svc.starting()).toEqual([]);
+    expect((await t.svc.playWithin(film(1), { provider: 'cloud' }, 5_000)).pending).toBe(false);
+    expect(t.runs.filter((r) => r === 'resolve')).toHaveLength(2);
   });
 });
 
