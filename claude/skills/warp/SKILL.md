@@ -26,7 +26,7 @@ Employee)." When it could not switch, say so and what it is now.
 ## Why it exists
 
 On the office network (SSID `Employee`) no torrent peer answers; through WARP the firewall sees one
-tunnel to Cloudflare instead of the peers. A torrent play that found no peer at all there says so in
-its attempts (provider `WARP`). Some streaming sites refuse WARP's addresses (lk21): when a site
+tunnel to Cloudflare instead of the peers. A torrent play that found no peer at all there switches
+WARP on by itself and asks once more (attempt `WARP`); WARP stays on only when that played. Some streaming sites refuse WARP's addresses (lk21): when a site
 play fails with WARP on, the streaming command already asks it once more with WARP off.
 `docs/guide/streaming.md` ("Cloudflare WARP for torrents") has the measurement and the rules.

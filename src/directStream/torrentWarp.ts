@@ -6,7 +6,7 @@ import type { ResolveAttempt } from './types.js';
  * Whether the daemon switches WARP on by itself (true) or only says it may help (false). Set by the measurement of
  * 2026-11-20 on kosan_baruu (docs/guide/streaming.md, "Cloudflare WARP for torrents").
  */
-export const TORRENT_WARP_AUTO = false;
+export const TORRENT_WARP_AUTO = true;
 
 /** The attempt a torrent play on the office network adds: the hint, or what switching WARP on did. */
 export const WARP_ATTEMPT = 'WARP';

@@ -48,8 +48,9 @@ the last of the request, and never part of the title: take it off before reading
   provider. When one answers `no_source`, say so and offer the other; do not switch unasked.
 - On the office network (SSID `Employee`) torrent peers are not reached without Cloudflare WARP.
   "warp on TM ..." is the `warp` tool with `action: "on"`, then the play. A torrent play that
-  found no peer at all there with WARP off ends with an attempt `WARP` saying WARP may help: tell
-  the user and offer `/warp on`; never switch it unasked.
+  found no peer at all there with WARP off switches WARP on by itself and asks once more; the
+  attempt `WARP` says whether WARP stayed on (it played) or was put back off. Say which. Never
+  switch WARP yourself unasked.
 
 ## Step 1: work out one title
 

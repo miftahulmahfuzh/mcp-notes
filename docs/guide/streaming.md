@@ -2040,20 +2040,35 @@ the chat bar has the tool too. A switch drops every open connection of the machi
 
 **A torrent play that found no peer at all.** When every torrent a play tried ended at "no file list from the
 swarm in time" (a torrent that answered with a dub, the wrong files or too little of the file means peers are
-reached, and WARP is no help), on SSID `Employee` with WARP off, the answer gains one attempt `WARP`:
+reached, and WARP is no help), on SSID `Employee` with WARP off, the daemon switches WARP on, forgets that film's or
+episode's swarm failures so the same torrents are tried again, and asks once more (`torrentThroughWarp`). When that
+plays, WARP stays on and the answer says so in an attempt `WARP`:
 
-> WARP: no torrent peer answered on the office network (Employee) with Cloudflare WARP off: turning WARP on (/warp
-> on) may reach them
+> WARP: no torrent peer answered on the office network (Employee), so Cloudflare WARP was turned on and the
+> torrents asked again. WARP stays on.
 
-Nothing is switched: the owner says `/warp on` (or "warp on TM ...") and asks again. The automatic flip is built
-(`torrentThroughWarp` with `TORRENT_WARP_AUTO`): WARP on, the swarm failures of that film or episode forgotten so
-the same torrents are tried again, one more ask; WARP stays on when that played (the attempt `WARP` says so) and
-is put back off when it did not. It stays off until a measurement shows torrents get through WARP.
+When it does not, WARP is put back off and the attempt says that too. `/warp off` turns it off when the owner is
+done. With `TORRENT_WARP_AUTO` false the same case only adds a hint ("turning WARP on (/warp on) may reach them")
+and switches nothing.
 
 Never for a cloud stream, never on another network, and never when WARP is already on. `NOTESD_STREAM_WARP=off`
 (every `verify.sh` daemon) builds none of it.
 
-**Measured.** Not yet.
+**Measured** on kosan_baruu, 2026-11-20 (where peers answer without WARP, so this shows that the tunnel carries
+BitTorrent, not yet that it gets past the office firewall). Four well seeded swarms from the Trending list,
+40 s each, WARP off and on in alternating order, TCP only as the engine runs:
+
+| Swarm | Off: MB, first peer, file list, peers | On: MB, first peer, file list, peers |
+| --- | --- | --- |
+| Spider-Man Brand New Day 2026 | 10.7, 3.8 s, 5.1 s, 3 | 4.8, 7.0 s, 7.7 s, 10 |
+| Obsession 2026 | 11.2, 1.9 s, 2.8 s, 5 | 2.5, 9.9 s, 11.1 s, 10 |
+| Primetime 2026 | 0.6, 27.8 s, 29.5 s, 3 | 10.5, 3.1 s, 4.4 s, 7 |
+| Backrooms 2026 | 3.4, 2.5 s, 3.8 s, 5 | 27.8, 2.5 s, 3.3 s, 16 |
+
+Every swarm sent its file list through WARP within 12 s, with more peers connected (7 to 16 against 3 to 5);
+25.9 MB in all without it, 45.6 MB with it. The BEP 15 scrape works through the tunnel: 16 trackers answered for all
+four hashes with WARP on, 15 with it off, with the same seeder counts. The rates are low both ways because a
+torrent soak shared the line; the comparison, not the speed, is the result.
 
 ### The player page on a torrent
 

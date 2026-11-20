@@ -201,7 +201,7 @@ export interface DirectStreamConfig {
   ahead?: boolean
   /**
    * `NOTESD_STREAM_WARP`, default on: a torrent play that found no peer at all on the office network
-   * (SSID Employee) with Cloudflare WARP off says WARP may help, or switches it on and asks again
+   * (SSID Employee) with Cloudflare WARP off switches it on and asks again
    * (src/directStream/torrentWarp.ts); the streaming command's site retry reads the same variable.
    * `off` or unset in a literal: the daemon never reads or switches WARP for a play.
    */
