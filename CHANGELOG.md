@@ -5,6 +5,119 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.9.0] - 2026-11-21
+
+Downloads and a play that looks after itself: a film, a season or an episode is downloaded to
+this machine on request, a play moves to another source when its stream turns out wrong or
+stalls, and carries on after a daemon restart. Around it: a Cache page, seek previews on the
+player, stories written from the web, five more torrent indexes, a torrent list and blacklist
+per title, and Cloudflare WARP switched for torrents on the office network.
+
+### Added
+
+- **Downloading a title** (`src/directStream/downloads/*`, migration 0043,
+  `NOTESD_STREAM_DOWNLOADS`): the download button on a title's page, a season's row or an
+  episode's row, and `direct_stream_cache`, put the film, the season's aired episodes or the
+  episode on this machine. With no source named: a 1080p torrent with live seeders, then the
+  cloud at 1080p or lower, then a smaller torrent. A season is taken from a pack when one has
+  seeders, a download carries on the 1080p torrent already partly on disk, and what the owner
+  asked for is kept through the prunes until it is deleted. Queued, running and paused downloads
+  carry on after a restart.
+- **The Cache page** (`/movies/cache`, `stream_disk`): what this machine keeps on disk for
+  streaming (caches, torrents, downloads), with a Downloading filter, progress bars and why a
+  row is there; a row is deleted with a 10 second undo.
+- **Seek previews** (`src/directStream/previews/*`, `NOTESD_STREAM_PREVIEWS`): a picture over
+  the player's timeline, from a provider's own preview track or built by one niced ffmpeg from
+  video already on this machine. A build asks the network for nothing and joins no swarm.
+- **A play moves by itself**: when a picture or audio check that finished behind the play
+  rejects the stream, when a torrent or a stream keeps stalling, or when a stream cannot be
+  played at all, the play goes to another source at the same position, twice at most. A
+  provider named by hand stays.
+- **A play carries on after the daemon restarts**: the player page asks for a fresh session for
+  the same play and goes on from its buffer.
+- **Stories from the web** (`src/movies/webStory.ts`): a season's story from its row's book
+  icon, one section per aired episode, written by Claude with WebSearch as its only tool from
+  published recaps, with the sources listed. An episode's story goes to the web first and reads
+  its dialogue only when no source covers it; an episode no source covers says so.
+- **Five more torrent indexes**: TorrentsDB and Peerflix (asked by IMDb id), Knaben, Bitsearch
+  and torrents-csv (asked by title, with the title and the year or episode marker required).
+  Public tracker lists are read once a day and the trackers that answer are kept
+  (`NOTESD_TORRENT_TRACKER_LISTS`).
+- **The torrents of a title** (`direct_stream_torrents`, migration 0042): every candidate
+  torrent of a film or episode in one list, each playable or downloadable by hand, and a
+  blacklist per info hash that holds for every title.
+- **Dubs among torrents**: a release named after a known voice-over group is a dub by name, and
+  a torrent whose file tags no audio language is heard by Whisper five minutes in; a dub moves
+  the play. A title's audio language can be set when TMDB's original language is not what is
+  spoken (migration 0041, `direct_stream_play`'s `audio_lang`).
+- **Cloudflare WARP for torrents** (`warp` tool, `/warp`): on SSID `Employee`, a torrent play
+  or a download the owner asked for that found no peer at all gets one round through WARP,
+  which is put back when it did not help. The owner can read and switch WARP by hand.
+- **Whisper for a cloud stream** that no subtitle service covers, and `/sync-subtitle` matches
+  a film not in English by where its lines start.
+- **A daily provider canary** (`NOTESD_STREAM_CANARY`) writes provider health; providers are
+  asked side by side once two gave nothing, and one that failed five times in a row rests.
+- Episode addresses for Smashy, VidRock and NexaStream.
+- The daemon applies migrations 0038-0043 at its next start; `scripts/install.sh` registers the
+  `warp` skill.
+
+### Changed
+
+- **A streaming site plays only after direct streaming found nothing**: a play with no source
+  named asks every cloud provider and every torrent first, and a site (idlix, lk21, flicksy,
+  dramacool) last. A named provider, codename or magnet never asks a site.
+- **1080p first**: a header probe waits while the swarm delivers, a remembered 720p torrent goes
+  after the indexes' search for a 1080p, and a cloud stream under 1080p waits up to 25 s for a
+  provider that gave 1080p.
+- A season pack keeps every episode it downloaded, each in its own row (migration 0040), and
+  the torrent folder has a budget (`NOTESD_TORRENT_BUDGET_GB`, 40) that deletes titles marked
+  Watched or Not interested first.
+- The torrent engine reaches peers over TCP only, and one ask of the torrents has one 90 s
+  budget.
+- One shared Whisper worker that stops when idle.
+- The seed holds the ten cloud providers that still stream; a seed row the file no longer names
+  is deleted.
+- The next episode is fetched ahead once the one on screen is half watched.
+- The guides and `CLAUDE.md` follow the code: one pass of the README, the streaming guide and
+  the streaming parts of the other guides against it, and the "no disguise" and advert
+  prohibitions are gone from `CLAUDE.md`, the skills, the guide and the code comments.
+
+### Removed
+
+- The background stream prober and its settings (`NOTESD_STREAM_PROBER`,
+  `NOTESD_STREAM_CATALOG_SIZE`, `NOTESD_STREAM_PROBE_BUDGET`, `NOTESD_STREAM_IDLE_SECONDS`,
+  `NOTESD_STREAM_PROBE_MS`; migration 0038): the canary stands in for it.
+- Trending's swarm probe (`NOTESD_TRENDING_PROBE`, migration 0039): the list is built from the
+  indexes and TMDB only and joins no swarm.
+- The `direct_stream_dialogue` tool, YTS as an index of its own (`NOTESD_TORRENT_YTS_URL`), and
+  four settings nobody set, now constants (`NOTESD_STREAM_FIRST_PROVIDER`,
+  `NOTESD_TRENDING_SKIP_LANGUAGES`, `NOTESD_TORRENT_INDEX_TIMEOUT_MS`,
+  `NOTESD_TORRENT_WHISPER_THREADS`).
+
+### Fixed
+
+- A peer's uTP reset, a late handshake and an HTTP tracker's answer for a torrent already left
+  no longer end the daemon.
+- An outgoing connect gets 2.5 s per address, not Node's 250 ms, and an index whose connection
+  failed at once is asked again.
+- A provider that is down, a slow stream check or a title that is not out yet no longer holds a
+  play back; the stream checks hold a play for four seconds at most.
+- A starved remux is `no_stream`, a remuxed film keeps its remux only, and a stopped remux
+  deletes its half-made copy.
+- A torrent that does not play leaves no row, a swarm probe deletes only the files it made, and
+  the prune clears folders no download names.
+- A signs-and-songs track is never shown as the English subtitle, the release's own subtitle
+  outranks a kept service file, and subtitle files read from bytes have their mojibake undone.
+- The subtitle moves above the seek preview box, and a checked subtitle resets the player's
+  G/H delay.
+- A cloud stream's audio is cut from its segments, so its language can be heard and its
+  subtitle synced and checked on streams ffmpeg cannot open.
+- A blacklisted torrent leaves its title on the Stream side, fakes named `.exe` and trailers are
+  never candidates, and a title with no IMDb id still asks the indexes searched by title.
+- A pending play's outcome is answered once, a second pasted magnet for the same title is its
+  own play, and a restart-continue counts as busy.
+- The Cache page's in-use chip is readable and says why.
+
 ## [v0.8.0] - 2026-11-19
 
 Direct streaming: a film or an episode plays in notesd's own player page from a cloud provider
@@ -429,6 +542,7 @@ exposed to Claude Code over MCP and to the browser as "the wall".
 - Images whose files are not on this machine are hidden in the gallery, note cards,
   recycle bin and editor instead of showing broken tiles.
 
+[v0.9.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.9.0
 [v0.8.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.8.0
 [v0.7.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.7.0
 [v0.6.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.6.0
