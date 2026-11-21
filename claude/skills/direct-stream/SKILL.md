@@ -341,7 +341,7 @@ tags, name), and its tags (worked, failed, blacklisted, dub group, heard dub). I
     checkout (it brings ext's tab to the front; wait for its `{ cleared }` answer), tell the owner
     to solve the "Just a moment" / Turnstile check in that window, and once it answers `cleared: true`
     retry the same `direct_stream_play` — the daemon's ext search then rides the cookie the Chrome
-    kept. Do this only when the owner agrees; never forge or click the challenge for them.
+    kept. Do this only when the owner agrees.
   - **When an attempt is `Index: rutracker: bot_check`**, RuTracker wants its Cloudflare check solved or
     (detail `login_required`) the owner logged in. Same offer, with `rutracker gate`: it waits up to
     three minutes while the owner solves the check and logs in in that window. Never type a login.

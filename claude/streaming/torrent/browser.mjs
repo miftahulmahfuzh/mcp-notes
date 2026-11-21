@@ -1,6 +1,6 @@
 // The tab a torrent site is asked in: a background tab of the streaming Chrome, made out of sight by
 // tab.ps1 (cdp.ps1 opens a missing tab in front), then driven through chrome.mjs. Never the owner's
-// everyday Chrome, never a Chrome notesd did not start, never a disguised client.
+// everyday Chrome, never a Chrome notesd did not start.
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -14,7 +14,7 @@ const POWERSHELL_PATH = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershe
 const POWERSHELL = existsSync(POWERSHELL_PATH) ? POWERSHELL_PATH : 'powershell.exe';
 const TAB_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'tab.ps1');
 
-/** The site answered a bot check (or only a "Just a moment" page): reported, never clicked through. */
+/** The site answered a bot check (or only a "Just a moment" page): reported. */
 export class BotCheckError extends Error {
   constructor(detail) {
     super(`bot_check: ${detail}`);

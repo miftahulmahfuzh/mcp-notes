@@ -20,8 +20,7 @@ export const SNIFF_DEFAULTS = Object.freeze({ seconds: 35, linger: 4, botGraceS:
 /**
  * Installed in the tab and in every frame before any page script runs. Media elements cannot be
  * unmuted and Web Audio stays suspended, so a page that starts a film or an advert on the
- * sniffer's click is never heard. This is the page's own mute button, not a disguise: nothing
- * about the client changes.
+ * sniffer's click is never heard.
  */
 export const MUTE_SCRIPT = `(() => {
   if (window.__notesdSilent) return;

@@ -13,6 +13,7 @@ how to prove a change. The root [README](../../README.md) is the short overview.
 | [connectors.md](connectors.md) | expense-tracking, run-insights, Seer and daily-words (`/v`, `/j`) |
 | [adversary.md](adversary.md) | Seer Adversarial: the reviewer, verdicts, twin books, the page |
 | [movies.md](movies.md) | The Movies library: scan, TMDB, movie ids, watch state, VLC, every question you can ask |
+| [streaming.md](streaming.md) | Streaming and download sites (`/pahe`, `/idlix`, `/lk21`, `/flicksy`, `/dramacool`), direct streaming from a cloud provider or a torrent, the player, subtitles, downloads, the stream cache |
 | [install.md](install.md) | Install, a second machine, running by hand, tests, docs tooling |
 | [architecture.md](architecture.md) | Wiring, the one-writer rule, data model, disk layout, limitations |
 
@@ -31,6 +32,7 @@ link is broken or a picture under `img/` is unused. The commands are in
 [install.md](install.md#docs-tooling).
 
 Pictures live in `img/<guide>/` and are written only by `npm run docs:shots -- <guide>`, which runs
-`scripts/docs/shots/<guide>.mjs` against a throwaway daemon with seeded, made-up data. The chat
+`scripts/docs/shots/<guide>.mjs` against a throwaway daemon with seeded, made-up data. The Movies page pictures are the exception:
+they show the owner's real library and are retaken with `npm run docs:shots -- --live movies`. The chat
 pictures need a real, billed Claude run and are retaken only on request (`DOCS_CHAT_BILLED=1` for
 `chat`, `DOCS_SHOTS_CHAT=1` for `movies`).

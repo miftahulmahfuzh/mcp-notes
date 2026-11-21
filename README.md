@@ -46,7 +46,7 @@ You mostly do not open it to find things. You ask:
 | Seer Adversarial | Claude reviews each Seer pick before the open; twin books show whether its objections paid | [adversary](docs/guide/adversary.md) |
 | Movies | Your video folders as a TMDB poster library, watch history, Play and Resume in VLC, [every question you can ask](docs/guide/movies.md#what-you-can-ask) | [movies](docs/guide/movies.md) |
 | Streaming | `/pahe`, `/idlix`, `/lk21`, `/flicksy` and `/dramacool` find a film on those sites; the last four start it full screen, from Claude Code or the chat bar | [streaming](docs/guide/streaming.md) |
-| Direct streaming | A film straight from a provider's stream host in notesd's own player page, no site and no adverts, English subtitle first | [streaming](docs/guide/streaming.md#direct-streaming) |
+| Direct streaming | A film or an episode in notesd's own player page, from a cloud provider, a torrent or this machine's cache, no site and no adverts, original language, English subtitle | [streaming](docs/guide/streaming.md#direct-streaming) |
 
 <table>
 <tr>

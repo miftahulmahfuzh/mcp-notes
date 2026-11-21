@@ -20,6 +20,7 @@ Every command:
 | An aggregator site's providers, or a magnet's index | `/update-cloud-source <site url or magnet>` | Reads the site's provider templates, adds the ones the registry lacks, probes each; for a magnet, names its index and keeps its trackers | No: it writes this machine's provider list and probes for minutes |
 | A stream that went wrong | `/report-stream-bug [folder] [what you saw]` | Collects the stream's evidence, compares a reference download with the stream host, names the cause, saves a `#stream-bug` note | No: it reads this host's evidence and the daemon's log |
 | A subtitle that does not fit | `/sync-subtitle [movie id, title or player address]` | Hears the film with Whisper, judges the subtitle's text and timing against it, re-times or replaces it | No: it runs Whisper on this laptop for up to a few minutes |
+| Cloudflare WARP on the Windows side | `/warp [status\|on\|off]` | Reads or switches WARP and names the Wi-Fi network | Yes, through `warp` |
 | A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
 The site skills only look a title up and drive a browser on your screen: no film file is fetched
@@ -48,7 +49,6 @@ streaming does download, to this machine only: the [stream cache](#caching-a-fil
 | Asked in your own words | "Play one of Nolan's films", "a Korean mafia film from this year TM", "resume One Piece from episode 730": people, studios, services, languages, genres and six codenames. A title chosen for you is never one you have seen | [Finding something to stream](#finding-something-to-stream), [Codenames](#codenames) |
 | It knows the story | A season's story and an episode's are written from published recaps found on the web, one section per episode, with the sources named | [What a title says](#what-a-title-says-its-story) |
 | A broken stream explains itself | Every request of a play is logged. `/report-stream-bug` measures your connection against the stream host and names the cause | [Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug) |
-| No disguise | Every client says what it is. A bot check is never worked around: the owner clears it by hand, in the streaming Chrome | [The streaming Chrome](#the-streaming-chrome), [When the indexes have nothing](#when-the-indexes-have-nothing-1337x-extto-and-rutracker) |
 
 The player pictures in this guide show the trailer of Sintel (© Blender Foundation, CC BY 3.0) in a
 throwaway daemon, and the download and story pictures its fixture library with fixed numbers (see
@@ -118,7 +118,8 @@ host of the same name (`cdp.ps1` answers `moved` with where) makes that host the
 **A site this network does not reach.** Some sites are only reached through Cloudflare WARP, and
 some refuse it: with WARP on, lk21's Cloudflare answers "you have been blocked" to the real
 Chrome and to a plain request alike, and with it off both go through (2026-11-18; idlix answers
-either way). So when a site does not answer (its page never loads, a request fails) and WARP is
+either way). So when a site does not answer (a search request fails, or a play ends with an `error` and not a
+`stage`: the page never loads, Chrome could not be driven, idlix's page shows no play button) and WARP is
 installed on the Windows side, the command switches it the other way round (`warp-cli connect` or
 `disconnect`), waits until it is there and asks the site once more. When that worked WARP stays
 that way and `warp` in the answer says so; when it did not, WARP is put back and the first
@@ -315,7 +316,9 @@ behaves save it a step. What it does is in [Adding a site](#adding-a-site).
    On lk21 the press goes to the player inside its frame, and the player's own play is pressed
    again when the first press only set it up. On flicksy the press goes to the player inside
    its frame, once the frame is the asked film's. On dramacool the frame's address is read from
-   the episode's page first, and the press goes to the JW Player inside that frame; the player is
+   the episode's page first, and the press goes to the JW Player inside that frame; when the site's
+   advertising sent the tab to an advert's address in place of the episode, the episode's page is
+   opened again, up to six looks; the player is
    given a size that follows its frame, since its host sizes it once, in pixels.
 3. Once the film is running, the window goes full screen and the player is stretched over it.
 
@@ -393,8 +396,12 @@ What the skill (`claude/skills/create-streaming-skill`) makes Claude do, in orde
 4. **Write the site module**, `claude/streaming/sites/<name>.mjs`: `search`, `titlePath`,
    `start` and `playerSelector`, plus `episodes` for a site that plays episodes and `details`
    for one whose pages describe a title. Add it to `sites/index.mjs`, to `STREAMING_SITES`
-   (`src/streaming/service.ts`) and its `*_ORIGIN` to the configuration reference.
-5. **Add the skill folder:** a `SKILL.md` copied from lk21's and a short `search.mjs` that calls `cli.mjs`.
+   (`src/streaming/service.ts`), to the last-resort order (`FILM_SITE_ORDER` or
+   `EPISODE_SITE_ORDER` in `src/streaming/fallback.ts`), to the play menu's lists
+   (`STREAMING_SITES` in `web/src/moviesApi.ts`, `EPISODE_SITES` in `web/src/lib/movies.ts`) and
+   its `*_ORIGIN` to the configuration reference.
+5. **Add the skill folder:** a `SKILL.md` copied from lk21's and a short `search.mjs` that calls
+   `cli.mjs`, and its name in `SKILL_NAMES` (`scripts/install.sh`).
 6. **Name the site** in the chat prompt and the MCP instructions, so the chat bar knows it.
 7. **Tests and docs**, then prove it live: a lookup, a series, no result, and two plays in a
    row, from the terminal and through the daemon.
@@ -403,9 +410,6 @@ It tells you before the first play test, because a Chrome window takes over the 
 with sound. It also carries what went wrong on the first two sites: an advertising tab that
 froze a countdown, a first press that only set a player up, a full-screen button that refuses
 automated clicks, and a daemon that could not find PowerShell.
-
-It will not disguise a client to get past a bot check, skip an advert the site does not let a
-person skip, or dig out a video file. A site that needs any of those is not added.
 
 ## Failure answers
 
@@ -416,7 +420,7 @@ person skip, or dig out a video file. A site that needs any of those is not adde
 | `chrome_not_reachable`, `no_tab` | Chrome did not start, or the site's page did not load in time (with WARP installed, it is switched the other way round and the site asked once more) |
 | `moved` | The tab opened on the site's address landed on another host that is not the same site by its name; idlix's own moves (`z2` to `z3`) are followed and never answer this |
 | `the site answered HTTP 403` | Cloudflare is now refusing the real Chrome too |
-| `playing: false` with `stage: no_player` | lk21's, flicksy's or dramacool's player frame did not appear after eight tries: the player changed (on flicksy, its first server is no longer FrameXTV), or the page is not a film |
+| `playing: false` with `stage: no_player` | The player did not appear: lk21's, flicksy's or dramacool's frame after eight tries, dramacool's episode page with no frame address after six looks, or idlix's player after 55 seconds. The player changed (on flicksy, its first server is no longer FrameXTV), or the page is not a film |
 | `skipped_play`: `no_match`, `several_matches`, `series` | Nothing was started: no film of that name, several (say which one and it is played by its link), or a series with no episode named |
 | `cdp_failed` | Chrome answered on its port and the call into the tab failed; ask again |
 | `not a title page on <origin>` | The link given to play is not a film or episode page of that site |
@@ -444,8 +448,7 @@ provider's embed in a background tab of the streaming Chrome, muted, and keeps t
 loads a stream: the manifest, the `Referer`, `Origin` and `User-Agent` its request carried, and the
 subtitle tracks seen (separate `.vtt`/`.srt` requests and tracks inside the manifest). Providers are
 tried in the order described under **The order** below (`order.mjs`). A
-provider whose page shows a bot check is recorded as `bot_check` and the next one is tried; nothing
-is clicked or disguised to get past it.
+provider whose page shows a bot check is recorded as `bot_check` and the next one is tried.
 
 **A dub is never a source.** The daemon passes the title's original language (TMDB's
 `original_language`, kept on `movie_titles.original_language`) as `--audio-lang`, and the resolver
@@ -538,7 +541,10 @@ a request to Cloudflare's `/cdn-cgi/challenge-platform/`, hCaptcha or reCAPTCHA,
 puzzle: vidsrc.sh (behind VidSrc, VidMov and VidFyi) shows a slide or rotate puzzle before it
 makes the stream, asked from `/vs_captcha/`. Once one is seen the presses stop and the sniff ends
 five seconds later; nothing solves it. A host named `cap.<site>` is a Cap widget's own server
-(hexa.su's "Verification Required") and counts the same.
+(hexa.su's "Verification Required") and counts the same. A tab the provider's page opens by itself
+during the sniff is closed at once and counted (`advert tabs closed` in a `no_stream` attempt's
+detail). Only a tab opened by the sniffed tab or its frames is closed: a tab that was there before,
+the owner's included, is never touched.
 
 **A playlist the page built for itself is not the stream.** A player may write its master
 playlist into a `blob:` address (VidMario's for an episode). Only an http(s) address can be
@@ -612,8 +618,8 @@ audio, an English subtitle file).
 - An episode address is kept in the seed only when it passed a control check
   (`cli.mjs resolve tv <id> <season> <episode> --only <name>`, by hand): the provider resolves a real
   episode and does not resolve one the series does not have (Breaking Bad S01E99), so it cannot
-  be an address that ignores the episode. Nine seed providers have one (2026-11-19): VidNest,
-  VidUp, VidFast and VidLink without an English subtitle, HyperLink, Smashy, VidRock and
+  be an address that ignores the episode. Nine seed providers have one (2026-11-19): VidUp,
+  VidFast and VidLink without an English subtitle, VidNest, HyperLink, Smashy, VidRock and
   NexaStream with one, and Movies111 without. A seed provider's host may only forward now
   (Smashy to `anyembed.xyz`, HyperLink and NexaStream from `vidsrc.wtf` to `viduki.net`); the
   template stays the address the aggregator site links, which still answers. A host that is
@@ -692,6 +698,9 @@ next good source of the same title, under the same session id and at the positio
   the title's asks like a swarm that did not deliver, the session's other candidates are tried
   (a swarm that delivers first, then 1080p before 720p), then the indexes again, and with no torrent
   that plays, a cloud provider.
+- **A stream that cannot be played.** The page asks the same route with `{auto: "broken"}` when a
+  cloud stream cannot be played at all. The rules below apply to it as to a stall ask, and the
+  reason reads `the stream stopped playing`.
 - **Where it may go.** Original language only, as every play. A provider the owner named ("from
   VidLink") never moves by itself (`named_provider`); NTM and NTS stay among the cloud providers, TM,
   TS and a pasted magnet among the torrents. A play with no source named may go either way.
@@ -701,7 +710,9 @@ next good source of the same title, under the same session id and at the positio
   When it goes up the page reads the session again and loads the new stream where the film was, as it
   does after the shuffle button; the line over the picture says
   `Switched to another source: dubbed audio` (or `a burned-in watermark`, `a cinema recording`,
-  `the torrent kept stalling`, `the stream kept stalling`), and the session's `source_note` holds it.
+  `the torrent kept stalling`, `the stream kept stalling`, `the stream stopped playing`,
+  `the torrent was blacklisted`; two faults are joined, `a cinema recording and dubbed audio`), and
+  the session's `source_note` holds it.
 - **The log.** One line per move with its reason:
   `direct stream: <title> switched by itself from Alpha to Beta (dubbed audio; 1 of 2)`, and one when
   a play stays (`stays on <source> (<why>): no other source plays it now`).
@@ -736,7 +747,8 @@ provider's stream of a title is about to play, the daemon looks at it
   `direct stream: <title> from <provider>, checked behind the play: picture: watermark (...); the next play passes this provider over`.
   The play then moves by itself, at the page's next report of the film playing, to the next proper
   copy at the same position ([A play that moves by itself](#a-play-that-moves-by-itself)); the next
-  play of the title skips the provider from the start. Of 36 first looks
+  play of the title skips the provider from the start, unless it is the provider the title is
+  remembered by (below). Of 36 first looks
   in three days 34 were clean, and waiting for them was the largest delay between a resolve and
   the page: 8 to 53 seconds. A cache and the shuffle button wait for the whole look: nobody waits
   for a page there, and a cache keeps what it resolves.
@@ -757,7 +769,10 @@ provider's stream of a title is about to play, the daemon looks at it
 - It runs for a play, an episode change, a cache and a move to another source (the shuffle
   button lands on the next proper copy, not the next recording). A token refresh looks at nothing
   but keeps away from rejected providers. A provider the owner named (`provider`), a probe and a
-  resolve that only reads a subtitle are not looked at.
+  resolve that only reads a subtitle are not looked at. Neither is the provider that streamed the
+  title last time, which a play asks alone first (`rememberedCloud` in `service.ts`): its stream is
+  not looked at or heard, and a verdict kept against it does not pass it over. The kept verdicts
+  apply once the other providers are asked.
 - It adds at most four seconds to a provider's first play of a title.
   `NOTESD_STREAM_PICTURE_MODEL=off` turns it off, and the audio-language check below with it.
 
@@ -780,7 +795,8 @@ there moves the play by itself to a provider serving the original
    `Origin` and `User-Agent` the resolve captured; MPEG-TS cut at its sync, so a host that wraps
    every segment in a small picture file is read too, or fragmented MP4 behind its map part), and
    by ffmpeg on the manifest with the same headers only when that gives nothing. A clip that comes
-   back empty or cut short is `unsure`, as is an encrypted stream.
+   back empty or shorter than a second is `unsure`. An encrypted stream is never cut from its
+   segments: ffmpeg reads it from the manifest, and it is `unsure` only when that gives nothing.
 2. The Whisper worker's `detect` task answers which language it heard and how sure it is (the
    daemon's one worker, `src/directStream/torrent/subtitles/whisper.ts`; a play's `detect` goes ahead
    of transcriptions waiting their turn, once the one in progress ends).
@@ -842,8 +858,8 @@ oldest. The player page reads it from `GET /api/stream/sessions/<id>`.
 Stream hosts check `Referer`, which a page cannot set, so every request the player makes goes
 through `/api/stream/sessions/<id>/p?u=<address>`:
 
-- **Only the session's hosts.** The hosts the resolve returned (the manifest's and the
-  subtitles'), plus a host named inside a playlist or manifest fetched through the same session,
+- **Only the session's hosts.** The hosts the resolve returned (the manifest's, the
+  subtitles' and the seek-preview track's), plus a host named inside a playlist or manifest fetched through the same session,
   or by a redirect one of them answered. Anything else is refused with 403 `forbidden_host` before
   any request is made, and an unknown or ended session gets 403 `unknown_session`. It is not an
   open proxy.
@@ -1078,7 +1094,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   5 seconds while it is open (a paused page sends a `beat`, which only says it is still there), on
   pause, on play, at the end, and once more as it closes (`closed`). A failed report is ignored,
   a 503 `store_failed` included (the database did not take it; the daemon logs one line and the
-  next report writes the position); from a good answer the page reads only `subtitle_rev` (see above).
+  next report writes the position); from a good answer the page reads `subtitle_rev` (see above), `source_rev` (the daemon moved the
+  play to another source by itself: [A play that moves by itself](#a-play-that-moves-by-itself))
+  and `preview_rev` ([Seek previews](#seek-previews)).
 - **On the Movies page.** Those reports are also what the Movies page shows: the title's poster
   has a pulsing frame and a "playing" chip while it streams, and a steady one that reads "paused"
   while it is paused, on the Stream side and in the Library. The title's page shows the same on its
@@ -1100,8 +1118,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   film, which plays on from what it has loaded, and shows a spinner (`stage: "recovering"`). After
   2, 4, 8, 16 and 16 seconds it loads again from where the film is; the first piece that loads ends
   the recovery and the count starts over. Only when the fifth restart fails too does the page give
-  the stream up: a cloud play first asks the daemon for another provider
-  ([What played last time plays first](#what-played-last-time-plays-first)), a cached play goes
+  the stream up: a cloud play first asks the daemon for another source
+  ([A play that moves by itself](#a-play-that-moves-by-itself): another cloud provider, then a
+  torrent unless the play was NTM or NTS; a provider named by hand stays), a cached play goes
   back to the live stream ([Playing from the cache](#playing-from-the-cache)), and with none, or on
   a torrent play, it stops with the message, such as
   `Playback stopped (networkError fragLoadError).` Positions are still
@@ -1320,7 +1339,11 @@ title matches (`no_match`), when no episode is left after the last one played (`
 the next episode airs after today (`not_aired`, with its air date), or when no provider resolves:
 then the answer is `no_source` with each provider's outcome (`no_stream`, `bot_check`, `error`,
 `dubbed`, `unplayable`, `skipped_browser_only`, `skipped_no_template`), followed by the torrent
-source's `Index:` and `Torrent:` attempts when it was tried. `torrent_off`, `resolve_failed` and
+source's `Index:` and `Torrent:` attempts when it was tried, and by one `Site: <name>` attempt per
+streaming site asked when no source was named
+([The streaming sites, last](#the-streaming-sites-last)). When a site starts it, the answer is
+`started: true` with `play.site` and no session. A play that outlasts 45 seconds answers
+`started: false` with `pending: true` ([A play that is being started](#a-play-that-is-being-started)). `torrent_off`, `resolve_failed` and
 `open_failed` are errors of their own. With direct streaming off, every `direct_stream_*` tool
 answers `direct_stream_off`.
 
@@ -1342,11 +1365,12 @@ by its `title_key`.
 | horror, action, comedy | `genre`: one or several English names; a title must have every one |
 | mafia, zombies, bloody | `keyword`: one or several words for what it is about; a title carrying any one passes |
 
-- **Names become TMDB ids inside the tool.** A person is the most popular match of TMDB's person
+- **Names become TMDB ids inside the tool.** A person is the first match of TMDB's person
   search; a studio's name stands for the company called exactly that, else for the companies
   whose name starts with the words (6 at most; else the first whose name contains them) (TMDB files Blumhouse as Blumhouse Productions, Blumhouse
   Television and others; a title by any of them passes); a service is the entry called exactly
-  that, else the first that starts with the words, in TMDB's watch-provider list for the region.
+  that, else the first that starts with the words, else the first whose name contains them, in
+  TMDB's watch-provider list for the region.
   `filters` says what was understood, and `other_people`, `other_companies` and `other_services`
   list what else the name fits; `person_id`, `company_id` or `service_id` picks one of those.
 - **"Chinese" is two of TMDB's languages.** TMDB codes Mandarin `zh` and Cantonese `cn`, so
@@ -1524,7 +1548,9 @@ first for episode 4.
   played again to be remembered.
 - **A stream that breaks is left, not shown as the end.** When the player cannot play a stream at
   all (a segment that does not parse, a network error its restarts did not cure) the page asks
-  the daemon for another provider before it stops with the error, twice at most in one session.
+  the daemon for another source before it stops with the error, twice at most in one session:
+  another cloud provider, then a torrent unless the play was NTM or NTS. A play whose provider was
+  named by hand stays and stops with the error.
   A session that moves provider while it plays takes its play and the title's channel with it, so
   the provider that really plays is the one remembered.
 
@@ -1601,7 +1627,7 @@ a subtitle names no speaker and describes no silent action, and a story retold f
 - **A season's story** ("Narrate the full story of S02") is one run of Claude with WebSearch as its
   only tool (`NOTESD_MOVIES_STORY_MODEL`; a minute or two, and the pop-up says so). It looks in this
   order: Wikipedia's article on the season or its "List of … episodes", the series' Fandom wiki, then
-  recap sites (Dramabeans, Vulture, The A.V. Club, Den of Geek). It answers one section per episode,
+  recap sites (Dramabeans, Vulture, The A.V. Club, Den of Geek). It answers one section per aired episode,
   each built only from what a source says, and the sources it read, which the pop-up lists as links.
   An episode no source covers keeps its section, which says "No published recap was found for this
   episode."; nothing is made up for it. A section naming an episode the season does not have is
@@ -1611,14 +1637,17 @@ a subtitle names no speaker and describes no silent action, and a story retold f
   dialogue, below, as before; the pop-up's foot then says `written by <model> from <n> subtitle lines (<provider>)`,
   where a web story's says `written by <model> from <n> web sources`.
 - **A film's story** follows the episode's route through the same writer: the web first, its dialogue only when no
-  published recap covers it. A film has no season button.
+  published recap covers it. The wall has no book icon for a film: only the route
+  (`POST /api/movies/:id/story` with neither `season` nor `episode`) writes it.
 - **It is kept**, in `movie_stories`: one row per film, season or episode, with its sections, its
   sources, where it came from (`web` or `dialogue`), the model and the day, written only by
   `MoviesRepo.saveStory`. A stored story opens at once and no model is asked again. The stories
   written from dialogue before 2026-11-20 were copied in, as `dialogue`. With
   `NOTESD_MOVIES_STORY_MODEL=off` none is written, and the stored ones still open.
 - **When nothing tells it.** A season no source covers at all, and an episode with neither a recap
-  nor an English subtitle, answer `no_story_source`, and the pop-up says so.
+  nor an English subtitle, answer `no_story_source`, and the pop-up says so. A web run that fails
+  (a timeout, an answer that does not parse) answers `story_failed`: nothing is stored, no subtitle
+  is read in its place, and the next click tries again.
 
 The dialogue, when an episode needs it, is the episode's English subtitle as a stream source
 carries it, every line with the minute it is said:
@@ -1653,8 +1682,8 @@ scripts, and from the frames of a watch page when the scripts hold none. It runs
 bar can list the providers (`direct_stream_sources`) but not add one, because adding writes this
 machine's provider list and probes for minutes.
 
-1. **Read the templates, no browser.** `cli.mjs templates <site>` fetches the page as a plain
-   client that says what it is, then the scripts the page names and the webpack (Gatsby) chunks
+1. **Read the templates, no browser.** `cli.mjs templates <site>` fetches the page with a plain
+   request, then the scripts the page names and the webpack (Gatsby) chunks
    they load, on the site's own host only, likely chunks (`movie`, `details`, `player`, ...)
    first. It stops at 40 scripts, 4 MB a script, 30 MB in all and 90 seconds. A template is an
    object entry whose value builds an `https` address around one id (a film) or three (an
@@ -1682,8 +1711,7 @@ machine's provider list and probes for minutes.
      home page that plays a trailer) is never a template. An episode page that names no episode
      gives nothing, and is never read as a film's.
    - A plain request answered with a bot check is not followed into the browser, unless you gave
-     a watch page. A bot check in the streaming Chrome is the answer `bot_check`; nothing clicks
-     through it and the client is never disguised.
+     a watch page. A bot check in the streaming Chrome is the answer `bot_check`.
    - Only the frames a page loads by itself (and after the sniffer's own play click) are read.
      The site's other server buttons are not pressed, so one page usually gives one provider.
    - **A site whose plain request answers `bot_check` and whose frames never read either,
@@ -1737,8 +1765,8 @@ loads first and no other.
 site they came from (`origin_site`) and when (`added_at`); `providers.seed.json` is not changed.
 The other laptop does not get them: run `/update-cloud-source` there too, or copy the entry into
 the seed. The daemon loads the seed at every start: it adds seed providers the
-table lacks and updates seed rows (`origin_site` empty) whose entry changed in the file, but never
-touches a provider a site added and never deletes one. To make a site's provider part of the
+table lacks, updates seed rows (`origin_site` empty) whose entry changed in the file and deletes
+seed rows the file no longer names. A provider a site added is never touched and never deleted. To make a site's provider part of the
 seed, copy its entry into `providers.seed.json` by hand.
 
 | Path | What |
@@ -1755,7 +1783,8 @@ A stream that stutters on a slow connection or a far stream host can be download
 first. `direct_stream_cache` with `action: "start"` in Claude Code, or `POST /api/stream/cache`,
 answers at once; the download runs in the daemon, one at a time (the rest wait, `queued`; a queued
 cache that is played starts beside the running one). `action: "status"` shows one title's caches
-(or the cache of an `id`) and `action: "list"` every cache, with state and progress.
+and downloads (or the cache or download of an `id`) and `action: "list"` every cache and this
+machine's unfinished [downloads](#downloading-a-title), with state and progress.
 
 1. The title is resolved like a play, out of sight: the same resolver and provider order, the
    title's original language.
@@ -1765,8 +1794,8 @@ cache that is played starts beside the running one). `action: "status"` shows on
    subtitle is saved as WebVTT. A plain-file source is downloaded in 4 MB byte ranges and joined.
 3. Four files at a time, each tried up to six times with backoff (1, 2, 4, 8, 16 s). When the host
    refuses a token (401, 403, 410: a signed address that expired), the title is resolved again and
-   the download carries on by segment index, keeping what is on disk. Three fresh resolves without
-   a file in between stop it (`token_refused`). A fresh source of another shape (another provider,
+   the download carries on by segment index, keeping what is on disk. After three fresh resolves
+   without a file in between, one more refusal stops it (`token_refused`). A fresh source of another shape (another provider,
    other segments) empties the folder and starts over.
 4. Every file is written to a temporary name and renamed. A daemon restart carries unfinished
    downloads on from what is on disk.
@@ -1923,9 +1952,9 @@ player, the daemon downloads the one after it (`src/directStream/ahead.ts`).
 - **The next play finds it by itself.** A play looks at this machine's cache and finished torrent
   downloads before any provider, so the next button, `/direct-stream` and "resume" start the
   episode from disk; one still downloading plays what is there and fetches the rest as it is reached.
-- **A season pack** holds the next episode in the torrent already on this machine. Its file is
-  downloaded, but the pack is recorded under one episode, so the next play still asks the index and
-  joins the swarm for the file list before it plays the whole file from disk.
+- **A season pack** holds the next episode in the torrent already on this machine. The episode gets
+  its own row in the pack, marked ready when its own files are whole, so the next play finds it on
+  disk, asks no index and joins no swarm.
 - **A daemon restart** stops what is being fetched. A cache carries on at the next start; a torrent
   keeps what it has and is opened again when the episode is played.
 - `NOTESD_STREAM_AHEAD=off` fetches nothing ahead. The daemon's log says what it does:
@@ -1963,17 +1992,22 @@ comes at once; the download runs in the daemon, and the title page and the
   download <name>": Best torrent (1080p), Cloud, and Pick a torrent…, which opens
   [every torrent of the film or episode](#the-torrent-candidates-of-a-title) with a download button
   on each row (a season has no pick row). A chosen kind is downloaded from that kind only: a torrent
-  choice that finds nothing fails, and never turns to the cloud.
+  choice that finds nothing fails, and never turns to the cloud. Best torrent (1080p) takes a 1080p
+  torrent with live seeders, else a torrent below 1080p; 2160p is never taken unless you pick it.
+  `direct_stream_cache` has no "no source named": `provider: "torrent"` is Best torrent, and a
+  season started without it downloads each episode from the cloud.
 - **The original language.** A torrent's audio is checked as a play checks it, from the file's
   header before the bulk of it is fetched; a dub is left undownloaded and the next candidate tried.
 - **The office network.** The order is the same on every network. On SSID `Employee` no torrent peer
   answers without [Cloudflare WARP](#cloudflare-warp-for-torrents), so a torrent step that found no
-  peer at all with WARP off switches WARP on once and asks the torrents again. A download that goes
+  peer at all with WARP off (or on only because a torrent play or another download of notesd holds
+  it) switches WARP on once and asks the torrents again. A download that goes
   ahead through WARP holds it while its torrent is in the swarm and lets go when it is done, paused,
   failed or cancelled; WARP then goes back off unless a torrent play or another download still holds
   it. When WARP reached no peer either it is put back at once, a download with no source named goes
   on to the cloud, and one that asked for a torrent fails `no_peers_here`. A WARP you turned on
-  yourself is never touched.
+  yourself is never touched: the step fails as it stands, and so it does with
+  `NOTESD_STREAM_WARP=off` or when WARP cannot be turned on.
 - **The play on screen first.** One torrent download runs at a time. While a torrent plays in the
   player, torrent downloads pause (the download lets go of its swarm and keeps what it has) and are
   opened again by their info hash when the play ends. A cloud
@@ -1982,7 +2016,10 @@ comes at once; the download runs in the daemon, and the title page and the
   opened once, every wanted episode's video and subtitle files are selected, and each episode gets
   its own row, so each plays from disk on its own. The audio check runs on the pack's first wanted
   episode before the rest is selected. An episode the pack lacks, or a season with no pack, is
-  downloaded episode by episode in order.
+  downloaded episode by episode in order. With no source named only a 1080p pack is taken; Best
+  torrent takes a pack of any height, 1080p first; a Cloud season looks for no pack. At most three
+  packs are opened. A pack whose swarm sends nothing for two hours fails the episodes it still
+  carries (`download_failed`).
 - **Ready to play offline.** A torrent download stays in the swarm until its file is whole and, for a
   file Chrome cannot play as is, until its [remux](#the-remux-for-files-chrome-cannot-play) is whole
   too; the [subtitle chain](#subtitles-for-a-torrent) runs to its end, and the
@@ -1993,7 +2030,11 @@ comes at once; the download runs in the daemon, and the title page and the
   in the total the Cache page shows against the budget, so what is not kept goes first. A cloud
   download is your own cache, which the three-day clean-up never touches. Deleting it on the Cache
   page (or with `stream_disk`) removes the files and the mark.
-- **A restart** carries queued, running and paused downloads on from what is on disk.
+- **A restart** carries queued, running and paused downloads on from what is on disk. A torrent
+  download carried on (after a restart or a play) whose swarm gives nothing is tried three times, a
+  minute apart, before it fails.
+- **Cancel.** Cancelling keeps what is on disk. A torrent loses its kept mark and is pruned like
+  any other; a cloud download's cache is paused.
 - **Progress.** `GET /api/stream/downloads` answers every queued, running, paused and failed download
   of this machine with its state, its source, progress from 0 to 1, bytes and error (`?title=`
   narrows it to one title and adds its finished downloads still on this machine); `active` is true while any is
@@ -2013,11 +2054,13 @@ comes at once; the download runs in the daemon, and the title page and the
 | Answer | Meaning |
 | --- | --- |
 | `no_source` | No torrent and no cloud source of the title could be downloaded |
-| `no_peers_here` | A torrent asked for on the office network reached no peer, even through Cloudflare WARP |
+| `no_peers_here` | A torrent asked for on the office network reached no peer: not through Cloudflare WARP either, or WARP could not be used (it is yours and already on, `NOTESD_STREAM_WARP=off`, or the switch failed); `detail` says which |
 | `dubbed` | Every torrent found speaks another language than the title's original |
 | `download_failed` | The download kept failing |
-| `cancelled` | Cancelled on the title page or with `DELETE /api/stream/downloads/<id>` |
+| `cancelled` | Cancelled on the title page or with `DELETE /api/stream/downloads/<id>`, or its cache was deleted while it downloaded; a cancelled download is no longer listed |
 | `downloads_off` | `NOTESD_STREAM_DOWNLOADS=off` |
+| `torrent_off`, `cloud_off` | The kind asked for is off on this daemon (`NOTESD_TORRENT=off`, or no stream cache) |
+| `unknown_season` | The series lists no episode of that season |
 | `invalid_body` | The request named no film, season or episode the daemon understands |
 | `unknown_download` | No download has that id |
 | A stream cache answer | A cloud download fails as [a cache does](#caching-a-film-or-an-episode) |
@@ -2130,8 +2173,8 @@ DHT node and no peer.
 5. Upload is capped at `NOTESD_TORRENT_UPLOAD_KBPS` (100 kB/s) for all torrents together. UPnP and NAT-PMP
    are off; under WSL 2 no peer can connect in, so the daemon only connects out.
 6. A torrent is in the swarm only while something uses it (a stream session, the next episode
-   being fetched ahead, or `POST /api/stream/torrent` with `files` until its release route is
-   called). Once nothing does, a finished download leaves at once and an unfinished one three
+   being fetched ahead, a [download you asked for](#downloading-a-title) until its files are whole,
+   or `POST /api/stream/torrent` with `files` until its release route is called). Once nothing does, a finished download leaves at once and an unfinished one three
    minutes after its last file request. While it waits it downloads nothing (its files are deselected; a
    reload's reads still fetch their own range): left downloading, the last film filled this machine's
    ~9 Mbps link for three more minutes and the next play's TMDB and index requests failed.
@@ -2140,7 +2183,9 @@ DHT node and no peer.
    leaves its swarm with its row and its folder when its open made the row and nothing of it was played;
    a row an earlier play made stays.
    A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
-   A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder. Played means
+   A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder. A download
+   you asked for (`stream_torrents.kept_at`) is passed over, here and by the budget, until it is deleted on the
+   Cache page; its bytes still count. Played means
    the player page reported a position of it (at most one write a minute); the daemon's own reads of the
    file (the header probe, the remux, a subtitle tier) are no play. A download never played counts from
    when it finished, else from when it was made. At start and every six hours the same clearing also
@@ -2154,7 +2199,7 @@ DHT node and no peer.
    is under it: first the downloads of titles the owner marked Watched or Not interested (whenever they were
    played), then never-played ones, oldest first, then the least recently played. A torrent played or
    finished in the last 24 hours goes only when that was not enough, and one in use (a session, the next episode
-   being fetched ahead) never goes. Its remux, cue and preview files go with it. Each deletion is one log line:
+   being fetched ahead, a download still fetching) never goes. Its remux, cue and preview files go with it. Each deletion is one log line:
    `torrent: cleared <name> (4.2 GB, last played 2026-11-12): the downloads took more than the 40.0 GB budget,
    38.1 GB now`. The owner deletes one by hand on the [Cache page](movies.md#the-cache-page), the same way.
 9. A season pack keeps every episode chosen from it. `stream_torrents` has one row per host, info hash and
@@ -2197,7 +2242,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 
 - **When it is asked.** `direct_stream_play` with `provider: "torrent"` (any case; "stream it from a torrent") passes
   over the stream cache and the cloud providers: a finished download of the title plays from disk, else the torrent
-  that last played this film or episode is opened again with no index asked, else the indexes are asked. Without a
+  that last played this film or episode is opened again with no index asked (unless it is blacklisted or was heard
+  as a dub; one that is not 1080p is opened only after the indexes had no 1080p that plays: see
+  [What played last time plays first](#what-played-last-time-plays-first)), else the indexes are asked. Without a
   provider a play looks at this machine's stream cache, then at a finished torrent download, then at what streamed
   the title last time ([What played last time plays first](#what-played-last-time-plays-first)). Only a title with
   nothing remembered goes the long way: the cloud providers, and the torrent source when they answer `no_source` (or
@@ -2261,7 +2308,7 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   shuffle button. Every torrent that does not play gets a log line saying why, with what its swarm gave:
   `torrent: TMDB movie 693134: <release> (2770fe27) lost: no_stream after 21 s, the swarm stalled before the header
   arrived: 0.1 MB in the last 15 s (3.2 MB received, 2 peers, 0.1 Mbps in 16 s)`, `lost: its header arrived too
-  (720p; 4 peers connected, ...)`, `lost: still opening (8.1 MB received, 5 peers, 2.2 Mbps) when <release> was
+  (720p listed; 4 peers connected, ...); <release> was chosen`, `lost: still opening (8.1 MB received, 5 peers, 2.2 Mbps) when <release> was
   chosen`.
 - **An episode TMDB numbers on across seasons.** TMDB files One Piece episode 1000 as season 21, episode 1000;
   Torrentio, and every release named `S21E109`, count it as the 109th of that season. Asked by TMDB's number,
@@ -2315,8 +2362,8 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   Torrentio lists its releases. TorrentsDB and Peerflix are Stremio add-ons that answer in Torrentio's shape.
   TorrentsDB lists sites Torrentio does not (knaben, rargb, sktorrent, rutor); a torrent two indexes list is one
   candidate naming both. Peerflix lists Spanish releases, nearly all dubs, so for a title made in any other language it
-  gets no request and has no attempt. Every request says it is notesd; a bot check is the outcome
-  `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. A
+  gets no request and has no attempt. Every index request carries notesd's `User-Agent`; a bot check is the outcome
+  `bot_check`; an index that fails or times out is `error` and the others go on. A
   connection that fails at once (`fetch failed`, before any answer) is asked once more a second later, within the
   index's time, and the error names the socket's code (`fetch failed: ECONNRESET`). The daemon gives every outgoing
   connect 2.5 s per address (`src/main.ts`) where Node gives 250 ms: while a torrent downloads, this Wi-Fi's connects
@@ -2491,7 +2538,8 @@ is whole too, the original is deleted and the remux is the film's one copy (`rem
   Synced and `/sync-subtitle` read its own segments over the daemon's route, through the same segment reader as a cloud
   stream ([What the film's sound is read from](#what-the-films-sound-is-read-from); ffmpeg on the playlist alone seeks
   nowhere in fMP4 and reads the film's start for a stretch past its end). The OpenSubtitles hash of the file can no
-  longer be made, so a replay that has no kept subtitle asks the subtitle service by the IMDb id only.
+  longer be made. A replay from disk knows no IMDb id either: with no kept subtitle it asks Wyzie by the TMDB id,
+  and the OpenSubtitles add-on is not asked.
 - **When.** Never while the torrent is in the swarm or being opened (a session playing it, the next episode of a pack
   fetched ahead): the original goes when the torrent leaves the swarm. A remux that becomes whole while nothing holds
   the torrent (a replay from disk, remuxed from the file on disk) frees its original at once. At start, every
@@ -2535,8 +2583,8 @@ touched.
    or `Subs/<film>/2_English.srt` beside the video. Those files are downloaded with the video (on
    a replay from disk, the download's record names them). A plain English file comes before an
    SDH one, SubRip before WebVTT before ASS/SSA (converted with ffmpeg), and a `forced` file is
-   never used, nor a signs-and-songs one (`signs` or `songs` in its name, outside the video's own
-   name, and not `full`): it holds the on-screen text and the lyrics, never the dialogue. With no English file, the torrent's one subtitle file is used when its name gives
+   never used, nor a signs-and-songs one (`sign`, `signs`, `song` or `songs` in its name, outside the video's own
+   name, and not `full` or `dialogue`): it holds the on-screen text and the lyrics, never the dialogue. With no English file, the torrent's one subtitle file is used when its name gives
    no language; the player shows it like an English one. A file already on disk answers at once.
    One still downloading holds nothing back: the tiers after it are asked meanwhile, and when the
    file arrives (within 5 minutes, while the session holds the torrent) it takes the place of
@@ -2548,9 +2596,10 @@ touched.
    from the torrent ahead of the rest), so the lines match this exact file. If that fails, it is
    asked by the title's IMDb id, and the English file whose name shares the most words with the
    release is taken; it is labelled "English (matched by title)". With `WYZIE_API_KEY` set, Wyzie
-   Subs is asked before the add-on (by the IMDb id, for at most 12 s; machine translations are
+   Subs is asked before the add-on (by the IMDb id, else the TMDB id, for at most 12 s; machine translations are
    left out) and its file is labelled "English (Wyzie)"; when Wyzie has nothing or fails, the
-   add-on is asked as above.
+   add-on is asked as above. Without an IMDb id (a title TMDB lists none for, and every replay
+   from disk) the add-on is not asked.
 4. **A cloud provider.** The title is resolved out of sight, as an episode's story does,
    and that provider's English subtitle is kept as `borrow.vtt`, labelled with the provider. It
    asks nothing (`no_stream`) when the torrent was the fall-through after the cloud providers
@@ -2605,7 +2654,8 @@ after the play has started:
   title and answers the one that fits best, moved and stretched to fit.
 - **How much of the film.** The first 30 minutes, then the first 60, then the whole film, each only
   when the one before did not line up (Wyzie's 422); a film shorter than 30 minutes goes straight
-  to the whole of it. Any other failure ends the job.
+  to the whole of it. Any other failure ends the job. A stretch with under
+  120 s of speech is not sent to Wyzie.
 - **The synced file replaces the old one.** It is kept as the chosen subtitle (a torrent's
   `synced-<file index>.vtt`, a title's `synced.vtt`), named **English (Wyzie, synced)**, and the
   session's `subtitle_rev` goes up. The open player page reads that number in the answer to its
@@ -2668,7 +2718,7 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   three. With no time and a stream on screen, the hint is the minute around where its player is,
   30 s behind and 30 s ahead (the position the page last reported). When 8 lines or more are said in
   the hinted stretch, only the first and the last of the six places are heard beside it. Those three
-  settle the check only when lines were heard in two stretches at least four minutes apart (a drift
+  settle the check only when three lines or more were heard in each of two stretches at least four minutes apart (a drift
   shows over a distance only) and the subtitle shown is right, in step or after its own re-timing.
   Anything else (a quiet hint, a wrong or scattered subtitle, a film of unknown length) goes on to
   the usual places, less any the hint already covers, so a candidate is never judged on the short
@@ -2685,7 +2735,7 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   lines up with a third to half of the lines at some offset by chance, so what counts is how far
   the best offset stands out: 60% of the heard lines (of any length) must start within 0.6 s of a
   cue at one offset, and that offset must hold 10 lines, and 15% of all lines, more than the best
-  offset anywhere else within 90 s. Measured on seven streams against seventeen subtitle files
+  offset anywhere else within 90 s. With fewer than 20 heard lines the starts are not read at all. Measured on seven streams against seventeen subtitle files
   (2026-11-20, words blanked): 9 of 12 right files were found, at the offsets the words gave for the
   English ones (a South Park file 33 s early among them), and none of 107 wrong pairings. Such a
   judgement says `matched_by: onsets` with its counts. A file cut for another edit and one that
@@ -2738,7 +2788,7 @@ Read from the segments, 11 of the same 12 were heard.
 So `/sync-subtitle` answered `unheard`, and Wyzie Synced failed. Three of those failures read "only
 93 s of speech in the film", which is kept as final and never tried again.
 
-For an HLS source the daemon now fetches the segments itself (`withHlsSegments`, `hlsStretch` in
+For an HLS source the daemon now fetches the segments itself (`withHlsSegments` in `hlsCut.ts`, `hlsStretch` in
 `picture.ts`), with the headers the resolve captured, and hands them to ffmpeg on stdin:
 
 - **Which playlist.** The stream's own audio playlist when the master names one
@@ -2766,7 +2816,7 @@ pack's `S01EAll` and a name with no episode in it say nothing.
 ### The subtitle track inside the file
 
 When the torrent holds no subtitle file, the video file's own English text track is used: SubRip,
-ASS/SSA, mov_text or WebVTT, chosen by language (`eng`, `en`), a full track before an SDH one,
+ASS/SSA, mov_text or WebVTT, chosen by language (`eng`, `en`, or a title that says English), a full track before an SDH one,
 SubRip before ASS. A forced track (only the lines spoken in another language) is used only when it
 is the file's one English text track. A signs-and-songs track (its title says `Signs`, `Songs` or
 `Signs & Songs`, and not `Full` or `Dialogue`, as anime releases name them) is never used, not even
@@ -2819,7 +2869,7 @@ finished it or its timeout ended the worker); it exits after three minutes with 
 
 With the film's length known, only its last stretch may come back short: a shorter cut before it
 (a host that stopped answering) is a failed stretch, left for a replay, and never read as the
-film's end.
+film's end. Three failed stretches in a row end the transcript; a replay tries again.
 
 When the session lets go of the torrent the stretch in progress is dropped; restarting notesd stops
 the worker too, and the next start deletes the WAV of any stretch (of a sync, a transcript or a
@@ -2849,7 +2899,7 @@ fails never fails the play.
   small words such as "the" are left out. It searches Movies or TV and reads the first two result
   pages. A row counts only when its release name is the title, by the same exact-title rule as the
   streaming sites, and names the asked year if it names a year at all.
-- **ext.to** is asked by the title's IMDb id, most seeds first, with `S02E03` for an episode.
+- **ext.to** is asked by the title's IMDb id (by its words when it has none), most seeds first, with `S02E03` for an episode.
   Cloudflare answers a script's request with a check, so the tab goes to the search page itself, as
   a person would.
 - **ext.to's Cloudflare gate, and clearing it by hand.** ext serves a Turnstile managed challenge
@@ -2864,14 +2914,11 @@ fails never fails the play.
   the daemon's later background searches of ext through until it expires. The command answers
   `{ cleared, title }` once the page is no longer a challenge, or at its deadline. A bot check never
   counts toward the index skip, so the next play asks ext again right after. The answer also
-  carries `ok`, `site` and `origin`. Nothing is clicked for
-  the owner and no challenge token is forged: the browser is the owner's own, and the human solves
-  the widget.
+  carries `ok`, `site` and `origin`. The owner solves the widget.
 - **Magnet links** come from the release pages of the five best-seeded rows that are seeded and
   are not a dub, a cinema copy or 3D, and do not name another episode. On 1337x the page carries the link. On ext.to the page
   gives it through its own "Copy magnet link" request.
-- **About 40 seconds** for all three: each site has 40 s, and they are asked side by side. A bot check is the attempt's outcome `bot_check` and is never
-  clicked through. A machine without the Windows Chrome answers `error` with `no_chrome`.
+- **About 40 seconds** for all three: each site has 40 s, and they are asked side by side. A bot check is the attempt's outcome `bot_check`. A machine without the Windows Chrome answers `error` with `no_chrome`.
 - **RuTracker** is asked with the title's words (and a film's year), most seeders first, at
   `rutracker.net`: this network's provider blocks `rutracker.org`, and the mirror answers without
   WARP. Its search and topic pages sit behind a Cloudflare check, and the search is for logged-in
@@ -2934,7 +2981,7 @@ HTTP `GET /api/stream/torrents` ([http-api.md](reference/http-api.md#torrents)).
   reason worth seeing (`cam`, `few_seeds`, `dubbed`, `too_big`, `three_d`, `trailer`, `not_video`; never another
   title or episode). The indexes' answer is kept ten minutes per film or episode, a play's own included, and
   `fresh` asks them again (at most 40 s). Listing joins no swarm: the seeds are the index's claim, and the
-  trackers are scraped for what they know now (1.5 s, BEP 15).
+  trackers are scraped for what they know now (2.5 s, BEP 15).
 - **Per row**: the release name, its height, size, seeds, where it came from, its audio language and how that is
   known (`heard`, the file's `tags` as kept when it was last probed, what the `name` says, or `unknown`), and
   `worked`, `failed` (the reason this run of the daemon kept, or the row's error), `blacklisted`, `dub_group`,
@@ -3004,10 +3051,10 @@ rule it states; the few that must never change are also in the repository's `CLA
 
 - **Trending** (`src/directStream/trending/`): a daily list on the Stream side of the most seeded films and series on the torrent indexes' own top lists. No swarm is joined: the seed count is the index's claim.
   - `TrendingRepo` is the only writer of `stream_trending`, per host; a build replaces the host's rows. The list holds no watch state: `GET /api/movies/trending` reads seen, started, watched and not-interested from `movie_titles` at each request (`isFreshForTrending`), so a mark takes a title off at once. Never copy a mark into the list.
-  - Plain requests that say they are notesd, like the finder's; never a disguised client for a bot check. `NOTESD_TRENDING=off` (or a missing movie library, direct streaming, torrents or TMDB) is a `DisabledTrending`: nothing is asked. Tests use `TrendingJob` with injected sources, TMDB and clock.
+  - Plain requests with the finder's `User-Agent`. `NOTESD_TRENDING=off` (or a missing movie library, direct streaming, torrents or TMDB) is a `DisabledTrending`: nothing is asked. Tests use `TrendingJob` with injected sources, TMDB and clock.
 - **Streaming sites** (`claude/streaming/*`): one command, `cli.mjs`, with a module per site in `sites/`. The `/idlix`, `/lk21`, `/flicksy` and `/dramacool` skills and the daemon's `streaming_find` / `streaming_play` tools (`src/mcp/streamingTools.ts`, through `scriptRunner` in `src/streaming/service.ts`) all run it; nothing else talks to a site.
   - The sites are the last resort of a play with no source named (owner, 2026-11-20): `DirectStreamService.playNow` asks `siteFallback` (`src/streaming/fallback.ts`) only when the direct path ended `no_source` / `resolve_failed` (every cloud provider and every torrent), inside the play in flight (so a `pending` play still falls back, a re-ask joins it, `starting()` stays busy): the site last played on at its page, then `FILM_SITE_ORDER` / `EPISODE_SITE_ORDER` through `playOnSite` (the site-play route's own code: exactly one match, never guessed). A named provider, codename or magnet never asks a site.
-  - Playing drives a real Chrome on Windows through `cdp.ps1` (PowerShell, because WSL cannot reach Windows loopback), with its own profile folder. Never the owner's everyday Chrome, never a Chrome it did not start, and never a disguised client to get past a site's bot check. That profile runs uBlock Origin Lite, installed by the owner by hand (Chrome loads no extension from a script): a site's flow must work with and without its adverts, and the scripts themselves never remove or click through one.
+  - Playing drives a real Chrome on Windows through `cdp.ps1` (PowerShell, because WSL cannot reach Windows loopback), with its own profile folder. Never the owner's everyday Chrome, and never a Chrome it did not start. That profile runs uBlock Origin Lite, installed by the owner by hand (Chrome loads no extension from a script): a site's flow must work with and without its adverts.
   - The fill-screen style leaves the player 2 px short of the screen (`play.mjs`): a video covering the whole screen exactly goes to a Chrome full-screen overlay that draws no page content over it, so the player's subtitles and controls vanish. Do not make it `100vh` again.
   - A site that moves host is followed only to another numbered host of the same name (`sameFamily` in `sites/idlix.mjs`, on `cdp.ps1`'s `moved` answer). A site that does not answer is asked once more with Cloudflare WARP the other way round (`warp.mjs` `flipWarp`; `NOTESD_STREAM_WARP=off`): lk21 refuses WARP's addresses, other sites may need them. WARP stays switched only when that helped, is put back otherwise, and is never touched for a torrent or a cloud stream.
   - A link counts only when a site's search returned it; a film starts only when asked, and only when exactly one film matches.
@@ -3021,7 +3068,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - A subtitle from outside the stream (a torrent's `service` / `borrow` file; a cloud stream with no English track gets one per title, `src/directStream/outsideSubtitles.ts`) is re-timed behind the play by Wyzie Synced (`torrent/subtitles/synced.ts`), never in the play's way. Whoever replaces a session's subtitle bumps its `subtitleRev`; the page reloads on the number in the position answer. The Wyzie key and a download `tok` are never logged, thrown or kept; tests inject the fetch, the cutter and the speech detector.
   - `/sync-subtitle` (`src/directStream/subtitleCheck/*`, `direct_stream_sync_subtitle`) judges a session's or a title's subtitle against the film's own audio: Whisper hears a minute at six places, or with a hint (the `at` time the owner named, else the minute around where the player on screen is) that stretch and the film's two ends, going on to the other places unless those three settle it (never loosen that: a drift shows only over a distance, and a candidate is never judged on the short round); `match.ts` scores the text (heard lines found in the cues) and the timing (anchors' offsets: one shift, or a shift and a stretch). A subtitle is replaced or re-timed only when the new one passed both checks; `none_fits`, `unsure` and `unheard` change nothing. The choice is kept as the torrent's (`checked-<file>-<tag>.vtt`) or the title's (`checked-<tag>.vtt`, with `replaces` naming the provider whose own English track it stands in for) chosen subtitle and is never synced again. Tests inject the cutter and the transcriber.
   - The next episode is fetched while one plays (`ahead.ts`, fed by the position route through `DirectStreamService.watched`): a cloud play into the stream cache (`auto`), a torrent play from a torrent. The episode on screen comes first: a download fetched ahead gives way to every other, is `gentle` while the play still streams, and stops when the player reports stalls. A film fetches nothing; `NOTESD_STREAM_AHEAD=off` or a service built without `ahead` (every test's default) starts nothing.
-  - Downloads (`src/directStream/downloads/`): `StreamDownloads` queues what the owner asked for (`POST /api/stream/downloads`, `direct_stream_cache` with `provider: "torrent"`), one row per film or episode in `stream_downloads`, whose only writer is `DownloadsRepo` (`downloads/repo.ts`). Nothing starts unasked; a season is its aired episodes not whole here (`requestSeason`). The order with no source named is pure (`plan.ts`): a 1080p torrent with live seeders (`PREFERRED_TORRENT_HEIGHT`), the cloud cache at `max_height` 1080 as the owner's (never `auto`), a torrent below 1080p; a named kind is that kind only. The order is the same on every network: on SSID `Employee` (an injected SSID reader, `NOTESD_STREAM_DOWNLOAD_SSID` in tests and throwaway daemons) a torrent step that found no peer at all with WARP off gets one round through WARP (`downloads/warp.ts`, `WarpRounds`), which holds the stream service's one `WarpHolds` through `DirectStreamService.warpForDownloads()` and never reaches the switch's `set`; the hold is let go when the download is done, paused, failed or cancelled, and `no_peers_here` means no peer even through WARP. A torrent download goes through `TorrentSource.fetchKept`: resolved as a play is (the audio check before the bulk of the file; a dub skipped), the subtitle chain and the remux run to their end, the torrent held until the files are whole and then let go, its rows marked by `TorrentsRepo.setKept`; `pruneNow` and `keepBudget` pass a kept torrent over. One torrent download at a time; while a torrent session plays it lets go of its swarm (row `paused`) and is opened again by its info hash after. A season with a pack is one `SeasonPackJob` (`season.ts`): one swarm, a row and a kept torrent row per episode. A restart carries on queued, running and paused rows (`StreamDownloads.start`). `NOTESD_STREAM_DOWNLOADS=off` starts nothing. Tests inject the swarm, the cache, the clock and the SSID.
+  - Downloads (`src/directStream/downloads/`): `StreamDownloads` queues what the owner asked for (`POST /api/stream/downloads`, `direct_stream_cache` with `provider: "torrent"`), one row per film or episode in `stream_downloads`, whose only writer is `DownloadsRepo` (`downloads/repo.ts`). Nothing starts unasked; a season is its aired episodes not whole here (`requestSeason`). The order with no source named is pure (`plan.ts`): a 1080p torrent with live seeders (`PREFERRED_TORRENT_HEIGHT`), the cloud cache at `max_height` 1080 as the owner's (never `auto`), a torrent below 1080p; a named kind is that kind only. A new download whose order starts with the 1080p torrents first opens the 1080p torrent this host already holds part of for that film or episode (`carriedOn` in `service.ts`, `partOnDisk`), by its info hash, with no index asked; when it gives nothing the planned order goes on. The order is the same on every network: on SSID `Employee` (an injected SSID reader, `NOTESD_STREAM_DOWNLOAD_SSID` in tests and throwaway daemons) a torrent step that found no peer at all with WARP off gets one round through WARP (`downloads/warp.ts`, `WarpRounds`), which holds the stream service's one `WarpHolds` through `DirectStreamService.warpForDownloads()` and never reaches the switch's `set`; the hold is let go when the download is done, paused, failed or cancelled, and `no_peers_here` means no peer through WARP either, or WARP could not be used. A torrent download goes through `TorrentSource.fetchKept`: resolved as a play is (the audio check before the bulk of the file; a dub skipped), the subtitle chain and the remux run to their end, the torrent held until the files are whole and then let go, its rows marked by `TorrentsRepo.setKept`; `pruneNow` and `keepBudget` pass a kept torrent over. One torrent download at a time; while a torrent session plays it lets go of its swarm (row `paused`) and is opened again by its info hash after. A season with a pack is one `SeasonPackJob` (`season.ts`): one swarm, a row and a kept torrent row per episode. A restart carries on queued, running and paused rows (`StreamDownloads.start`). `NOTESD_STREAM_DOWNLOADS=off` starts nothing. Tests inject the swarm, the cache, the clock and the SSID.
   - Stories (`src/movies/webStory.ts`, `src/movies/story.ts`): `WebStoryWriter` is Claude with WebSearch as its only tool (`tools` and `allowedTools`), no MCP, a turn cap and a timeout; `parseWebStory` keeps only the sections of episodes the season has and reads an unparseable answer as `story_failed`. An episode no source covers is stored `found: false` with no text, never filled in. `MovieStories.writeSeason` never reads a subtitle; an episode's `write` reads its dialogue only when the web writer answered `found: false`. Every story is kept by `MoviesRepo.saveStory` in `movie_stories` and read back without a model. Tests inject the writer.
   - What played last time plays first: `movie_title_channels` (written by `MoviesRepo` only, per title and host, one row for all of a series' episodes) keeps the channel a title last really played through (`cloud` + provider, `torrent`, `site` + the title's page there) and when every cloud provider, and every torrent, last found nothing. It is written on success only where the play is known to run: the player page's first position report (`MovieStreams.recordPosition`) or a site's player running (`recordSitePlay`); never at resolve time. A play with no provider named asks it first (`DirectStreamService.sessionFor`: the remembered provider alone, then the others without it; the torrents first after a torrent, or for a never-played title whose cloud search failed within `CLOUD_FAILURE_KEEP_MS`); a remembered `site` channel counts as nothing remembered there. A site is replayed only after the direct path fails (below). A named provider or a codename always bypasses it; a named kind (`cloud`, `torrent`) goes first to what last played through that kind, kept per method in `movie_title_methods` (written by `recordChannel` in the same transaction): the same torrent for the same film or episode (`torrentAgain`), the same cloud provider first (`cloudAgain`). A remembered provider's failure never marks the title stale (it goes through `runResolve`, not `resolveSource`). A failure is dated and shown, and never blocks a play.
   - A play is in flight from the ask until its page reports (`DirectStreamService.begin`, `starting()`): one per title and named provider, a second ask joins it. Anything that answers a caller with a time limit goes through `playWithin` (`direct_stream_play` answers `pending` after `PLAY_ANSWER_MS`, under the MCP client's 60 s) and never cuts the play short; a play that starts nothing logs every attempt.
@@ -3033,7 +3080,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - RuTracker (`sites/rutracker.mjs`, at `rutracker.net`: this provider blocks `.org`) is the third fallback site. Its Cloudflare check and its login are the owner's to clear by hand (`cli.mjs rutracker gate`); a script never types a login. Not logged in is `login_required`, an index `bot_check`.
   - `/update-cloud-source <magnet>` (`direct_stream_update_source`'s `magnet` → `TorrentSource.learnMagnet`) reads the index a magnet's own trackers name (`KNOWN_ORIGINS` in `torrent/origins.ts`), and keeps its public UDP trackers that answer in the tracker book (`<torrent dir>/trackers.json`), added to every torrent opened and every scrape. It joins no swarm. A new index gets its line in `KNOWN_ORIGINS`, a site module and `TORRENT_SITES` together.
   - Public tracker lists (`torrent/trackerLists.ts`, `NOTESD_TORRENT_TRACKER_LISTS`, needs discovery): a minute after start and once a day, ngosang `trackers_best` and newtrackon `stable` are read and each new UDP tracker gets a BEP 15 connect only (`udpConnector` in `find/scrape.ts`: no info hash, no announce); up to 20 that answer go into `<torrent dir>/tracker-lists.json`, added after the candidate's and the book's trackers to every open (`trackersOf`) and every scrape (the last `SCRAPE_LIST_SLOTS` of `SCRAPE_MAX_TRACKERS`, `scrapeTrackerOrder`). A refresh that reads nothing or hears nothing keeps the previous file; it never runs in a play's path. `buildTrackerLists` is the one place the switches are read; tests inject the fetch, the socket and the clock, and `verify.sh` pins it off.
-  - ext.to (a torrent index via the streaming Chrome, `claude/streaming/torrent/sites/ext.mjs`) sits behind a Cloudflare Turnstile that cannot complete in a background tab, so an automated search answers `bot_check`. The owner clears it by hand: `cli.mjs ext gate` foregrounds ext's tab (`tab.ps1 -Activate`), the owner solves the widget, and the `cf_clearance` cookie the `notesd-stream-chrome` profile keeps lets later background searches through. Never forge the challenge token, spoof a fingerprint or click the widget for the owner — the human solves it in their own browser (same rule as the streaming sites: "never a disguised client to get past a site's bot check").
+  - ext.to (a torrent index via the streaming Chrome, `claude/streaming/torrent/sites/ext.mjs`) sits behind a Cloudflare Turnstile that cannot complete in a background tab, so an automated search answers `bot_check`. The owner clears it by hand: `cli.mjs ext gate` foregrounds ext's tab (`tab.ps1 -Activate`), the owner solves the widget, and the `cf_clearance` cookie the `notesd-stream-chrome` profile keeps lets later background searches through.
   - `/update-cloud-source`'s frame reader has the same gate: a site whose fresh navigation re-triggers its Cloudflare challenge every time is read instead from a tab the owner already solved by hand (`claude/streaming/direct/cli.mjs gate <site>`, reusing `torrent/tab.ps1` and `torrent/browser.mjs` — origin-agnostic despite living under `torrent/`). `templates --from-tab` (or `direct_stream_update_source`'s `from_tab: true`) then reads that SAME tab's current `<iframe>` addresses with a JS expression (`readFrameTemplatesFromTab`, `claude/streaming/direct/frames.mjs`), never a new navigation — so it sees only the top page's own frames, not one nested inside another cross-origin frame, which the sniffer's fresh-navigation path still sees when the site has no challenge. `no_tab`: no gated tab answered; gate it again.
   - The torrent candidates of a title (`TorrentSource.listCandidates`, `torrent/candidates.ts`, `GET /api/stream/torrents`, `direct_stream_torrents`) join no swarm: the indexes' answer kept `CANDIDATE_LIST_TTL_MS` per film or episode (a play's own included), the trackers scraped, this host's `stream_torrents` rows (`TorrentStreams.downloadsOf`), the pasted magnets and the failure reasons this run kept. The owner's blacklist is per info hash in `stream_torrent_marks` (`TorrentMarksRepo` only); `leftOutByMarks` keeps a blacklisted torrent out of every ask, and `DirectStreamService.blacklistTorrent` clears what titles remember of it through `MoviesRepo.forgetTorrent` (the `forgetTorrent` hook) and moves a play on it (`pendingMove`).
   - A magnet the owner pasted plays that exact torrent with no index asked: `direct_stream_play`'s `magnet` arg → `DirectStreamService.magnetSession` → `TorrentSource.playMagnet`, which builds one candidate with `candidateFromMagnet` (info hash + `tr=` trackers + `dn` name) and runs it through the same open/probe/remux path. The owner still names the title (ref, poster, resume, original-language check); the original-language rule still refuses a dub or a non-video torrent (an OST). Only a pasted magnet is ever played — nothing is built or guessed.
@@ -3055,7 +3102,16 @@ rule it states; the few that must never change are also in the repository's `CLA
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
 | `claude/streaming/warp.mjs`, `src/streaming/warp.ts`, `src/directStream/torrentWarp.ts`, `src/mcp/warpTool.ts` | Cloudflare WARP: the switch (`node warp.mjs status\|on\|off`, the SSID from `netsh`), the daemon's side of it, a torrent play that found no peer on the office network, the `warp` tool |
-| `src/streaming/sitePlays.ts`, `src/http/sitePlayApi.ts` | A site's play kept with its title (`recordSitePlay`), a title TMDB does not list (`siteTitleKeeper`), a play sent back to its site (`replayOnSite`); the routes the command and the Stream side call |
+| `src/streaming/sitePlays.ts`, `src/streaming/fallback.ts`, `src/http/sitePlayApi.ts` | A site's play kept with its title (`recordSitePlay`), a title TMDB does not list (`siteTitleKeeper`), a title played on a named site (`playOnSite`: its remembered page first, else the site's own search); the sites as the last resort of a play with no source named (`siteFallback`, `FILM_SITE_ORDER`, `EPISODE_SITE_ORDER`); the routes the command and the Stream side call |
+| `src/directStream/torrent/source.ts` | `TorrentSource`: a torrent play from the finder's candidates to a session, a kept download (`fetchKept`), a season pack (`fetchPack`) |
+| `src/directStream/torrent/find/` | The torrent finder: one module per index, the indexes asked side by side and their health (`find.ts`), release names (`release.ts`), the ranking and its exclusions (`rank.ts`, `titleSearch.ts`, `dubGroups.ts`), a pasted magnet as a candidate (`candidate.ts`) |
+| `src/directStream/canary.ts` | The daily canary |
+| `src/directStream/trending/` | The Trending list (see [movies.md](movies.md#trending-on-torrents)) |
+| `src/directStream/updateSource.ts`, `claude/streaming/direct/known-titles.json`, `claude/skills/update-cloud-source/` | `/update-cloud-source`: the probe of each new provider against known titles, and the skill |
+| `src/movies/streams.ts`, `src/movies/streamLive.ts` | `MovieStreams`: stream plays from the position reports, verified and stale sources, how a title last played; the stream on screen, in memory |
+| `src/directStream/cacheShelf.ts`, `src/directStream/torrent/usage.ts`, `src/http/streamDiskApi.ts`, `src/mcp/streamDiskTool.ts`, `web/src/components/movies/CachePage.tsx` | The Cache page and `stream_disk` (see [movies.md](movies.md#the-cache-page)) |
+| `web/src/stream/` | The player page: `StreamApp.tsx`, the play's state and recovery (`controller.ts`, `session.ts`), one engine per kind of stream (`hlsEngine.ts`, `dashEngine.ts`, `nativeEngine.ts`), subtitles (`subtitles.ts`), seek previews (`previews.ts`) |
+| `claude/skills/warp/` | The `/warp` skill |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
 | `src/directStream/torrent/find/scrape.ts`, `src/directStream/torrent/origins.ts`, `src/directStream/torrent/trackerLists.ts` | The tracker scrape before a play (seeders the trackers know) and the connect-only check; a magnet's index by its trackers (`KNOWN_ORIGINS`) and the tracker book; the public tracker lists, read and checked once a day |
 | `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x, ext.to and RuTracker for the torrent finder: `cli.mjs` (search, magnets, `gate`), one module per site, `tab.ps1` (a tab in the background, or `-Activate` to the front so the owner solves ext's Cloudflare gate); the finder's index per site |

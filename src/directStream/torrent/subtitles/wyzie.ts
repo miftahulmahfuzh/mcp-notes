@@ -11,7 +11,7 @@ import { vttFromBytes } from './disk.js';
  * `{id, url, format, language, isHearingImpaired, release, releases, fileName, origin,
  * downloadCount, ai}` with direct SubRip addresses. The first request asks Wyzie's default source;
  * only when that lists no English SubRip file, a second asks `source=all`. The `release=` filter is
- * slow and loose, so the list is ranked here. Every request is a plain one that says it is notesd.
+ * slow and loose, so the list is ranked here.
  *
  * The key travels in the search address and a `tok` in every download address: neither address is
  * ever logged, thrown or kept. Failures name the step and the status only.

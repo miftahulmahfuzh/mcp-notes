@@ -59,8 +59,7 @@ const answer = (outcome: IndexAnswer['outcome'], detail: string, candidates: Tor
 
 /**
  * A failure the script printed. A bot check is its own outcome, and so is a site that wants the owner logged in
- * (`login_required`): both are cleared by hand with the site's `gate` command, never counted against the index
- * and never worked around. Anything else (no_chrome too) is an error.
+ * (`login_required`): both are cleared by hand with the site's `gate` command and never counted against the index. Anything else (no_chrome too) is an error.
  */
 function failed(value: unknown, step: string): IndexAnswer | null {
   const parsed = failedSchema.safeParse(value)

@@ -411,7 +411,8 @@ characters (the first 18, with an icon for the rest).
   page, on each season's row and on each episode row puts the film, the season's aired episodes or
   the episode on this machine to watch later: a 1080p torrent first, else a cloud source at 1080p
   or lower, else a smaller torrent (on the office network a torrent that reaches no peer is asked
-  once more through Cloudflare WARP before the cloud). A series has no button at the
+  once more through Cloudflare WARP before the cloud). A 1080p torrent this machine already holds
+  part of comes before all of them. A series has no button at the
   top: its seasons carry it. The caret beside the icon opens "Choose how to download <name>": Best
   torrent (1080p), Cloud, or Pick a torrent… from [every torrent of it](#the-torrents-of-a-title).
   While it is queued or downloading a thin bar under the icon fills and its tooltip says how far;
@@ -631,9 +632,11 @@ last episode once more, and the cross takes it off the list.
 
 - **Play** asks the daemon to resolve the title and open the player full screen in the streaming
   Chrome, with no further click; the page says "opening in the streaming Chrome". A title last
-  played on a streaming site plays there instead (the button says "on Dramacool, where it played
-  last time"), and one last played from a torrent goes to the torrents first. When no provider
-  answers, the source is marked stale, the page says "no provider could stream <title> now; it
+  played from a torrent goes to the torrents first. A title last played on a streaming site still
+  asks the cloud providers and the torrents first (the button says "on Dramacool, where it played
+  last time"); the site, at the page it played from, is asked only when those found nothing, and
+  then the other sites ([streaming.md](streaming.md#what-played-last-time-plays-first)). When
+  nothing at all can play it, the source is marked stale, the page says "no provider could stream <title> now; it
   leaves the Stream grid", and the title is gone from the grid on the refresh that follows.
 - **A file on this machine wins.** When a title has both a file here and a verified stream, Play
   is still the VLC Play or Resume, and a second icon beside it streams instead. The same rule
@@ -1240,7 +1243,7 @@ at all.
 | `NOTESD_DIRECT_STREAM=off` | `GET /api/movies/stream` answers `{enabled: false, reason: "direct_stream_off", titles: []}`; the Stream side says how to turn it on and its stream buttons are disabled; `POST /api/stream/play` answers 503 `direct_stream_off`. |
 | `NOTESD_STREAM_DOWNLOADS=off` | `POST /api/stream/downloads` answers 503 `downloads_off`; the Download buttons still show, and a click says downloads are off on this daemon. |
 | `NOTESD_TRENDING=off`, or torrents, direct streaming, movies or TMDB off | `GET /api/movies/trending` answers `{enabled: false, reason, titles: []}` and the section says so; no index, TMDB or swarm is asked. |
-| No provider streams a title when Play is pressed | `POST /api/stream/play` answers 502 `no_source` with each provider's outcome; the source is marked stale and the title leaves the Stream grid, unless it is on the `interested` list or was last played here from a torrent or a site. |
+| No cloud provider, torrent or streaming site can play a title when Play is pressed | `POST /api/stream/play` answers 502 `no_source` with each attempt's outcome (the sites are asked last, and only when no source was named); the source is marked stale and the title leaves the Stream grid, unless it is on the `interested` list or was last played here from a torrent or a site. |
 | No `NOTESD_MOVIES_ROOTS` | Nothing is scanned and the health log is off. The page, tools and playback of known files still work. An empty library says which setting to add. |
 | No TMDB credentials | Files are registered, all unmatched `no_tmdb_credentials`. Assign answers 503 `tmdb_off` for a title not stored yet. `movies_person` answers `tmdb_unavailable`. |
 | TMDB down | Files stay `pending` and retry every pass. Assign and TMDB search answer 502 `tmdb_error`; `movies_person` answers `tmdb_error`. |

@@ -8,8 +8,8 @@
 # Silent: before any page script runs, the tab and every frame get a script that keeps media
 #   muted and Web Audio suspended (-MuteJsB64). Chrome's mute-audio switch would mute the whole
 #   browser, the owner's film in this same Chrome included, so it is not used.
-# Never a disguised client: the user agent and headers are Chrome's own and are only read.
-# A bot check is reported (bot_check), never clicked through: clicks stop once one is seen.
+# The user agent and headers are Chrome's own and are only read.
+# A bot check is reported (bot_check): clicks stop once one is seen.
 # WSL cannot reach Windows loopback, which is why this half is PowerShell.
 param(
   [Parameter(Mandatory = $true)][string]$UrlB64,

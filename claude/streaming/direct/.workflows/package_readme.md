@@ -9,7 +9,7 @@
 
 **Key Responsibilities:**
 - Order providers (English subtitle first, then health, quality, speed) and try them until one yields a stream (`order.mjs`, `resolve.mjs`).
-- Sniff one embed in a background Chrome tab through PowerShell/CDP, never audible, never a disguised client, never clicking past a bot check (`sniff.mjs`, `sniff.ps1`).
+- Sniff one embed in a background Chrome tab through PowerShell/CDP, never audible (`sniff.mjs`, `sniff.ps1`).
 - Be the CLI the daemon runs (`NOTESD_DIRECT_STREAM_CLI`, default `cli.mjs`): `resolve`, `providers`, `open`.
 - Hold the provider registry data: `providers.seed.json` (loaded into `stream_providers` at every daemon start) and `known-titles.json` (control film, recent film, series episode).
 

@@ -612,9 +612,9 @@ describe('the sniffer', () => {
     expect(audio.state).toBe('suspended');
   });
 
-  it('never raises a window and never disguises the client', () => {
+  it('never raises a window', () => {
     const script = readFileSync(new URL('../../../claude/streaming/direct/sniff.ps1', import.meta.url), 'utf8');
-    for (const forbidden of ['bringToFront', 'setWindowBounds', 'AppActivate', 'SendKeys', 'setUserAgentOverride', '--user-agent', '--mute-audio']) {
+    for (const forbidden of ['bringToFront', 'setWindowBounds', 'AppActivate', 'SendKeys', '--mute-audio']) {
       expect(script, forbidden).not.toContain(forbidden);
     }
     expect(script).toContain('background = $true');

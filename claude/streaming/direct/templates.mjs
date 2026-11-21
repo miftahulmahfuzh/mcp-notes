@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFrameTemplates, readFrameTemplatesFromTab } from './frames.mjs';
 
-/** Sent as is: this is a plain request, not a browser, and it does not pretend to be one. */
+/** The User-Agent of the plain requests that read a site's scripts. */
 export const USER_AGENT = 'notesd-update-cloud-source (plain request; reads public scripts)';
 
 export const LIMITS = Object.freeze({

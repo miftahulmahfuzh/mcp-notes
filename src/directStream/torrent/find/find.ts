@@ -13,7 +13,7 @@ import type { FetchLike, FoundCandidates, IndexAnswer, IndexAttempt, IndexContex
 /**
  * Asks the JSON torrent indexes for a film or one episode by IMDb id and answers ranked candidates
  * (TORRENT_STREAM_SOURCE_PLAN phase 2). Reads no settings: phase 3 maps them onto FindOptions.
- * Every request says it is notesd; a bot check is the outcome `bot_check`, never worked around.
+ * Every index request carries notesd's User-Agent; a bot check is the outcome `bot_check`.
  */
 
 /** Sent as the User-Agent of every index request; an index cannot replace it. */
@@ -204,7 +204,7 @@ async function askOne(index: TorrentIndex, query: TorrentQuery, run: AskSettings
     fetch: (url, init) => {
       const headers = new Headers(init?.headers);
       if (!headers.has('accept')) headers.set('accept', 'application/json');
-      // Set last: whatever headers an index passes, every request says it is notesd.
+      // Set last: whatever headers an index passes, the User-Agent is notesd's.
       headers.set('user-agent', run.userAgent);
       return run.fetch(url, {
         ...(init?.method === undefined ? {} : { method: init.method }),

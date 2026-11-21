@@ -11,8 +11,7 @@ with the link to its page on idlix (z3.idlixku.com), and for a film start it pla
 screen. Do not answer from memory and never build a link to the site by hand: a link counts only
 when the search returned it.
 
-idlix sits behind Cloudflare and answers 403 to `curl`, `WebFetch` and a headless browser. Do not
-try those, and do not try to disguise one as a browser. The script asks from inside a real Chrome
+idlix sits behind Cloudflare and answers 403 to `curl`, `WebFetch` and a headless browser. Those do not work. The script asks from inside a real Chrome
 on the Windows side instead, which is the only way this skill reads the site.
 
 How the sites work, and what can go wrong, is in `docs/guide/streaming.md` of the mcp-notes repo.

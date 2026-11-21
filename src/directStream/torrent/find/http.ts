@@ -11,7 +11,7 @@ export function isBotCheck(status: number, headers: Headers, body: string): bool
   return page && CHALLENGE.test(body);
 }
 
-/** An index's answer as JSON, or why not: a bot check page is `bot_check` (never worked around), any other failure `error`. */
+/** An index's answer as JSON, or why not: a bot check page is `bot_check`, any other failure `error`. */
 async function readIndexJson(res: Response): Promise<JsonAnswer> {
   const body = await res.text();
   if (isBotCheck(res.status, res.headers, body)) return { ok: false, outcome: 'bot_check', detail: `HTTP ${res.status}: a bot check page` };

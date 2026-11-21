@@ -36,7 +36,7 @@ three ways, plus background jobs.
 | `src/main.ts` | Entry point: `loadConfig()`, `startDaemon()`, and a shutdown on `SIGINT` / `SIGTERM` that is forced after 10 s. |
 | `src/config.ts` | Builds `Config` from `.env.local` under the process environment (the environment wins). Every bad value throws `ConfigError` here, so nothing downstream re-validates. The `DEFAULT_*_CONFIG` literals have sessions, the adversary, movies and direct streaming off, so a test that builds a `Config` by hand starts none of them. |
 | `src/daemon.ts` | `startDaemon`: data dirs, embedders, `createDb`, `NotesService`, `ChatService`, the adversary, movies, player and health monitor, direct streaming (each null when off; direct streaming loads the provider seed), `createApp`, listen on loopback, then `startBackground`. Returns `stop()`, which closes them in the reverse order. |
-| `src/deps.ts` | `AppDeps`: what `startDaemon` hands to every router and job (`config`, `db`, `events`, `service`, `embedder`, `imageEmbedder`, `chat`, `adversary`, `movies`, `moviesPlayer`, `moviesHealth`, `sessionEvents`, `directStream`, `streamCanary`). A subsystem that is off is `null` there, and its routes answer 503. |
+| `src/deps.ts` | `AppDeps`: what `startDaemon` hands to every router and job (`config`, `db`, `events`, `service`, `embedder`, `imageEmbedder`, `chat`, `adversary`, `movies`, `moviesPlayer`, `moviesHealth`, `sessionEvents`, and the streaming parts, `streaming`, `warp`, `directStream`, `streamCache`, `torrents`, `streamDownloads`, `cacheShelf`, `streamLive`, `streamPreviews`, `streamCanary`, `trending`, `trackerLists`, `streamEvidence` and `subtitleCheck` among them). A subsystem that is off is `null` there, and its routes answer 503. |
 | `src/http/app.ts` | `createApp(deps, options)`: mounts `/health`, `/mcp` and each router. `options` are the test seams (chat backend, reveal, sessions, resumer, Seer source). `mcpToolDeps` builds what the MCP tools get from the same `deps`. |
 | `src/background.ts` | `startBackground(deps)`: starts the jobs below and returns one stop function. |
 
@@ -71,6 +71,7 @@ The other stores follow the same pattern, one writer each:
 | `stream_torrents` | `TorrentsRepo` (`src/directStream/torrent/repo.ts`) |
 | `stream_torrent_marks` | `TorrentMarksRepo` (`src/directStream/torrent/marks.ts`) |
 | `stream_downloads` | `DownloadsRepo` (`src/directStream/downloads/repo.ts`) |
+| `stream_trending` | `TrendingRepo` (`src/directStream/trending/repo.ts`) |
 | `adversary_reviews` | `src/adversary/reviewsRepo.ts` |
 | Seer's own database | `src/adversary/seerWriter.ts`, behind a table allow-list. The connector guard stays read-only |
 | daily-words | `src/dword/writer.ts`, additions only |
@@ -93,8 +94,8 @@ next start (`npm run db:migrate` applies it by hand).
 | Chat | `chat_threads`, `chat_messages`, `chat_message_revisions`, `chat_message_attachments`, `chat_images` | Threads from the wall and from `/n` captures; soft-deleted messages; pasted images. |
 | Sessions | `cc_sessions`, `cc_subagent_transcripts`, `cc_session_prompts`, `cc_session_prompt_images`, `cc_session_replies`, `cc_session_reply_embeddings`, `cc_session_embeddings`, `cc_pending_spawns`, `note_session_links` | What ingest read from Claude Code's transcripts and hooks: byte offsets, tokens, commits, prompts, redacted replies, summaries, fork and context evidence, and the links between notes and sessions. |
 | Seer Adversarial | `adversary_reviews` | The attempt and usage log. Verdicts, `paused` marks and leases live in Seer's database. |
-| Movies | `movie_titles`, `movie_episodes`, `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits`, `movie_files`, `movie_plays`, `movie_ids`, `movie_stream_sources`, `movie_stories` | Titles are shared and never deleted with their files; files are per host and soft-deleted; play events are never deleted (a stream play names its title instead of a file). Stream sources are per host: what each machine verified or found stale. Watch state is derived at read time, never stored. Stories (film, episode, season) are kept in `movie_stories`, one row each, with their web sources. |
-| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_caches`, `stream_torrents`, `stream_torrent_marks`, `stream_downloads` | The provider registry is loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. A torrent download is one per host and info hash: the title it was opened for, its chosen files, its state; the files only on that host. A torrent's marks are per info hash, whatever the title: the languages its file tags, the language heard in it, and the owner's blacklist. A download is one film or episode the owner asked for on one host (a season click makes one per episode under one batch); it ends on a torrent download, kept by the owner (`stream_torrents.kept_at`: both prunes skip it), or on the owner's stream cache. |
+| Movies | `movie_titles`, `movie_episodes`, `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits`, `movie_files`, `movie_plays`, `movie_ids`, `movie_stream_sources`, `movie_title_channels`, `movie_title_methods`, `movie_site_titles`, `movie_dialogues`, `movie_stories`, `movie_genre_guides`, `movie_episode_marks` | Titles are shared and never deleted with their files; files are per host and soft-deleted; play events are never deleted (a stream play names its title instead of a file). Stream sources are per host: what each machine verified or found stale. Watch state is derived at read time, never stored. Stories (film, episode, season) are kept in `movie_stories`, one row each, with their web sources. |
+| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_caches`, `stream_torrents`, `stream_torrent_marks`, `stream_downloads`, `stream_trending` | The provider registry is loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. A torrent download is one per host and info hash: the title it was opened for, its chosen files, its state; the files only on that host. A torrent's marks are per info hash, whatever the title: the languages its file tags, the language heard in it, and the owner's blacklist. A download is one film or episode the owner asked for on one host (a season click makes one per episode under one batch); it ends on a torrent download, kept by the owner (`stream_torrents.kept_at`: both prunes skip it), or on the owner's stream cache. |
 | Settings | `app_settings` | Key and JSON value: the selected project, the adversary toggle, the nightly dispatch state. |
 
 Dropping the session tables loses summaries already paid for and the rows of transcripts Claude
@@ -286,6 +287,9 @@ it is on.
 | VLC play tracking and health log | Movies on | Follows the VLC notesd started; samples every `vlc.exe` into the health log. | `src/movies/player.ts`, `src/movies/vlc/` |
 | Stream canary | `NOTESD_STREAM_CANARY` on (the default), with direct streaming | A few minutes after start and once a day, while nothing plays: every cloud provider asked for one known film out of sight, for its health only. | `src/directStream/canary.ts` |
 | Stream cache | Direct streaming on | Downloads the films and episodes asked for, one at a time; carries unfinished ones on after a restart. | `src/directStream/cache/` |
+| Trending list | `NOTESD_TRENDING` on | Two minutes after start, then once a day: the torrent indexes' top lists into `stream_trending`. No swarm is joined. | `src/directStream/trending/job.ts` |
+| Public tracker lists | Torrents and discovery on | A minute after start, then once a day: the public tracker lists read, up to 20 trackers kept. | `src/directStream/torrent/trackerLists.ts` |
+| Stream downloads | `NOTESD_STREAM_DOWNLOADS` on | Carries on the queued, running and paused downloads the owner asked for. | `src/directStream/downloads/service.ts` |
 | Egress summary | Meter on | One log line an hour. | `src/db/meter.ts` |
 
 A job never blocks a save or a request: it works from rows already committed.
@@ -327,13 +331,14 @@ src/
   sessions/     ingest, forks, links, summaries, search, context window, resume, handoff
   adversary/    the Seer Adversarial reviewer and its read model
   movies/       scan, parse, match, TMDB, state, player, vlc/
-  directStream/ provider registry, resolves, sessions, the stream pass-through and its rewriting
+  directStream/ provider registry, resolves, sessions, the pass-through, the stream cache, torrents, downloads, seek previews, trending
+  streaming/    running the streaming sites' command, site plays, the site fallback, the WARP switch
   mcp/          the MCP server, its instructions and every tool
   http/         one router per area, the guards, the static fallback
   cli/          embed:backfill and embed:images:backfill
 web/            the Vite + React app (web/src) and the full-screen page
 drizzle/        SQL migrations
-claude/         skills/ (n, migrate, v, j, redo, check-seer-adversarial-nightly, trace-vlc-bug, pahe, idlix, lk21, flicksy, dramacool, create-streaming-skill, direct-stream, update-cloud-source, report-stream-bug, sync-subtitle), streaming/ (the streaming sites), hooks/, mods/note-links
+claude/         skills/ (n, migrate, v, j, redo, check-seer-adversarial-nightly, trace-vlc-bug, pahe, idlix, lk21, flicksy, dramacool, create-streaming-skill, direct-stream, update-cloud-source, report-stream-bug, sync-subtitle, warp), streaming/ (the streaming sites), hooks/, mods/note-links
 deploy/         the systemd user unit template
 scripts/        install, uninstall, hook settings merge, test-int, windows/ keepalive, docs/ tooling
 tests/          unit/, integration/, live/, fixtures/, helpers/

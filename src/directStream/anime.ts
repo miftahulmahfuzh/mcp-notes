@@ -21,7 +21,7 @@ export const ANIME_MAP_TIMEOUT_MS = 8_000;
 export const ANIME_MAP_TTL_MS = 6 * 3_600_000;
 /** How long a failed request is remembered, so a provider outage does not slow every resolve. */
 export const ANIME_MAP_RETRY_MS = 5 * 60_000;
-/** Sent as is: a plain request that says what it is. */
+/** The User-Agent of the anime id lookup. */
 export const ANIME_MAP_USER_AGENT = 'notesd-direct-stream (plain request; anime id lookup)';
 
 /** What an anime embed is keyed by: the AniList id and the episode as AniList counts it (1 for a film). */

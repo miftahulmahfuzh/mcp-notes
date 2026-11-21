@@ -168,7 +168,7 @@ Call `direct_stream_update_source` with `magnet` set to the pasted link and noth
 Work in the mcp-notes checkout (`~/mcp-notes`). Read `docs/guide/streaming.md`, "When the indexes
 have nothing", first. Then, in one change:
 
-1. **Look at the site by hand first**, with plain requests that say they are notesd: its search
+1. **Look at the site by hand first**, with plain requests: its search
    address, a result row (name, release page, seeders, leechers, size) and where a release page
    carries its magnet. A site behind a Cloudflare check or a login is looked at only after the owner
    has opened its gate; never get past either.
@@ -187,8 +187,7 @@ have nothing", first. Then, in one change:
 5. **Rebuild and restart** with `scripts/install.sh --wait` (it waits while something plays), then
    call `direct_stream_update_source` with the same magnet again: `origin.supported` is now `true`.
 
-The rules of every site hold here too: only the streaming Chrome talks to a site, never a disguised
-client, never a forged token, and a bot check or a login is the owner's to clear by hand.
+A bot check or a login is cleared by the owner, by hand, in the streaming Chrome.
 
 When the site cannot be added (it is gone, it lists nothing by title, it needs something only the
 owner can give), say which index it is and why it was left out; its line in `KNOWN_ORIGINS` with
