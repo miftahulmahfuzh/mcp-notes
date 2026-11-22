@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { isAssDrawing } from './assDrawing.js';
+import { isAssDrawing, stripAssComments } from './assDrawing.js';
 
 /**
  * A growing subtitle: the cues of one track of one torrent, appended as they are made (the English
@@ -49,12 +49,12 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 
 /**
  * A cue worth keeping, its times to the millisecond and its line ends LF; null for one with no text or no length, and
- * for an ASS drawing (assDrawing.ts). A feed kept on disk is read through here too, so one written with drawings in it
- * is shown without them.
+ * for an ASS drawing. A brace block is never text (assDrawing.ts) and is taken out. A feed kept on disk is read through
+ * here too, so one written with drawings or brace blocks in it is shown without them.
  */
 export function cleanCue(cue: FeedCue): FeedCue | null {
-  const text = cue.text.replace(/\r\n?/g, '\n').trim();
-  if (text === '' || isAssDrawing(text) || !Number.isFinite(cue.start_s) || !Number.isFinite(cue.end_s)) return null;
+  const text = stripAssComments(cue.text.replace(/\r\n?/g, '\n'));
+  if (text.replace(/<[^>]*>/g, '').trim() === '' || isAssDrawing(text) || !Number.isFinite(cue.start_s) || !Number.isFinite(cue.end_s)) return null;
   const start = round3(Math.max(0, cue.start_s));
   const end = round3(cue.end_s);
   return end > start ? { start_s: start, end_s: end, text } : null;

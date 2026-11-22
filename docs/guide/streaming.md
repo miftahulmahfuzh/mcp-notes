@@ -2825,6 +2825,9 @@ subtitle service is asked. A typeset ASS track also draws shapes behind its tran
 (`{\p1}m 385.98 0 l 4.55 64.75 ...`, one event per frame), and ffmpeg's conversion keeps their
 coordinates as text: a cue that is only such a drawing is never shown (`assDrawing.ts`; a cue feed
 kept from an earlier play is read without them, and a converted `.ass` file is kept without them).
+The conversion also leaves in every brace block that does not start with a backslash, and in ASS
+nothing between braces is shown: a translator's note, and a release's honorifics switch
+(`{*}Mr. Ijichi{*Ijichi-san}, question.`). Those blocks are taken out of the text the same way.
 Picture tracks (PGS, VobSub, DVB) are never turned into text:
 the daemon log says `no English text subtitle track in <hash> (...)`, and the next tier, the
 subtitle service, is asked.
