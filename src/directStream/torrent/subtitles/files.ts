@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import type { CacheSubtitleView } from '../../cachePlay.js';
 import type { TorrentFileInfo } from '../types.js';
+import { stripAssDrawings } from './assDrawing.js';
 import type { SubtitleTier } from './chain.js';
 import { vttFromBytes, vttFromText, type SubtitleShelf } from './disk.js';
 
@@ -205,7 +206,7 @@ export function filesTier(deps: FilesTierDeps): SubtitleTier {
     if ((await stat(file)).size > SUBTITLE_FILE_MAX_BYTES) return null;
     if (/\.(ass|ssa)$/i.test(name)) {
       const converted = await deps.convertAss(file);
-      return converted === null ? null : vttFromText(converted);
+      return converted === null ? null : vttFromText(stripAssDrawings(converted));
     }
     return vttFromBytes(await readFile(file));
   };

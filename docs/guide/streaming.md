@@ -2821,7 +2821,11 @@ SubRip before ASS. A forced track (only the lines spoken in another language) is
 is the file's one English text track. A signs-and-songs track (its title says `Signs`, `Songs` or
 `Signs & Songs`, and not `Full` or `Dialogue`, as anime releases name them) is never used, not even
 alone: it holds the on-screen text and the lyrics, never the dialogue, so with no other track the
-subtitle service is asked. Picture tracks (PGS, VobSub, DVB) are never turned into text:
+subtitle service is asked. A typeset ASS track also draws shapes behind its translated signs
+(`{\p1}m 385.98 0 l 4.55 64.75 ...`, one event per frame), and ffmpeg's conversion keeps their
+coordinates as text: a cue that is only such a drawing is never shown (`assDrawing.ts`; a cue feed
+kept from an earlier play is read without them, and a converted `.ass` file is kept without them).
+Picture tracks (PGS, VobSub, DVB) are never turned into text:
 the daemon log says `no English text subtitle track in <hash> (...)`, and the next tier, the
 subtitle service, is asked.
 

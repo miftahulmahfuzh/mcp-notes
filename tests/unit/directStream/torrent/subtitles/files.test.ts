@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -107,6 +107,21 @@ describe('filesTier', () => {
     });
     expect(await tier.find(ctx([file(0, 'Film/Film.mp4'), file(1, 'Film/Film.eng.ass')], [1]))).toHaveLength(1);
     expect(seen).toEqual([ass]);
+  });
+
+  it('leaves the drawings of a typeset .ass file out of what it keeps', async () => {
+    const ass = path.join(dir, 'dl', 'Film.eng.ass');
+    await writeFile(ass, '[Script Info]\n');
+    const shelf = new SubtitleShelf(path.join(dir, 'torrents'));
+    const tier = filesTier({
+      torrents: { filePath: () => ass },
+      shelf,
+      convertAss: async () => 'WEBVTT\n\n00:01.000 --> 00:02.000\nm 0 0 l 100 0 100 20 0 20\n\n00:01.000 --> 00:02.000\nRoad Closed\n',
+    });
+    expect(await tier.find(ctx([file(0, 'Film/Film.mp4'), file(1, 'Film/Film.eng.ass')], [1]))).toHaveLength(1);
+    const kept = await readFile(shelf.file(HASH, 'file-1.vtt')!, 'utf8');
+    expect(kept).toContain('Road Closed');
+    expect(kept).not.toContain('m 0 0 l');
   });
 
   it('gives up after the bounded wait and answers nothing', async () => {
