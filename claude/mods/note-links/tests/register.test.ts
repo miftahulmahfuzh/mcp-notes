@@ -24,12 +24,14 @@ type World = { commands: string[]; runs: (readonly string[])[]; drawn: string[];
 /** The engine beneath the plugin: commands, host commands and the transcript's own drawing. */
 function worldOf(on: On, mcpGet: { exitCode: number; stdout: string } | 'missing'): World {
   const world: World = { commands: [], runs: [], drawn: [], fetched: [] }
-  // The daemon: only TS-T1 and TS-T2 exist.
+  // The daemon: only the sessions TS-T1 and TS-T2, the note T-ST1 and the movie id M-TST1 exist.
   on('http.fetch', ($, e) => {
     world.fetched.push(e.url)
     const ids = decodeURIComponent(e.url.split('ids=')[1] ?? '').split(',')
     const nodes = ids.filter(id => id === 'TS-T1' || id === 'TS-T2').map(node_id => ({ node_id, repo: 'r' }))
-    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ nodes }) } }
+    const notes = ids.filter(id => id === 'T-ST1')
+    const movies = ids.filter(id => id === 'M-TST1')
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ notes, nodes, movies }) } }
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
@@ -99,9 +101,17 @@ describe('redraw', () => {
     expect(world.drawn.at(-1)).toBe(
       '[TS-T1](http://localhost:7317/projects?node=TS-T1) spawned [TS-T2](http://localhost:7317/projects?node=TS-T2), not CI-CD.',
     )
-    expect(world.fetched).toEqual(['http://localhost:7317/api/sessions/known?ids=TS-T1%2CTS-T2%2CCI-CD'])
+    expect(world.fetched).toEqual(['http://localhost:7317/api/ids/known?ids=TS-T1%2CTS-T2%2CCI-CD'])
     await $.ui.render(MESSAGE('TS-T1 again'))
     expect(world.fetched.length).toBe(1)
+  })
+
+  test('links an id written as a code span when the daemon knows it, whatever its kind', async ($, on) => {
+    const world = worldOf(on, 'missing')
+    await $.ui.render(MESSAGE('Saved `T-ST1` from `TS-T1` about `M-TST1`; `T-ST9` and `M-TST9` are code.'))
+    expect(world.drawn.at(-1)).toBe(
+      'Saved [`T-ST1`](http://localhost:7317/?note=T-ST1) from [`TS-T1`](http://localhost:7317/projects?node=TS-T1) about [`M-TST1`](http://localhost:7317/movies/M-TST1); `T-ST9` and `M-TST9` are code.',
+    )
   })
 
   test('linkifyReplies off leaves replies alone', { options: { linkifyReplies: false } }, async ($, on) => {

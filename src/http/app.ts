@@ -39,6 +39,7 @@ import { streamDiskRoutes } from './streamDiskApi.js';
 import { streamReportRoutes } from './streamReportApi.js';
 import { streamTorrentCuesRoutes } from './streamTorrentCuesApi.js';
 import { streamTorrentRemuxRoutes } from './streamTorrentRemuxApi.js';
+import { knownIdsRoutes } from './knownIdsApi.js';
 import { sessionsApiRoutes } from './sessionsApi.js';
 import type { UnfinishedChecker } from '../sessions/unfinished.js';
 import { staticRoutes } from './static.js';
@@ -116,7 +117,8 @@ export function mcpToolDeps(
  * capabilities + reveal; note files add file and note reveal), captureRoutes (Claude Code `/n`
  * capture, loopback + X-Notes-Capture only), sessionHookRoutes (iteration 8 phase 5: SessionStart
  * and spawn hooks), sessionsApiRoutes (iteration 8 phase 7: projects, session graph, detail,
- * transcript, context, search, usage), sessionResumeRoutes (project-session-graph phase 9:
+ * transcript, context, search, usage), knownIdsRoutes (which note, node and movie ids exist),
+ * sessionResumeRoutes (project-session-graph phase 9:
  * resume/spawn into tmux, own Origin only), adversaryApiRoutes (seer-adversarial phase 5: the Seer
  * Adversarial read model, toggle and review-now), moviesApiRoutes and moviesPlayRoutes
  * (movies-library phases 4 and 5: library, user state, sync, playback), directStreamRoutes
@@ -147,6 +149,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', captureRoutes(deps));
   app.route('/', sessionHookRoutes(deps));
   app.route('/', sessionsApiRoutes(deps, { ...options.sessions, unfinished: options.unfinished }));
+  app.route('/', knownIdsRoutes(deps));
   app.route('/', debugApiRoutes(deps));
   app.route('/', sessionResumeRoutes(deps, { resumer: sessionResume }));
   app.route('/', adversaryApiRoutes(deps, { seer: options.adversarySeer }));

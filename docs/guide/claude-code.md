@@ -251,7 +251,7 @@ to `/projects?repo=REPO&node=A0-3G` and `/movies/M-23T4`.
 - It redraws Claude's replies so a note id written without a link becomes one. Only the drawing
   changes; the stored message and what the model reads stay as they were.
 - Session node ids become links to the project graph, but only ids the daemon confirms through
-  `GET /api/sessions/known`, because upper-case look-alikes (`CI-CD`) share the shape. With the
+  `GET /api/ids/known`, because upper-case look-alikes (`CI-CD`) share the shape. With the
   daemon down they stay plain.
 - Movie ids become links to the title's page, and a movie id Claude wrote as a note link is
   redrawn as the movie link.
@@ -260,7 +260,10 @@ to `/projects?repo=REPO&node=A0-3G` and `/movies/M-23T4`.
   `cmd.exe`, and prints the URL when none starts.
 
 Only the upper-case, dashed form standing alone is linked. Code blocks, code spans, existing
-links, URLs, paths, hashes, UUIDs and longer dashed words are left alone. An upper-case word that
+links, URLs, paths, hashes, UUIDs and longer dashed words are left alone, with one exception:
+Claude often writes an id as a code span, so a span that holds nothing but one id (`` `A-B32` ``,
+`` `BE-XU` ``, `` `M-23T4` ``) is linked, backticks kept, when the daemon confirms that id exists.
+The rule is the same for all three kinds, and a span with anything else in it stays code. An upper-case word that
 happens to have the shape (`X-RAY`) is linked too.
 
 `install.sh` does not turn the mod on, because Claude Code asks a person before it loads one.

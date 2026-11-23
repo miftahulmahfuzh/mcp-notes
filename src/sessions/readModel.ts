@@ -579,7 +579,7 @@ export type KnownNode = {
 };
 
 /** Which of up to KNOWN_MAX_IDS node ids exist (any case, dash optional). One indexed query; unknown and invalid ids are dropped. */
-export async function knownNodes(rd: SessionsReadDeps, rawIds: readonly string[]): Promise<KnownNode[]> {
+export async function knownNodes(rd: Pick<SessionsReadDeps, 'db'>, rawIds: readonly string[]): Promise<KnownNode[]> {
   const wanted = [...new Set(rawIds.slice(0, KNOWN_MAX_IDS).map(normalizeNodeId).filter((id): id is string => id !== null))];
   if (wanted.length === 0) return [];
   const res = await rd.db.execute<KnownNode>(sql`

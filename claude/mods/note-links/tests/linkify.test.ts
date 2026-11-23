@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { linkify, nodeCandidates, normalizeId, normalizeMovieId, normalizeNodeId, normalizeWallUrl, splitFences, wallFromMcpGet } from '../hooks/linkify'
+import { idCandidates, linkify, normalizeId, normalizeMovieId, normalizeNodeId, normalizeWallUrl, splitFences, wallFromMcpGet } from '../hooks/linkify'
 
 // Made-up ids only. No real note's id or body belongs in this file.
 const WALL = 'http://localhost:7317'
@@ -101,6 +101,37 @@ describe('linkify', () => {
   })
 })
 
+describe('an id as a whole code span', () => {
+  const M = (id: string) => `${WALL}/movies/${id}`
+  const known = { has: (id: string) => ['A-B32', '7-123', 'M-23T4', 'BE-XU'].includes(id) }
+
+  test('a known id of every kind is linked, backticks kept', () => {
+    expect(linkify('note `A-B32`, film `M-23T4`, session `BE-XU`', WALL, known)).toBe(
+      `note [\`A-B32\`](${WALL}/?note=A-B32), film [\`M-23T4\`](${M('M-23T4')}), session [\`BE-XU\`](${WALL}/projects?node=BE-XU)`,
+    )
+    expect(linkify('`` 7-123 ``', WALL, known)).toBe(`[\`\` 7-123 \`\`](${WALL}/?note=7-123)`)
+  })
+
+  test('idempotent', () => {
+    const once = linkify('`A-B32` and `M-23T4` and `BE-XU`', WALL, known)
+    expect(linkify(once, WALL, known)).toBe(once)
+  })
+
+  test('an id the daemon does not know stays code: a code token may share the shape', () => {
+    for (const s of ['`X-123`', '`M-0909`', '`CI-CD`']) expect(linkify(s, WALL, known)).toBe(s)
+  })
+
+  test('without a known set every code span is left alone', () => {
+    for (const s of ['`A-B32`', '`M-23T4`', '`BE-XU`']) expect(linkify(s, WALL)).toBe(s)
+  })
+
+  test('a span holding more than the id, lower case or a missing dash is left alone, even when known', () => {
+    for (const s of ['`get A-B32`', '`A-B32 M-23T4`', '`a-b32`', '`AB32`', '`m-23t4`', '`M23T4`', '`M-23T4.mkv`', '```\nA-B32\n```']) {
+      expect(linkify(s, WALL, known)).toBe(s)
+    }
+  })
+})
+
 describe('node ids', () => {
   const N = (id: string) => `[${id}](${WALL}/projects?node=${id})`
   const known = { has: (id: string) => id === 'BE-XU' || id === '8C-OJ' }
@@ -134,8 +165,12 @@ describe('node ids', () => {
     expect(linkify(once, WALL, known)).toBe(once)
   })
 
-  test('nodeCandidates lists what to ask about: whole, upper case, not all digits — a sole code span candidate included, a partial one not', () => {
-    expect(nodeCandidates('BE-XU, CI-CD, BE-XU, `ZZ-ZZ`, `get BE-XU`, 12-34, be-xu, AB-CDE, A-B32')).toEqual(['BE-XU', 'CI-CD', 'ZZ-ZZ'])
+  test('idCandidates lists what to ask about: whole, upper case, not all digits — a sole code span candidate included, a partial one not', () => {
+    expect(idCandidates('BE-XU, CI-CD, BE-XU, `ZZ-ZZ`, `get BE-XU`, 12-34, be-xu, AB-CDE, A-B32')).toEqual(['BE-XU', 'CI-CD', 'ZZ-ZZ'])
+  })
+
+  test('idCandidates asks about a note id or a movie id only when it is a whole code span', () => {
+    expect(idCandidates('A-B32, M-23T4, `X-123`, ` M-0T77 `, `get K-4M7`, `M-23T45`, `x-123`')).toEqual(['X-123', 'M-0T77'])
   })
 
   test('normalizeNodeId', () => {

@@ -11,15 +11,16 @@
  *
  * Session node ids (`BE-XU`: two characters, a dash, two characters, `src/sessions/ids.ts`) follow
  * the same boundary rules but are linked only when the caller says the id exists (upper-case words
- * such as CI-CD share the shape): `nodeCandidates` lists what to ask the daemon about, and
+ * such as CI-CD share the shape): `idCandidates` lists what to ask the daemon about, and
  * `linkify(markdown, wall, known)` links the known ones to `<wall>/projects?node=ID`.
  *
- * A node id that is the WHOLE content of an inline code span (`` `BE-XU` ``, trimmed) is the one
- * exception to "code is left alone": the model reaches for backticks on an id-shaped token on
- * reflex, and `known` already tells real ids apart from look-alikes, so the span is kept (its
- * backticks included) and wrapped in the link instead of left inert. A code span that merely
- * contains an id alongside other text (`` `get BE-XU` ``) is still left alone, as is any note id
- * or movie id in code — those have no existence check to protect against a false positive.
+ * An id of any kind (note, node, movie) that is the WHOLE content of an inline code span
+ * (`` `BE-XU` ``, `` `A-B32` ``, `` `M-23T4` ``, trimmed) is the one exception to "code is left
+ * alone": the model reaches for backticks on an id-shaped token on reflex, so the span is kept (its
+ * backticks included) and wrapped in the link instead of left inert. Shape is not enough inside
+ * code (`X-123` may be a real code token), so every kind is linked there only when `known` says
+ * the id exists; the three shapes never overlap, so one `known` answers for all of them. A code
+ * span that holds an id alongside other text (`` `get BE-XU` ``) is still left alone.
  *
  * Movie ids (`M-23T4`: `M-` and four characters, `src/movies/ids.ts`; a title, or one episode of a
  * series) are linked by shape alone to `<wall>/movies/ID`, where the wall opens the title's page,
@@ -197,8 +198,10 @@ export function splitFences(text: string): Segment[] {
   return out
 }
 
+type IdKind = 'note' | 'node' | 'movie'
+
 /** Which id kind starts at i, by shape and boundary; null for none. A movie id (6 characters) is tried first: its first five read as a note id. */
-function candidateAt(text: string, i: number): 'note' | 'node' | 'movie' | null {
+function candidateAt(text: string, i: number): IdKind | null {
   if (MOVIE_ID_PATTERN.test(text.slice(i, i + 6)) && isWhole(text, i, 6)) return 'movie'
   const word = text.slice(i, i + 5)
   const kind = ID_PATTERN.test(word) ? 'note' : NODE_ID_PATTERN.test(word) && HAS_LETTER.test(word) ? 'node' : null
@@ -232,17 +235,29 @@ function runAt(text: string, i: number, ch: string): number {
   return j - i
 }
 
+/** Which id kind a whole string is, by shape alone; null for none. The shapes never overlap. */
+function kindOf(word: string): IdKind | null {
+  if (MOVIE_ID_PATTERN.test(word)) return 'movie'
+  if (ID_PATTERN.test(word)) return 'note'
+  return NODE_ID_PATTERN.test(word) && HAS_LETTER.test(word) ? 'node' : null
+}
+
+/** Where an id of this kind opens on the wall. */
+function urlOf(wall: string, kind: IdKind, id: string): string {
+  return kind === 'movie' ? movieUrl(wall, id) : kind === 'note' ? noteUrl(wall, id) : nodeUrl(wall, id)
+}
+
 /**
- * A known node id when it is the whole (trimmed) content of the code span `text.slice(start, end)`
- * (backtick-delimited, `start` at the opening backtick, `end` just past the closing one) -
- * canonical shape only, so e.g. `be-xu` or `BEXU` inside the span still do not count. Null
- * otherwise, including when the shape matches but `nodes.has` says no.
+ * The link target of the code span `text.slice(start, end)` (backtick-delimited, `start` at the
+ * opening backtick, `end` just past the closing one) when its whole (trimmed) content is an id
+ * `known` says exists - canonical shape only, so `be-xu` or `BEXU` inside the span do not count.
+ * Null otherwise, including when the shape matches but `known.has` says no.
  */
-function nodeIdInCodeSpan(text: string, start: number, end: number, nodes: KnownNodes): string | null {
+function codeSpanTarget(text: string, start: number, end: number, wall: string, known: KnownIds): string | null {
   const n = runAt(text, start, '`')
   const inner = text.slice(start + n, end - n).trim()
-  if (!NODE_ID_PATTERN.test(inner) || !HAS_LETTER.test(inner)) return null
-  return nodes.has(inner) ? inner : null
+  const kind = kindOf(inner)
+  return kind !== null && known.has(inner) ? urlOf(wall, kind, inner) : null
 }
 
 /** End index (exclusive) of the inline code span opened by the backtick run at i, or -1. */
@@ -271,13 +286,16 @@ export function repairMovieLink(link: string): string {
   return `${m[1]}${m[2]}${movieUrl(m[3]!, m[4]!.toUpperCase())}${m[5]}${m[6] ?? ''}${m[7]}`
 }
 
-/** Which node ids count as existing. */
-export type KnownNodes = { has: (id: string) => boolean }
+/**
+ * Which ids exist, of any kind. Asked about every node id (a look-alike word shares the shape) and
+ * about a note id or movie id only when it is a whole code span; in prose those two link by shape.
+ */
+export type KnownIds = { has: (id: string) => boolean }
 
-const NO_NODES: KnownNodes = { has: () => false }
+const NO_IDS: KnownIds = { has: () => false }
 
 /** Linkify one stretch of markdown that holds no fenced code block. */
-function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
+function linkifyProse(text: string, wall: string, known: KnownIds): string {
   let out = ''
   let plainFrom = 0
   let i = 0
@@ -293,9 +311,9 @@ function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
         i += runAt(text, i, '`')
         continue
       }
-      const nodeId = nodeIdInCodeSpan(text, i, end, nodes)
-      if (nodeId !== null) {
-        out += `${text.slice(plainFrom, i)}[${text.slice(i, end)}](${nodeUrl(wall, nodeId)})`
+      const target = codeSpanTarget(text, i, end, wall, known)
+      if (target !== null) {
+        out += `${text.slice(plainFrom, i)}[${text.slice(i, end)}](${target})`
         plainFrom = end
       }
       i = end
@@ -344,7 +362,7 @@ function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
     }
     if (kind !== null) {
       const id = text.slice(i, i + 5)
-      if (kind === 'note' || nodes.has(id)) {
+      if (kind === 'note' || known.has(id)) {
         out += text.slice(plainFrom, i) + (kind === 'note' ? noteLink(wall, id) : `[${id}](${nodeUrl(wall, id)})`)
         i += 5
         plainFrom = i
@@ -358,19 +376,23 @@ function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
 
 /**
  * Every free-standing upper-case note id in `markdown` becomes `[ID](<wall>/?note=ID)`, every
- * free-standing node id in `nodes` becomes `[ID](<wall>/projects?node=ID)`, and every free-standing
- * movie id becomes `[ID](<wall>/movies/ID)`.
+ * free-standing node id in `known` becomes `[ID](<wall>/projects?node=ID)`, and every free-standing
+ * movie id becomes `[ID](<wall>/movies/ID)`. An id of any kind in `known` that is a whole inline
+ * code span is linked too, backticks kept.
  * Idempotent: an id already inside a link is left alone, so linkify(linkify(x)) === linkify(x).
  */
-export function linkify(markdown: string, wall: string, nodes: KnownNodes = NO_NODES): string {
+export function linkify(markdown: string, wall: string, known: KnownIds = NO_IDS): string {
   if (!hasCandidate(markdown)) return markdown
   return splitFences(markdown)
-    .map(seg => (seg.isCode ? seg.text : linkifyProse(seg.text, wall, nodes)))
+    .map(seg => (seg.isCode ? seg.text : linkifyProse(seg.text, wall, known)))
     .join('')
 }
 
-/** The node ids `linkify` would link if they existed, deduped, in order: what to ask the daemon. */
-export function nodeCandidates(markdown: string): string[] {
+/**
+ * The ids `linkify` would link only if they existed, deduped, in order: what to ask the daemon.
+ * Node ids anywhere they could be linked, and any id that is a whole code span.
+ */
+export function idCandidates(markdown: string): string[] {
   const seen: string[] = []
   linkify(markdown, DEFAULT_WALL, {
     has: id => {
