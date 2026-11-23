@@ -10,7 +10,13 @@ A Claude Code mod for mcp-notes. It does two things:
   `[BE-XU](http://localhost:7317/projects?node=BE-XU)`; the wall finds the node's repo and opens
   the graph on it. Upper-case look-alikes (`CI-CD`) share the shape, so each candidate is checked
   once against `GET /api/sessions/known` and only real ids are linked. With the daemon down,
-  node ids stay plain text.
+  node ids stay plain text. This is the one id kind linked even inside an inline code span, when
+  the span holds nothing but the id (`` `BE-XU` `` becomes `` [`BE-XU`](.../projects?node=BE-XU) ``):
+  models reach for backticks on an id-shaped token on reflex (the `/n` skill asks for a markdown
+  link and a plain code span is a common way that gets missed), and the existence check already
+  tells a real id apart from a look-alike, so there is no extra risk in looking inside code for
+  this one kind. A span holding more than the id (`` `get BE-XU` ``), or any note id or movie id
+  in code, is still left alone — those have no existence check to protect a false positive.
 - **Movie ids become links to the title's page.** `M-23T4` (`M-` and four characters, a film, a
   series or one episode) becomes `[M-23T4](http://localhost:7317/movies/M-23T4)`. An episode's id
   opens its series scrolled to that episode. Linked by shape alone, like note ids. A movie id that
@@ -30,8 +36,9 @@ is not loaded, and `/open` works when the terminal or tmux does not pass hyperli
 A note id is one character, a dash, three characters, all `0-9`/`A-Z` (`A-B32`). In a reply only
 the upper-case, dashed form is linked, and only where it stands alone. Left alone:
 
-- fenced code blocks, inline code spans, markdown links (their text and their URL), images,
-  reference links and definitions, `<autolinks>`, bare URLs
+- fenced code blocks, inline code spans (except a known node id that is the whole span — see
+  above), markdown links (their text and their URL), images, reference links and definitions,
+  `<autolinks>`, bare URLs
 - paths and file names (`./X-123.ts`, `src/X-123/foo`, `X-123:10`)
 - hashes and UUIDs (`3f2a-9b1c`, `123E4567-E89B-...`), longer dashed words (`AB-CDEF`, `A-B32X`,
   `XA-B32`, `UATP-2960`), lower-case words (`e-mail`, `t-shirt`), `#A-B32`, `foo_A-B32`

@@ -14,6 +14,13 @@
  * such as CI-CD share the shape): `nodeCandidates` lists what to ask the daemon about, and
  * `linkify(markdown, wall, known)` links the known ones to `<wall>/projects?node=ID`.
  *
+ * A node id that is the WHOLE content of an inline code span (`` `BE-XU` ``, trimmed) is the one
+ * exception to "code is left alone": the model reaches for backticks on an id-shaped token on
+ * reflex, and `known` already tells real ids apart from look-alikes, so the span is kept (its
+ * backticks included) and wrapped in the link instead of left inert. A code span that merely
+ * contains an id alongside other text (`` `get BE-XU` ``) is still left alone, as is any note id
+ * or movie id in code — those have no existence check to protect against a false positive.
+ *
  * Movie ids (`M-23T4`: `M-` and four characters, `src/movies/ids.ts`; a title, or one episode of a
  * series) are linked by shape alone to `<wall>/movies/ID`, where the wall opens the title's page,
  * scrolled to the episode when the id is an episode's. A movie id a model wrote as a note link
@@ -225,6 +232,19 @@ function runAt(text: string, i: number, ch: string): number {
   return j - i
 }
 
+/**
+ * A known node id when it is the whole (trimmed) content of the code span `text.slice(start, end)`
+ * (backtick-delimited, `start` at the opening backtick, `end` just past the closing one) -
+ * canonical shape only, so e.g. `be-xu` or `BEXU` inside the span still do not count. Null
+ * otherwise, including when the shape matches but `nodes.has` says no.
+ */
+function nodeIdInCodeSpan(text: string, start: number, end: number, nodes: KnownNodes): string | null {
+  const n = runAt(text, start, '`')
+  const inner = text.slice(start + n, end - n).trim()
+  if (!NODE_ID_PATTERN.test(inner) || !HAS_LETTER.test(inner)) return null
+  return nodes.has(inner) ? inner : null
+}
+
 /** End index (exclusive) of the inline code span opened by the backtick run at i, or -1. */
 function codeSpanEnd(text: string, i: number): number {
   const n = runAt(text, i, '`')
@@ -269,7 +289,16 @@ function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
     }
     if (ch === '`') {
       const end = codeSpanEnd(text, i)
-      i = end === -1 ? i + runAt(text, i, '`') : end
+      if (end === -1) {
+        i += runAt(text, i, '`')
+        continue
+      }
+      const nodeId = nodeIdInCodeSpan(text, i, end, nodes)
+      if (nodeId !== null) {
+        out += `${text.slice(plainFrom, i)}[${text.slice(i, end)}](${nodeUrl(wall, nodeId)})`
+        plainFrom = end
+      }
+      i = end
       continue
     }
     if (ch === '[' || (ch === '!' && text[i + 1] === '[')) {

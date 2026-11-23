@@ -109,9 +109,23 @@ describe('node ids', () => {
     expect(linkify('BE-XU spawned 8C-OJ, see CI-CD', WALL, known)).toBe(`${N('BE-XU')} spawned ${N('8C-OJ')}, see CI-CD`)
   })
 
-  test('leaves node ids alone without a known set, and in code, links and paths', () => {
+  test('leaves node ids alone without a known set', () => {
     expect(linkify('BE-XU', WALL)).toBe('BE-XU')
-    expect(linkify('`BE-XU` and ./BE-XU.md and [BE-XU](x)', WALL, known)).toBe('`BE-XU` and ./BE-XU.md and [BE-XU](x)')
+    expect(linkify('`BE-XU`', WALL)).toBe('`BE-XU`')
+  })
+
+  test('a known node id that is the whole code span becomes a link; paths and existing links do not', () => {
+    const once = linkify('`BE-XU` and ./BE-XU.md and [BE-XU](x)', WALL, known)
+    expect(once).toBe(`[\`BE-XU\`](${WALL}/projects?node=BE-XU) and ./BE-XU.md and [BE-XU](x)`)
+    expect(linkify(once, WALL, known)).toBe(once)
+  })
+
+  test('a code span holding more than the id is left alone, even when known', () => {
+    expect(linkify('`get BE-XU` and ``BE-XU and more``', WALL, known)).toBe('`get BE-XU` and ``BE-XU and more``')
+  })
+
+  test('lower case or no dash inside a code span is left alone, even when known', () => {
+    expect(linkify('`be-xu` and `BEXU`', WALL, known)).toBe('`be-xu` and `BEXU`')
   })
 
   test('notes and nodes in one reply, idempotent', () => {
@@ -120,8 +134,8 @@ describe('node ids', () => {
     expect(linkify(once, WALL, known)).toBe(once)
   })
 
-  test('nodeCandidates lists what to ask about: whole, upper case, outside code, not all digits', () => {
-    expect(nodeCandidates('BE-XU, CI-CD, BE-XU, `ZZ-ZZ`, 12-34, be-xu, AB-CDE, A-B32')).toEqual(['BE-XU', 'CI-CD'])
+  test('nodeCandidates lists what to ask about: whole, upper case, not all digits — a sole code span candidate included, a partial one not', () => {
+    expect(nodeCandidates('BE-XU, CI-CD, BE-XU, `ZZ-ZZ`, `get BE-XU`, 12-34, be-xu, AB-CDE, A-B32')).toEqual(['BE-XU', 'CI-CD', 'ZZ-ZZ'])
   })
 
   test('normalizeNodeId', () => {
