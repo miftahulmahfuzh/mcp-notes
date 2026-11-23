@@ -202,7 +202,7 @@
 .main:has(.mv-pill) > .mv > .mv-content.mv-trend { flex: 0 0 auto; }
 .mv-trend-head { display: flex; align-items: center; gap: 8px; }
 .mv-trend-h { margin: 0; font-size: 22px; font-weight: 400; letter-spacing: -.03em; color: var(--text); }
-.mv-trend-sub { margin: 8px 0 0; max-width: 720px; font-size: 13px; line-height: 1.45; color: var(--muted); text-wrap: pretty; }
+.mv-trend-sub { margin: 8px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); text-wrap: pretty; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Magnet quality: the index's seed count, then what opening the swarm showed. Filled dot: a peer answered; dashed: nobody checked or nobody answered. */
 .mv-q { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--dim); min-width: 0; }
 .mv-q-seeds { flex: none; }
