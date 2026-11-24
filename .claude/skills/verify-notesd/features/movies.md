@@ -140,6 +140,10 @@
   the same way; a title known only from streams is not in the grid but opens by id. Proof:
   `npx vitest run tests/unit/movies/state.test.ts -t streams`,
   `npm run test:int -- tests/integration/movies.streams.int.test.ts`.
+- The grid keeps its place: scroll the Library or Stream grid down, open a title, press Back (the
+  arrow or the browser's): the grid is scrolled to the same offset, not the first row. Proof:
+  `npx vitest run web/src/lib/scrollMemory.test.tsx`, and a `verify.sh up --web --movies` `ui` journey
+  on a short viewport comparing `scrollY` before the click and after Back.
 - User state: watched flag, 0-5 stars, review (a note tagged `#movie`, linked to the title).
 - Play/Resume: starts the Windows `vlc.exe` on this host's file at the resume second, reads its status
   through Windows `curl.exe` every `NOTESD_VLC_POLL_MS` into one play event, closes it when VLC exits.

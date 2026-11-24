@@ -1,6 +1,7 @@
 import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowsClockwise, Books, Broadcast, FilmSlate, HardDrives, Question, Warning } from '@phosphor-icons/react';
 import { CachePage } from '../components/movies/CachePage';
+import { restoreScroll } from '../lib/scrollMemory';
 import { MovieDetail } from '../components/movies/MovieDetail';
 import { MoviesGrid } from '../components/movies/MoviesGrid';
 import { MoviesPill } from '../components/movies/MoviesPill';
@@ -90,19 +91,39 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
   const unmatchedTip = waiting === null || waiting === 0 ? 'Unmatched files' : `Unmatched files (${waiting})`;
   const backLabel = side === 'stream' ? 'Back to Stream' : 'Back to the library';
 
-  // Where the grid was scrolled to, kept per side: leaving it for a title, the unmatched list or
-  // the Cache page remembers the scroll offset, and the Back arrow restores it instead of landing
-  // on the first row.
+  // Where the grid was scrolled to, kept per side. It is recorded as the grid scrolls: by the time
+  // a title's page has replaced the grid the browser has already clamped the offset to the shorter
+  // page, so reading it then is too late. Coming back (the Back arrow, the browser's Back) scrolls
+  // there again once the grid and the sections under it are tall enough (lib/scrollMemory).
+  const isGrid = route.title === null && !route.unmatched && !route.cache;
   const scrollPos = useRef<{ library: number; stream: number }>({ library: 0, stream: 0 });
-  const prevRoute = useRef(route);
+  const cameBack = useRef(false);
   useLayoutEffect(() => {
-    const prev = prevRoute.current;
-    const wasGrid = prev.title === null && !prev.unmatched && !prev.cache;
-    const isGrid = route.title === null && !route.unmatched && !route.cache;
-    if (wasGrid && !isGrid) scrollPos.current[side] = window.scrollY;
-    else if (!wasGrid && isGrid) window.scrollTo(0, scrollPos.current[side]);
-    prevRoute.current = route;
-  }, [route, side]);
+    if (!isGrid) {
+      cameBack.current = true;
+      return;
+    }
+    const pos = scrollPos.current;
+    let restoring = false;
+    let stopRestore = () => {};
+    if (cameBack.current) {
+      cameBack.current = false;
+      if (pos[side] > 0) {
+        restoring = true;
+        stopRestore = restoreScroll(pos[side], () => {
+          restoring = false;
+        });
+      }
+    }
+    const onScroll = () => {
+      if (!restoring) pos[side] = window.scrollY;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      stopRestore();
+    };
+  }, [isGrid, side]);
 
   const refreshStore = store.refresh;
 

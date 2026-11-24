@@ -557,7 +557,9 @@ from Stream), and on the Library side the unmatched list with a count of this ma
 and pending files (`/movies/unmatched`) and Rescan the library, which starts a pass at once. Over
 a grid they share one row with the filters: the switch first, a hairline, the state pills, the
 kind icons and the text filter, then the Library's two buttons at the right. On a title, the
-unmatched list or an empty page they are a toolbar of their own.
+unmatched list or an empty page they are a toolbar of their own. Going back to a grid (the
+Back arrow or the browser's Back) scrolls it to the row it was left at, per side, so a title
+opened from far down the grid returns there and not to the first row.
 
 **Live updates.** The page listens on `/api/movies/events` and reloads on every change, reads
 everything again once a minute while the tab is visible, and while a play is followed re-reads the player
