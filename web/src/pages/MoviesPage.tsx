@@ -1,4 +1,4 @@
-import { isValidElement, useEffect, useState, type ReactNode } from 'react';
+import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowsClockwise, Books, Broadcast, FilmSlate, HardDrives, Question, Warning } from '@phosphor-icons/react';
 import { CachePage } from '../components/movies/CachePage';
 import { MovieDetail } from '../components/movies/MovieDetail';
@@ -89,6 +89,20 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
   const waiting = unmatchedCount(store.status);
   const unmatchedTip = waiting === null || waiting === 0 ? 'Unmatched files' : `Unmatched files (${waiting})`;
   const backLabel = side === 'stream' ? 'Back to Stream' : 'Back to the library';
+
+  // Where the grid was scrolled to, kept per side: leaving it for a title, the unmatched list or
+  // the Cache page remembers the scroll offset, and the Back arrow restores it instead of landing
+  // on the first row.
+  const scrollPos = useRef<{ library: number; stream: number }>({ library: 0, stream: 0 });
+  const prevRoute = useRef(route);
+  useLayoutEffect(() => {
+    const prev = prevRoute.current;
+    const wasGrid = prev.title === null && !prev.unmatched && !prev.cache;
+    const isGrid = route.title === null && !route.unmatched && !route.cache;
+    if (wasGrid && !isGrid) scrollPos.current[side] = window.scrollY;
+    else if (!wasGrid && isGrid) window.scrollTo(0, scrollPos.current[side]);
+    prevRoute.current = route;
+  }, [route, side]);
 
   const refreshStore = store.refresh;
 
