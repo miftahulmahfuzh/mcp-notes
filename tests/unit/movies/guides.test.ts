@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { QueryFn } from '../../../src/chat/agent.js';
-import { buildGuideInput, createGuideWriter, GUIDE_SYSTEM_PROMPT, guideMark, parseGuide, personTitles, pickHit, type GuideInput } from '../../../src/movies/guides.js';
+import { buildGuideInput, companyTitles, createGuideWriter, GUIDE_SYSTEM_PROMPT, guideMark, parseGuide, personTitles, pickHit, type GuideInput } from '../../../src/movies/guides.js';
 import type { TmdbPersonCredit, TmdbSearchHit } from '../../../src/movies/tmdb.js';
 
 const INPUT: GuideInput = { title: 'How to Make a Killing (2026)', kind: 'movie', genre: 'Comedy', genres: ['Comedy', 'Crime'], overview: 'An heir removes his relatives.' };
@@ -43,6 +43,45 @@ describe('personTitles', () => {
       ['movie', 5, 'as Ruth, Producer'],
       ['tv', 5, 'cast'],
     ]);
+  });
+});
+
+describe('companyTitles', () => {
+  const page = (n: number, size = 20) => Array.from({ length: size }, (_, i) => hit({ tmdbId: n * 100 + i, title: `P${n} ${i}` }));
+
+  it('reads every page TMDB has of a studio, each title once, and asks a failed page once more', async () => {
+    const asked: number[] = [];
+    let failed = false;
+    const tmdb = {
+      discover: () => Promise.reject(new Error('unused')),
+      discoverPage: (_kind: 'movie' | 'tv', f: { page?: number; companyIds?: readonly number[] | null; sort?: string }) => {
+        const n = f.page ?? 1;
+        asked.push(n);
+        expect([f.companyIds, f.sort]).toEqual([[3172], 'newest']);
+        if (n === 7 && !failed) {
+          failed = true;
+          return Promise.reject(new Error('429'));
+        }
+        // Page 13 is the short last one; page 3 repeats a title of page 2.
+        return Promise.resolve({ hits: n === 13 ? page(n, 4) : n === 3 ? [hit({ tmdbId: 200 }), ...page(n, 19)] : page(n), totalPages: 13 });
+      },
+    };
+    const all = await companyTitles(tmdb, 'movie', 3172);
+    expect(all).toHaveLength(12 * 20 + 4 - 1);
+    expect(new Set(all.map((h) => h.tmdbId)).size).toBe(all.length);
+    expect([...asked].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10, 11, 12, 13]);
+  });
+
+  it('without page counts walks the pages to the first short one', async () => {
+    const asked: number[] = [];
+    const tmdb = {
+      discover: (_kind: 'movie' | 'tv', f: { page?: number }) => {
+        asked.push(f.page ?? 1);
+        return Promise.resolve(f.page === 3 ? page(3, 5) : page(f.page ?? 1));
+      },
+    };
+    expect(await companyTitles(tmdb, 'tv', 1)).toHaveLength(45);
+    expect(asked).toEqual([1, 2, 3]);
   });
 });
 

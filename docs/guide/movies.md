@@ -443,8 +443,8 @@ member and character is a link that looks like the text it replaces and underlin
 | Click | What opens |
 | --- | --- |
 | A person | A pop-up: their photo, TMDB's biography (the first lines, with `more`), what they are known for and where and when they were born, then every film and series TMDB credits them on, with their role in each. Talk shows, news, appearances as themselves and "Thanks" credits are left out. |
-| A studio | A pop-up: its logo, where it is and its parent company, TMDB's description when it has one (it has none for most studios, and then none is shown), then the films and series it made. |
-| A genre | A pop-up written for this title: what the genre is in it, and the titles of that genre closest to it in tone and premise, each with one line on what they share. Comedy on one film is another list than Comedy on the next. |
+| A studio | A pop-up: its logo, where it is and its parent company, TMDB's description when it has one (it has none for most studios, and then none is shown), then every film and series it made: all of TMDB's pages for it, the announced ones too. |
+| A genre | A pop-up written for this title: what the genre is in it, and as many titles of that genre as Claude can name that are close to it in tone and premise (up to 60), each with one line on what they share. Comedy on one film is another list than Comedy on the next. |
 | A character | No pop-up: it asks the chat "Who is Ruth, played by Jessica Henwick, in this film?" through the pill, at once. |
 
 ![The pop-up of a cast member: photo, biography, and their films newest first with the three mark buttons on each](img/movies/person.png)
@@ -453,8 +453,9 @@ member and character is a link that looks like the text it replaces and underlin
 
 ![A genre's pop-up, written for one film: what science fiction is in WALL·E, and the titles closest to it with one line each](img/movies/genre.png)
 
-- **The list is newest first**, undated titles last, at most 120, and the line above it counts
-  them and their marks (`42 titles · 5 watched · 1 started · 2 interested · 1 not interested`).
+- **The list is whole and newest first**, undated titles last: nothing is cut off, a studio of 300
+  films lists 300 (the rows are drawn as you scroll). The line above it counts every title and
+  their marks (`42 titles · 5 watched · 1 started · 2 interested · 1 not interested`).
 - **Every title carries what you did with it**, read when the pop-up opens, never stored with the
   list: `started` (in progress or dropped), `file here` when a file is on this machine, its movie
   id when it is stored, and three icons at the right, lit when set: watched (finished, seen, or
@@ -474,7 +475,9 @@ member and character is a link that looks like the text it replaces and underlin
   (`NOTESD_MOVIES_STORY_MODEL`, with WebSearch as its one tool; about a minute, and the pop-up
   says so). Each title it names is then looked up on TMDB by name and year, and one TMDB does not
   list is left out, never guessed. The result is kept per title and genre, so every later click
-  opens at once. The refresh icon in the header searches and writes it again.
+  opens at once. The refresh icon in the header searches and writes it again. A guide written
+  before 2026-11-25, when a guide held 16 titles at most, is written again by itself on its next
+  click; if that fails the short one is shown.
 - **The header's icons.** The chat icon sends the question the name used to ask ("Tell me about
   Jessica Henwick (Ruth in this film) and list their other films and series. Mark the ones in my
   library."; for a genre "Recommend other Comedy films similar to ...") through the pill and

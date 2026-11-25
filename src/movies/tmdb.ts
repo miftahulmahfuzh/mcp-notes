@@ -198,6 +198,21 @@ export interface TmdbCompanyProfile {
   parent: string | null;
 }
 
+/** One page of a discovery with how many pages TMDB has of it. */
+export interface TmdbDiscoverPage {
+  hits: TmdbSearchHit[];
+  /** TMDB's `total_pages`; it serves no page past `TMDB_MAX_PAGE`. */
+  totalPages: number;
+}
+
+/** The last page TMDB serves of any list (20 titles a page). */
+export const TMDB_MAX_PAGE = 500;
+
+/** A discovery read to its end (a studio's every title, src/movies/guides.ts). Apart from TmdbDiscovery so its fakes stay small. */
+export interface TmdbDiscoveryPaged {
+  discoverPage(kind: TitleKind, filter: TmdbDiscoverFilter): Promise<TmdbDiscoverPage>;
+}
+
 /**
  * Who a person or a company is, for the pop-up a name on a title's page opens (src/movies/people.ts).
  * Kept apart from TmdbClient for the same reason as TmdbCatalog; createTmdbClient returns it too.
@@ -718,7 +733,7 @@ export function createTmdbClient(
   config: TmdbClientConfig,
   fetchImpl: typeof fetch = fetch,
   options: TmdbClientOptions = {},
-): TmdbClient & TmdbCatalog & TmdbTitleNames & TmdbDiscovery & TmdbImdbLookup & TmdbProfiles {
+): TmdbClient & TmdbCatalog & TmdbTitleNames & TmdbDiscovery & TmdbDiscoveryPaged & TmdbImdbLookup & TmdbProfiles {
   const base = config.apiBase.replace(/\/+$/, '');
   const token = orNull(config.token);
   const apiKey = orNull(config.apiKey);
@@ -759,6 +774,25 @@ export function createTmdbClient(
     } catch (cause) {
       throw new TmdbError('bad_response', `TMDB ${path} did not return JSON: ${raw.slice(0, SNIPPET_CHARS)}`, null, cause);
     }
+  }
+
+  /** `/discover/{kind}` with the filter as TMDB's query. */
+  function discoverJson(kind: TitleKind, filter: TmdbDiscoverFilter): Promise<unknown> {
+    // A film's date is its first release anywhere; a series' is its first air date.
+    const date = kind === 'movie' ? 'primary_release_date' : 'first_air_date';
+    return get(`/discover/${kind}`, {
+      [`${date}.gte`]: filter.dateFrom,
+      [`${date}.lte`]: filter.dateTo,
+      with_original_language: filter.originalLanguage,
+      with_genres: idList(filter.genreIds, ','),
+      with_keywords: idList(filter.keywordIds, '|'),
+      with_companies: idList(filter.companyIds, '|'),
+      with_watch_providers: filter.providerId,
+      watch_region: filter.providerId === null || filter.providerId === undefined ? undefined : filter.watchRegion,
+      sort_by: filter.sort === 'newest' ? `${date}.desc` : 'popularity.desc',
+      include_adult: false,
+      page: filter.page ?? 1,
+    });
   }
 
   /** A 404 answers null: TMDB sometimes lists a season it has no page for, which is not a failed sync. */
@@ -1026,22 +1060,13 @@ export function createTmdbClient(
     },
 
     async discover(kind, filter) {
-      // A film's date is its first release anywhere; a series' is its first air date.
-      const date = kind === 'movie' ? 'primary_release_date' : 'first_air_date';
-      const json = await get(`/discover/${kind}`, {
-        [`${date}.gte`]: filter.dateFrom,
-        [`${date}.lte`]: filter.dateTo,
-        with_original_language: filter.originalLanguage,
-        with_genres: idList(filter.genreIds, ','),
-        with_keywords: idList(filter.keywordIds, '|'),
-        with_companies: idList(filter.companyIds, '|'),
-        with_watch_providers: filter.providerId,
-        watch_region: filter.providerId === null || filter.providerId === undefined ? undefined : filter.watchRegion,
-        sort_by: filter.sort === 'newest' ? `${date}.desc` : 'popularity.desc',
-        include_adult: false,
-        page: filter.page ?? 1,
-      });
-      return hitsOf(kind, json, `${kind} discover`);
+      return hitsOf(kind, await discoverJson(kind, filter), `${kind} discover`);
+    },
+
+    async discoverPage(kind, filter) {
+      const json = await discoverJson(kind, filter);
+      const total = (json as { total_pages?: unknown } | null)?.total_pages;
+      return { hits: hitsOf(kind, json, `${kind} discover`), totalPages: typeof total === 'number' && Number.isInteger(total) && total > 0 ? total : 1 };
     },
 
     async searchCompany(query) {

@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState, type UIEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowsClockwise, ArrowSquareOut, BookmarkSimple, ChatCircleText, CheckCircle, CircleNotch, EyeSlash, WarningCircle, X } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
@@ -23,6 +23,9 @@ export interface EntityModalProps {
 
 const ACTION_ICON: Record<GuideAction, Icon> = { watched: CheckCircle, interested: BookmarkSimple, not_interested: EyeSlash };
 
+/** Rows drawn at first and added each time the list is scrolled near its end: a studio can have thousands. */
+export const GUIDE_ROWS_STEP = 150;
+
 type Phase = { at: 'loading' } | { at: 'writing' } | { at: 'done'; guide: EntityGuide } | { at: 'failed'; text: string };
 
 /** Whether a movie pop-up lies over this one: its Esc and its clicks are its own. */
@@ -34,7 +37,8 @@ function failedText(err: unknown): string {
 
 /**
  * A name clicked on a title's page, as a pop-up over it: the person's photo or the studio's logo,
- * a short description, and their films and series newest first, each tagged with what the owner
+ * a short description, and every one of their films and series newest first (drawn as the list is
+ * scrolled), each tagged with what the owner
  * did with it (started, a file here) and three buttons that set its marks without opening it:
  * watched, interested, not interested (a title the library does not hold is stored first). A genre opens what it means for
  * this title: collated once with web search on the first click (about a minute), then stored. A
@@ -44,6 +48,7 @@ function failedText(err: unknown): string {
 export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: EntityModalProps) {
   const [phase, setPhase] = useState<Phase>({ at: 'loading' });
   const [whole, setWhole] = useState(false);
+  const [rows, setRows] = useState(GUIDE_ROWS_STEP);
   const [opening, setOpening] = useState<string | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -56,6 +61,7 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
     const ac = new AbortController();
     setPhase({ at: 'loading' });
     setWhole(false);
+    setRows(GUIDE_ROWS_STEP);
     setNotice(null);
     const load = async (): Promise<EntityGuide> => {
       if (entity.kind === 'person') return fetchPersonGuide(entity.personId, ac.signal);
@@ -134,6 +140,12 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
   const name = guide?.entity.name ?? entity.name;
   const description = guide?.entity.description ?? '';
   const long = description.length > 420;
+  const total = guide?.titles.length ?? 0;
+  /** Every title is in the list; the rows are drawn as the scroll nears the last one drawn. */
+  const onScroll = (e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (rows < total && el.scrollHeight - el.scrollTop - el.clientHeight < 1200) setRows((n) => n + GUIDE_ROWS_STEP);
+  };
 
   return createPortal(
     <div className="mm" data-modal="entity" onClick={() => !movieModalOpen() && onClose()}>
@@ -184,7 +196,7 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
           </p>
         )}
         {guide !== null && (
-          <div className="mm-ent-scroll">
+          <div className="mm-ent-scroll" onScroll={onScroll}>
             <div className={guide.entity.image_url === null ? 'mm-ent-top bare' : 'mm-ent-top'}>
               {guide.entity.image_url !== null && (
                 <div className={`mm-ent-img ${guide.entity.kind}`}>
@@ -219,7 +231,7 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
               <p className="mm-empty">No films or series are listed.</p>
             ) : (
               <ol className="mm-ent-list" aria-label={`Films and series of ${name}`}>
-                {guide.titles.map((t) => (
+                {guide.titles.slice(0, rows).map((t) => (
                   <li key={t.title_id} className="mm-ent-item">
                     <button type="button" className="mm-ent-row" data-testid="guide-title" data-title={t.title_id} data-mark={t.mark ?? undefined} disabled={opening !== null || open === undefined} onClick={() => void openTitle(t)}>
                       <span className="mm-ent-poster">

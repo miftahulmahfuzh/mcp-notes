@@ -66,7 +66,7 @@
   open it on the page, as `direct-stream/downloads.sh RUN story` does. Proof:
   `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`.
 - Names and the play menu (a title's page). A person, a studio or a genre clicked opens a pop-up
-  (`EntityModal`): `GET /api/movies/people/:id` and `/companies/:id` read TMDB at each request;
+  (`EntityModal`): `GET /api/movies/people/:id` and `/companies/:id` read TMDB at each request, whole (every credit; every page of a studio's titles, `companyTitles`), and the pop-up draws 150 rows more at each scroll near the end;
   `GET|POST /api/movies/:id/genres/:genre` reads or collates the guide of that genre for that title
   (one model run with WebSearch, then `movie_genre_guides`). Every listed title carries `mark`
   (`watched`, `started`, `not_interested`), `interested` and `has_file`, read at the request; three

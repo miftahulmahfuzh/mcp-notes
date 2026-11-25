@@ -88,13 +88,13 @@ describe('what the names and the play menu of a title page ask for', () => {
 
   const movies = () => ({ repo, tmdb, events: new MovieEvents(), host: HOST }) as unknown as MoviesService
   const streams = () => new MovieStreams(movies(), { now: () => clock, log: () => undefined })
-  function app(over: { pahe?: (title: string, year: number | null) => Promise<unknown>; noWriter?: boolean } = {}): Hono {
+  function app(over: { pahe?: (title: string, year: number | null) => Promise<unknown>; noWriter?: boolean; currentSince?: Date } = {}): Hono {
     const m = movies()
     const deps = {
       config: { movies: MOVIES_TEST_CONFIG },
       db,
       movies: m,
-      genreGuides: new GenreGuides({ db, repo, tmdb, writer: over.noWriter ? null : writer, now: () => clock, log: () => undefined }),
+      genreGuides: new GenreGuides({ db, repo, tmdb, writer: over.noWriter ? null : writer, now: () => clock, currentSince: over.currentSince ?? new Date(0), log: () => undefined }),
       streaming: async (site: string, args: string[]) => {
         siteRuns.push([site, args])
         return siteAnswer(args)
@@ -224,6 +224,20 @@ describe('what the names and the play menu of a title page ask for', () => {
       await streams().ensureTitle({ kind: 'movie', tmdbId: 800 })
       await repo.setTitleUser('movie-800', { watched: true })
       expect((await get(a, '/api/movies/movie-550/genres/Thriller')).json.guide.titles[0].mark).toBe('watched')
+    })
+
+    it('a guide from before the lists grew is written again on its next click, and shown as it is when that fails', async () => {
+      await streams().ensureTitle(FILM)
+      await post(app(), '/api/movies/movie-550/genres/Thriller', {})
+      expect(written).toBe(1)
+      const later = new Date(clock.getTime() + 1000)
+      expect((await get(app({ currentSince: later }), '/api/movies/movie-550/genres/Thriller')).json).toEqual({ guide: null, cached: true })
+      const off = await post(app({ currentSince: later, noWriter: true }), '/api/movies/movie-550/genres/Thriller', {})
+      expect([off.status, off.json.cached, off.json.guide.titles.length]).toEqual([200, true, 1])
+      clock = new Date(later.getTime() + 1000)
+      const anew = await post(app({ currentSince: later }), '/api/movies/movie-550/genres/Thriller', {})
+      expect([anew.json.cached, written]).toEqual([false, 2])
+      expect((await get(app({ currentSince: later }), '/api/movies/movie-550/genres/Thriller')).json.guide).not.toBeNull()
     })
 
     it('answers why not: a genre the title does not have, an unknown title, the model off', async () => {

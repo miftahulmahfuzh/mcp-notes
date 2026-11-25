@@ -6,14 +6,14 @@ import { findClaudeBin } from '../sessions/summarize.js';
 import { runAgentText, type AgentTextRun } from './agentText.js';
 import { listTitlesByIds, type ReadContext, type TitleListItem } from './read.js';
 import type { MoviesRepo } from './repo.js';
-import { posterUrl, yearOf, type TmdbClient, type TmdbDiscovery, type TmdbPersonCredit, type TmdbProfiles, type TmdbSearchHit } from './tmdb.js';
+import { posterUrl, TMDB_MAX_PAGE, yearOf, type TmdbClient, type TmdbDiscovery, type TmdbDiscoveryPaged, type TmdbPersonCredit, type TmdbProfiles, type TmdbSearchHit } from './tmdb.js';
 import { titleId, type TitleKind, type TitleMetadata } from './types.js';
 
 /**
  * What a name on a title's page opens (the wall's EntityModal): who a person or a studio is, or
  * what a genre means for that title, each with its films and series, newest first, and every one
  * marked with what the owner did with it. A person and a studio are read from TMDB at each
- * request. A genre's guide is collated once by Claude with web search (the same genre is another
+ * request, whole: every title a person is credited on, every title a studio made. A genre's guide is collated once by Claude with web search (the same genre is another
  * list on another title), kept in `movie_genre_guides` and read from there afterwards. No watch
  * state is kept with any list: the marks are read from the titles at each request.
  */
@@ -62,10 +62,10 @@ export interface EntityGuide {
   model?: string | null;
 }
 
-/** Titles listed at most: a prolific actor's list stays readable, and the newest come first. */
-export const GUIDE_TITLE_LIMIT = 120;
-/** Pages of 20 read per kind for a studio's titles. */
-export const COMPANY_PAGES = 2;
+/** Pages of a studio's titles asked of TMDB at once. */
+export const COMPANY_PAGES_AT_ONCE = 8;
+/** TMDB's page size: a shorter page is a list's last. */
+const TMDB_PAGE_SIZE = 20;
 /** TMDB's genres of talk shows and news: a person's appearances there are not their work. */
 const APPEARANCE_GENRES: readonly number[] = [10767, 10763];
 const PROFILE_SIZE = 'h632';
@@ -97,7 +97,7 @@ interface Listed {
   note: string | null;
 }
 
-/** The listed titles, newest first and capped, each with the owner's mark read now. */
+/** The listed titles, every one, newest first, each with the owner's mark read now. */
 export async function markedTitles(db: Db, ctx: ReadContext, listed: readonly Listed[]): Promise<GuideTitle[]> {
   const rows = listed.map((l) => ({
     kind: l.kind,
@@ -110,9 +110,8 @@ export async function markedTitles(db: Db, ctx: ReadContext, listed: readonly Li
     note: l.note,
   }));
   rows.sort(byNewest);
-  const shown = rows.slice(0, GUIDE_TITLE_LIMIT);
-  const stored = new Map((await listTitlesByIds(db, shown.map((r) => r.title_id), ctx)).map((t) => [t.id, t]));
-  return shown.map((r) => {
+  const stored = new Map((await listTitlesByIds(db, rows.map((r) => r.title_id), ctx)).map((t) => [t.id, t]));
+  return rows.map((r) => {
     const t = stored.get(r.title_id);
     return { ...r, movie_id: t?.movie_id ?? null, mark: guideMark(t), interested: t?.interested ?? false, has_file: t?.present_here ?? false };
   });
@@ -141,7 +140,7 @@ export function personTitles(credits: readonly TmdbPersonCredit[]): Listed[] {
   return [...byTitle.values()].map(({ roles, ...l }) => ({ ...l, note: roles.join(', ') }));
 }
 
-export type GuideTmdb = TmdbClient & Partial<TmdbProfiles & TmdbDiscovery>;
+export type GuideTmdb = TmdbClient & Partial<TmdbProfiles & TmdbDiscovery & TmdbDiscoveryPaged>;
 
 /** A person: TMDB's profile and every film and series they are credited on. Null when TMDB does not know them. */
 export async function personGuide(db: Db, ctx: ReadContext, tmdb: GuideTmdb, personId: number): Promise<EntityGuide | null> {
@@ -162,20 +161,52 @@ export async function personGuide(db: Db, ctx: ReadContext, tmdb: GuideTmdb, per
   };
 }
 
-const dayOf = (d: Date): string => d.toISOString().slice(0, 10);
+/** A page that failed is asked once more; one that fails twice is left out, so one bad answer does not cost the whole list. */
+async function twice<T>(read: () => Promise<T>, none: T): Promise<T> {
+  try {
+    return await read();
+  } catch {
+    return read().catch(() => none);
+  }
+}
 
-/** A studio: TMDB's profile and the films and series it made, up to a year ahead of `now`. Null when TMDB does not know it. */
-export async function companyGuide(db: Db, ctx: ReadContext, tmdb: GuideTmdb, companyId: number, now: Date = new Date()): Promise<EntityGuide | null> {
+/**
+ * Every title of `kind` a studio made, the announced and the undated too: all of TMDB's pages (it
+ * serves `TMDB_MAX_PAGE` of them), a few at a time. Without `discoverPage` the pages are walked one by one
+ * to the first short one.
+ */
+export async function companyTitles(tmdb: Pick<TmdbDiscovery, 'discover'> & Partial<TmdbDiscoveryPaged>, kind: TitleKind, companyId: number): Promise<TmdbSearchHit[]> {
+  const filter = (page: number) => ({ companyIds: [companyId], sort: 'newest' as const, page });
+  const hits: TmdbSearchHit[] = [];
+  if (tmdb.discoverPage === undefined) {
+    for (let page = 1; page <= TMDB_MAX_PAGE; page++) {
+      const got = await twice(() => tmdb.discover(kind, filter(page)), []);
+      hits.push(...got);
+      if (got.length < TMDB_PAGE_SIZE) break;
+    }
+  } else {
+    const paged = tmdb.discoverPage.bind(tmdb);
+    const first = await twice(() => paged(kind, filter(1)), { hits: [], totalPages: 1 });
+    hits.push(...first.hits);
+    const last = Math.min(first.totalPages, TMDB_MAX_PAGE);
+    for (let from = 2; from <= last; from += COMPANY_PAGES_AT_ONCE) {
+      const pages = Array.from({ length: Math.min(COMPANY_PAGES_AT_ONCE, last - from + 1) }, (_, i) => from + i);
+      const got = await Promise.all(pages.map((page) => twice(() => paged(kind, filter(page)), { hits: [], totalPages: last })));
+      for (const g of got) hits.push(...g.hits);
+    }
+  }
+  // A title released while the pages were read moves from one page to the next: listed once.
+  const seen = new Set<number>();
+  return hits.filter((h) => !seen.has(h.tmdbId) && seen.add(h.tmdbId) !== undefined);
+}
+
+/** A studio: TMDB's profile and every film and series it made. Null when TMDB does not know it. */
+export async function companyGuide(db: Db, ctx: ReadContext, tmdb: GuideTmdb, companyId: number): Promise<EntityGuide | null> {
   if (tmdb.companyProfile === undefined || tmdb.discover === undefined) return null;
-  const discover = tmdb.discover.bind(tmdb);
+  const reader = { discover: tmdb.discover.bind(tmdb), ...(tmdb.discoverPage === undefined ? {} : { discoverPage: tmdb.discoverPage.bind(tmdb) }) };
   const profile = await tmdb.companyProfile(companyId);
   if (profile === null) return null;
-  const dateTo = dayOf(new Date(now.getTime() + 365 * 86_400_000));
-  const pages = await Promise.all(
-    (['movie', 'tv'] as const).flatMap((kind) =>
-      Array.from({ length: COMPANY_PAGES }, (_, i) => discover(kind, { companyIds: [companyId], sort: 'newest', dateTo, page: i + 1 }).catch((): TmdbSearchHit[] => [])),
-    ),
-  );
+  const pages = await Promise.all((['movie', 'tv'] as const).map((kind) => companyTitles(reader, kind, companyId)));
   const listed: Listed[] = pages.flat().map((h) => ({ kind: h.kind, tmdbId: h.tmdbId, title: h.title, releaseDate: h.releaseDate, posterPath: h.posterPath, note: null }));
   return {
     entity: {
@@ -193,10 +224,14 @@ export async function companyGuide(db: Db, ctx: ReadContext, tmdb: GuideTmdb, co
 // ---------- a genre, for one title ----------
 
 /** Wall clock for one guide: several web searches, then the answer. */
-export const DEFAULT_GUIDE_TIMEOUT_MS = 240_000;
-export const GUIDE_MAX_TURNS = 16;
-/** Titles the model is asked for, and kept at most. */
-export const GUIDE_TITLES_ASKED = 16;
+export const DEFAULT_GUIDE_TIMEOUT_MS = 360_000;
+export const GUIDE_MAX_TURNS = 24;
+/** Titles the model is asked for, and kept at most: as many as it can name that are truly close. */
+export const GUIDE_TITLES_ASKED = 60;
+/** A guide written before this asked for 16 titles: it is collated again on its next click, and shown as it is only when that fails. */
+export const GUIDE_CURRENT_SINCE = new Date('2026-11-25T09:30:00Z');
+/** Named titles resolved on TMDB at once. */
+const GUIDE_RESOLVES_AT_ONCE = 6;
 
 export const GUIDE_SYSTEM_PROMPT = [
   'You help the owner of a film library who clicked a genre on the page of one film or series.',
@@ -204,7 +239,7 @@ export const GUIDE_SYSTEM_PROMPT = [
   'Use WebSearch to find what critics and viewers say about this title\'s tone and premise within that genre, and which other films and series are recommended to people who liked it for those reasons.',
   `Then answer with one JSON object and nothing else, no code fence: {"description": string, "titles": [{"title": string, "year": number, "kind": "movie" | "tv", "why": string}]}.`,
   'description: two or three plain sentences in English on what this genre is in this title: its tone, its kind of story, what sets it apart inside the genre. No spoilers.',
-  `titles: up to ${GUIDE_TITLES_ASKED} films or series of that genre closest to this title in tone and premise, each with its exact release title as TMDB lists it, its release year, and in "why" one short line on what it shares with this title. Real titles only, each one checked in a search result; never the title itself; no sequels or prequels of it unless they stand out.`,
+  `titles: as many films and series of that genre as you can name that are close to this title in tone and premise, up to ${GUIDE_TITLES_ASKED}: search several times (recommendation lists, "films like", recent releases of the last few years as well as older ones) and keep adding until you have that many or run out of close ones. Recent titles matter: the list is shown newest first. Each with its exact release title as TMDB lists it, its release year, and in "why" one short line on what it shares with this title. Real titles only, each one you saw in a search result or know for certain exists; never the title itself; no sequels or prequels of it unless they stand out.`,
 ].join(' ');
 
 /** What the writer is given about the title. */
@@ -343,6 +378,8 @@ export interface GenreGuidesOptions {
   /** Null: NOTESD_MOVIES_STORY_MODEL=off, or no claude binary. Stored guides are still read. */
   writer: GuideWriter | null;
   now?: () => Date;
+  /** Default `GUIDE_CURRENT_SINCE`: a guide written before it is written again. */
+  currentSince?: Date;
   log?: (line: string) => void;
 }
 
@@ -357,10 +394,13 @@ export class GenreGuides {
     this.log = opts.log ?? ((line: string) => console.log(line));
   }
 
-  /** The stored guide with today's marks, or null. Never calls a model. */
-  async get(id: string, genre: string, ctx: ReadContext): Promise<EntityGuide | null> {
+  /**
+   * The stored guide with today's marks, or null; one from before `GUIDE_CURRENT_SINCE` is null too
+   * unless `stale` (the caller then has it written again). Never calls a model.
+   */
+  async get(id: string, genre: string, ctx: ReadContext, stale = false): Promise<EntityGuide | null> {
     const row = await this.opts.repo.genreGuide(id, genre);
-    if (row === null) return null;
+    if (row === null || (!stale && row.writtenAt < (this.opts.currentSince ?? GUIDE_CURRENT_SINCE))) return null;
     return this.view(genre, row.description, row.items, row.model, row.writtenAt, ctx);
   }
 
@@ -376,7 +416,14 @@ export class GenreGuides {
     const key = `${id} ${genre.trim().toLowerCase()}`;
     const running = this.inFlight.get(key);
     if (running !== undefined) return running;
-    const job = this.writeNew(id, genre, ctx).finally(() => this.inFlight.delete(key));
+    const job = this.writeNew(id, genre, ctx)
+      .catch(async (err: unknown) => {
+        // The short guide of before is better than none: it is shown when the longer one cannot be written.
+        const old = refresh ? null : await this.get(id, genre, ctx, true);
+        if (old === null) throw err;
+        return { guide: old, cached: true };
+      })
+      .finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, job);
     return job;
   }
@@ -406,14 +453,21 @@ export class GenreGuides {
       this.log(`[notesd] movies: the ${name} guide of ${id} was not written: ${message}`);
       throw new GuideError('guide_failed', `The guide could not be written: ${message}`);
     }
-    const items: GenreGuideItem[] = [];
-    for (const named of written.titles) {
-      let hit: TmdbSearchHit | null = null;
+    const resolve = async (named: NamedTitle): Promise<TmdbSearchHit | null> => {
       try {
-        hit = pickHit(named, named.kind === 'tv' ? await tmdb.searchTv(named.title, named.year) : await tmdb.searchMovie(named.title, named.year));
+        return pickHit(named, named.kind === 'tv' ? await tmdb.searchTv(named.title, named.year) : await tmdb.searchMovie(named.title, named.year));
       } catch (err) {
         this.log(`[notesd] movies: TMDB could not be asked for "${named.title}": ${err instanceof Error ? err.message : String(err)}`);
+        return null;
       }
+    };
+    const hits: (TmdbSearchHit | null)[] = [];
+    for (let from = 0; from < written.titles.length; from += GUIDE_RESOLVES_AT_ONCE) {
+      hits.push(...(await Promise.all(written.titles.slice(from, from + GUIDE_RESOLVES_AT_ONCE).map(resolve))));
+    }
+    const items: GenreGuideItem[] = [];
+    for (const [i, named] of written.titles.entries()) {
+      const hit = hits[i] ?? null;
       // A title TMDB does not list is left out, never guessed; so is the title the guide is for, and one named twice.
       if (hit === null || titleId(hit.kind, hit.tmdbId) === id || items.some((i) => i.kind === hit.kind && i.tmdbId === hit.tmdbId)) continue;
       items.push({ kind: hit.kind, tmdbId: hit.tmdbId, title: hit.title, year: hit.year, releaseDate: hit.releaseDate, posterPath: hit.posterPath, why: named.why });
