@@ -17,7 +17,7 @@ import { parseDateBound } from '../notes/dates.js';
 import { DEFAULT_WALL_URL } from './instructions.js';
 import { errorResult, jsonResult, type ToolDeps } from './tools.js';
 
-const [LIST, GET, HISTORY, CONTINUE, PERSON, MARK, PICTURES] = MOVIE_TOOL_NAMES;
+const [LIST, GET, HISTORY, CONTINUE, PERSON, MARK, PICTURES, REFRESH] = MOVIE_TOOL_NAMES;
 
 export const MOVIES_LIST_DEFAULT_LIMIT = 50;
 export const MOVIES_LIST_MAX_LIMIT = 200;
@@ -85,6 +85,13 @@ export interface MovieToolDeps {
   playSomething(): Promise<SomethingResult>;
   /** One TMDB picture (a poster, backdrop or episode still address under `imageBase`) as bytes, for movies_pictures. Throws when it cannot be read. */
   fetchPicture(url: string): Promise<{ data: Buffer; mime: string }>;
+  /**
+   * Re-fetches a stored title's metadata from TMDB and replaces it (MoviesRepo.upsertTitle), the
+   * owner's own marks kept: picks up a season or episode TMDB has added since the title was first
+   * stored (or last refreshed). Throws not_found when the title is not stored, tmdb_unavailable
+   * without TMDB credentials.
+   */
+  refreshTitle(titleId: string): Promise<void>;
 }
 
 /** A picture larger than this is not handed to the model. */
@@ -140,6 +147,15 @@ export function movieToolDeps(deps: AppDeps): MovieToolDeps | null {
       return playSomething({ db: deps.db, player });
     },
     fetchPicture: tmdbPictureFetcher(deps.config.movies.tmdb.imageBase),
+    async refreshTitle(id) {
+      const row = await movies.repo.titleById(id);
+      if (row === null) throw new MovieToolError('not_found', `no title ${id} is stored.`);
+      const tmdb = movies.tmdb;
+      if (tmdb === null) throw new MovieToolError('tmdb_unavailable', 'this server has no TMDB credentials, so metadata cannot be refreshed.');
+      const meta = row.kind === 'movie' ? await tmdb.movieDetails(row.tmdbId) : await tmdb.tvDetails(row.tmdbId);
+      await movies.repo.upsertTitle(meta);
+      movies.events.changed('user', { titleIds: [id] });
+    },
   };
 }
 
@@ -554,7 +570,13 @@ const MARK_DESCRIPTION =
   'On one file (file_id from movies_get files[].id, e.g. one episode): watched only. Pass exactly one of title or file_id, and at least one change. ' +
   'Returns { title_id, title, state, watched_at, not_interested, interested, rating, review_note_id, url } after the change, plus season: { season, watched, episodes, changed, finished } for a season mark and file for file_id.';
 
-/** The seven movie tools. With deps.movies null or omitted every one answers MOVIES_OFF. */
+const REFRESH_DESCRIPTION =
+  'Re-fetches one stored title\'s metadata from TMDB and replaces it, the owner\'s own marks (watched, rating, review, interested) kept: use this when a series TMDB has announced a new season for still shows only its older seasons here, or any other stored detail (overview, episode list, air dates) looks out of date. ' +
+  'title is a movie id, title id or name, as the other movie tools take it. ' +
+  'Returns { title_id, movie_id, title, state, season_count, episode_count, seasons_added (season numbers this call added that were not stored before), url }. ' +
+  'tmdb_unavailable: this server has no TMDB credentials. tmdb_error: TMDB could not be reached or refused the request; try again, or answer from the library tools or web search meanwhile. not_found: the title is not stored (nothing to refresh): movies_mark with its title key stores it first.';
+
+/** The eight movie tools. With deps.movies null or omitted every one answers MOVIES_OFF. */
 export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' | 'movies' | 'wallUrl'>): void {
   const wall = (deps.wallUrl ?? DEFAULT_WALL_URL).replace(/\/+$/, '');
   const titleUrl = (id: string): string => `${wall}/movies/${encodeURIComponent(id)}`;
@@ -1002,6 +1024,41 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
                 },
               }
             : {}),
+        };
+      });
+    },
+  );
+
+  server.registerTool(
+    REFRESH,
+    {
+      title: 'Refresh a title from TMDB',
+      description: REFRESH_DESCRIPTION,
+      inputSchema: {
+        title: titleField,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ title }) => {
+      const m = deps.movies;
+      if (!m) return off();
+      return answer(async () => {
+        const { titleId: id } = await resolveTitle(deps.db, ctxOf(m), title);
+        const before = await getTitle(deps.db, id, ctxOf(m));
+        if (before === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
+        await m.refreshTitle(id);
+        const after = await getTitle(deps.db, id, ctxOf(m));
+        if (after === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
+        const beforeSeasons = new Set(before.seasons.map((s) => s.season));
+        return {
+          title_id: after.id,
+          movie_id: after.movie_id,
+          title: after.title,
+          state: after.state,
+          season_count: after.seasons.length > 0 ? Math.max(...after.seasons.map((s) => s.season)) : null,
+          episode_count: after.seasons.reduce((n, s) => n + s.episodes.length, 0),
+          seasons_added: after.seasons.map((s) => s.season).filter((s) => !beforeSeasons.has(s)),
+          url: titleUrl(after.movie_id ?? after.id),
         };
       });
     },

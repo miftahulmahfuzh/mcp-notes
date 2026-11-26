@@ -57,8 +57,9 @@ export type AdversaryToolName = (typeof ADVERSARY_TOOL_NAMES)[number];
 
 /**
  * The movie library tools (MOVIES_LIBRARY_PLAN phase 7): src/mcp/movieTools.ts registers them under
- * these names, in this order. movies_continue and movies_mark write (VLC opens; marks are stored);
- * the other five only read. movies_pictures hands the model a title's pictures to look at.
+ * these names, in this order. movies_continue, movies_mark and movies_refresh write (VLC opens;
+ * marks are stored; a refresh re-fetches TMDB and replaces the stored seasons/episodes); the other
+ * five only read. movies_pictures hands the model a title's pictures to look at.
  */
 export const MOVIE_TOOL_NAMES = [
   'movies_list',
@@ -68,6 +69,7 @@ export const MOVIE_TOOL_NAMES = [
   'movies_person',
   'movies_mark',
   'movies_pictures',
+  'movies_refresh',
 ] as const;
 
 export type MovieToolName = (typeof MOVIE_TOOL_NAMES)[number];
@@ -294,6 +296,8 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'marking a title';
     case 'movies_pictures':
       return "looking at a title's pictures";
+    case 'movies_refresh':
+      return 'refreshing a title from TMDB';
     case 'streaming_find':
       return 'searching the streaming sites';
     case 'streaming_play':

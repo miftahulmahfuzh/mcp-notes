@@ -22,6 +22,7 @@ function fakeMovies(over: Partial<MovieToolDeps> = {}): MovieToolDeps {
     fetchPicture: vi.fn(async () => ({ data: Buffer.from('jpg'), mime: 'image/jpeg' })),
     continueTitle: vi.fn(async (): Promise<ContinueResult> => ({ action: 'no_match', query: null })),
     playSomething: vi.fn(async () => ({ result: { action: 'no_match', query: null } as ContinueResult, candidates: 0 })),
+    refreshTitle: vi.fn(async () => {}),
     ...over,
   };
 }
@@ -55,15 +56,17 @@ const MINIMAL_ARGS: Record<string, Record<string, unknown>> = {
   movies_person: { name: 'Margaret Qualley' },
   movies_mark: { title: 'mobland', watched: true },
   movies_pictures: { title: 'mobland' },
+  movies_refresh: { title: 'mobland' },
 };
 
 describe('movie MCP tools without a database', () => {
-  it('registers exactly the seven names; only movies_continue and movies_mark write', async () => {
+  it('registers exactly the eight names; only movies_continue, movies_mark and movies_refresh write', async () => {
     const c = await connect(fakeMovies());
     const { tools } = await c.client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...MOVIE_TOOL_NAMES].sort());
+    const writeTools = new Set(['movies_continue', 'movies_mark', 'movies_refresh']);
     for (const t of tools) {
-      expect(t.annotations?.readOnlyHint).toBe(t.name !== 'movies_continue' && t.name !== 'movies_mark');
+      expect(t.annotations?.readOnlyHint).toBe(!writeTools.has(t.name));
       expect(t.description?.length ?? 0).toBeGreaterThan(200);
     }
     expect(tools.find((t) => t.name === 'movies_continue')?.description).toContain("VLC on the owner's screen");

@@ -125,6 +125,12 @@ beforeAll(async () => {
     },
     continueTitle: (title) => continueTitle({ db: h.deps.db, player: fakePlayer, exists: async () => true }, title),
     playSomething: () => playSomething({ db: h.deps.db, player: fakePlayer, exists: async () => true }, () => nextRandom()),
+    async refreshTitle(id) {
+      const row = await repo.titleById(id);
+      if (row === null) throw new Error(`no title ${id}`);
+      const meta = row.kind === 'movie' ? await fakeTmdb.movieDetails(row.tmdbId) : await fakeTmdb.tvDetails(row.tmdbId);
+      await repo.upsertTitle(meta);
+    },
   };
   const server = createMcpServer({ ...mcpToolDeps(h.deps), movies });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
@@ -154,7 +160,7 @@ interface ListBody {
 }
 
 describe('movie MCP tools', () => {
-  it('registers the seven tools and the instructions explain them', async () => {
+  it('registers the eight tools and the instructions explain them', async () => {
     const names = (await client.listTools()).tools.map((t) => t.name).filter((n) => n.startsWith('movies_'));
     expect(names.sort()).toEqual([...MOVIE_TOOL_NAMES].sort());
     expect(client.getInstructions() ?? '').toContain('Movies.');

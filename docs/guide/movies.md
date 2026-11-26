@@ -275,7 +275,7 @@ Where an id is accepted and shown:
 | The title's page | The title's id is the first fact under the heading; each episode row carries its own. |
 | `/movies/<id>` | Opens the title. An episode's id opens its series scrolled to that episode, with the row marked, even when the season has no file. |
 | `GET /api/movies/<id>` | Answers the title; an episode's id answers its series. |
-| The `movies_*` tools that take a `title` (`movies_get`, `movies_history`, `movies_continue`, `movies_pictures`, `movies_mark`) | `title` takes a movie id. In `movies_get` an episode's id answers that episode first; in `movies_continue` it plays exactly that episode; in `movies_mark` it takes `watched` only. |
+| The `movies_*` tools that take a `title` (`movies_get`, `movies_history`, `movies_continue`, `movies_pictures`, `movies_mark`, `movies_refresh`) | `title` takes a movie id. In `movies_get` an episode's id answers that episode first; in `movies_continue` it plays exactly that episode; in `movies_mark` it takes `watched` only. |
 | Wall chat | An id in an answer is a chip. Clicking it opens the movie pop-up (`MovieModal`) with Play and a button to the page (`web/src/lib/chatSegments.ts`). While VLC has that title open (for an episode's id, that episode) the pop-up follows it like the title's page: the outline and badge on the poster, and the state and position beside Play, re-read every five seconds. |
 | Claude Code | The MCP instructions tell Claude to write `[M-23T4](http://localhost:7317/movies/M-23T4)`, and the `note-links` mod links a bare id the same way. See [claude-code.md](claude-code.md). |
 
@@ -1019,8 +1019,8 @@ and the list describe two daemons pointed at one Postgres by hand.
 
 ## What you can ask
 
-The seven tools are the same in both places. Claude Code reaches them through the `notes` MCP server
-(the `/n` skill maps the phrasings below), and the wall's chat agent has all seven in its tool list
+The eight tools are the same in both places. Claude Code reaches them through the `notes` MCP server
+(the `/n` skill maps the phrasings below), and the wall's chat agent has all eight in its tool list
 (`allowedChatTools` in `src/chat/status.ts`) plus web search. Argument details are in
 [reference/mcp-tools.md](reference/mcp-tools.md#movies_list).
 
@@ -1205,6 +1205,28 @@ Differences between the two places:
   id) also clears that file's done signal.
 - A `file_id` that is not in the library answers `unmatched_file`; an unknown one, `not_found`.
 
+### Refresh a title's metadata
+
+| Phrasing | Tool call | Where it works |
+| --- | --- | --- |
+| `/n update Invincible, TMDB just added a new season` | `movies_refresh {"title":"Invincible"}` | Both |
+| `/n refresh M-8QAR's season list` | `movies_refresh {"title":"M-8QAR"}` | Both |
+
+- `movies_refresh` re-fetches the title from TMDB and replaces its stored metadata (overview,
+  genres, companies, credits and the whole episode list) the same way `MoviesRepo.upsertTitle` does
+  on a title's first stream, the owner's own marks (watched, rating, review, interested) kept.
+  `seasons_added` in the answer names any season number that was not stored before the call.
+- A title stored once is otherwise never re-read from TMDB (`TitleStore.ensure` and
+  `MovieStreams.ensureTitle` only fetch when the row does not exist yet), so a series' later
+  seasons and episodes stay as they were on the day it was first stored until `movies_refresh` is
+  called. `direct_stream_play` can still stream a season or episode this title has not stored
+  locally (it resolves the torrent/cloud source by title and year, not by the stored episode row),
+  which is what can make a season look "missing" here while it already streams: `movies_refresh`
+  is how the stored seasons list catches up.
+- `tmdb_unavailable`: no TMDB credentials on this server. `tmdb_error`: TMDB could not be reached;
+  answer from the library tools or web search meanwhile. `not_found`: the title is not stored yet
+  (nothing to refresh) — `movies_mark` with its title key stores it first.
+
 ### Ids
 
 | Ask | Tool call | Where |
@@ -1328,7 +1350,7 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `claude/skills/trace-vlc-bug/` | The `/trace-vlc-bug` skill: `trace.sh`, `collect.ps1` and the known causes |
 | `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, the Stream list, unmatched, assign, user marks, sync, events; play, continue, player, health; the stream position report is in `src/http/directStreamApi.ts` |
 | `src/http/moviesGuideApi.ts` | Routes behind the names and the play menu: a person, a studio, a genre's guide, storing a listed title, a play on a named site, the pahe search |
-| `src/mcp/movieTools.ts` | The seven `movies_*` tools |
+| `src/mcp/movieTools.ts` | The eight `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |
 | `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal`, `StoryModal`, `EntityModal` (a person, a studio, a genre), `PlayMenu`, `TrendingSection`, `SiteTitlesSection` |
 | `web/src/lib/movies.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` | Labels, filters and play plan; the store and its polling; the API client |
