@@ -76,7 +76,7 @@ export async function resolve(ctx: SourceContext, ref: StreamRef, options: Torre
         : 'every torrent found was tried; asking again starts over with the ones whose swarm did not deliver';
     return [{ provider: TORRENTS_LEFT, outcome: 'skipped', took_s: null, detail }];
   };
-  const out = await tryCandidates(ctx, ref, query, candidates, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...indexes, ...p.attempts] }), note);
+  const out = await tryCandidates(ctx, ref, query, candidates, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...indexes, ...p.attempts] }), note, dubs.length);
   if (out.ok) {
     log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), playing ${out.torrent.name}${foundIn(out.torrent.candidate)}`);
     return { ...out, attempts: [...indexes, ...out.attempts] };

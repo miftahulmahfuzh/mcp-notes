@@ -1044,7 +1044,7 @@ cache, a subtitle from outside the stream, a torrent's subtitle tier, or none).
 | `no_source`, one attempt `Release date` | The film is not released yet, or the episode has not aired, by TMDB's day (`is not released yet: TMDB gives 2028-10-01`). Nothing was asked: no provider, no cache, no torrent index. Until that day a stream or a torrent of the title is a trailer or a fake: The Batman: Part II (2028) "resolved" on a cloud provider as a Hindi and English stream, and Dune: Part Three's torrents were trailers. A title with no known day, and a day that is today, play as usual; a magnet the owner pasted always plays. Nothing is marked stale |
 | `pending` | Not an error: `direct_stream_play` answered `started: false, pending: true` because the play outlasted 45 s. See [A play that is being started](#a-play-that-is-being-started) |
 | `torrent_off` | A play asked for the torrent source (`provider: "torrent"`) while torrents are off on this machine (`NOTESD_TORRENT=off`) |
-| `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed`, `bad_output` (the resolver's answer could not be read), `deadline`, `torrent_gone` (a torrent session's refresh), or what the resolver said |
+| `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed` (its detail ends with the script's last 8 lines of stderr, magnets, address queries and secrets cut: `; stderr: ... TypeError: ...`), `bad_output` (the resolver's answer could not be read), `deadline`, `torrent_gone` (a torrent session's refresh), or what the resolver said |
 | `open_failed` | The title resolved, but the player page could not be opened in the streaming Chrome |
 | `unknown_session` | The session id is wrong, the session ended, or the daemon restarted since |
 | `forbidden_host` | The address is not on a host the session may reach |
@@ -2324,10 +2324,19 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   up only when the torrent received less than 512 kB in the last 15 s (`stalled before the header arrived: 0.2 MB in
   the last 15 s (...)`). A flat 30 s used to drop well seeded 1080p torrents: a YTS MP4's header is about 10 MB, and
   three racers sharing this machine's link (about 9 Mbps) each needed some 35 s; Dune: Part Two then played a 720p
-  after 80 s. A file whose audio names only languages other than the title's original is
-  `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
+  after 80 s. The file's first and last 2 MB (at least one piece each) are fetched before its middle
+  (`TorrentStreams.headFirst`): ffprobe reads the start and then seeks to the end (a Matroska file's Cues and Tags,
+  an MP4's moov), and webtorrent fetches a selected file front to back, so in a season pack, whose pieces are 8 to
+  16 MB, the end came only after the whole episode (Babylon Berlin S01E01: 25.2 MB from 14 peers in 79 s, and no
+  header). The log names the file the probe reads: `torrent: TMDB tv 66980 S01E01: <release> (<hash>): probing
+  <path> (file 0 of 10, 1450 MB, 1 subtitle file beside it), its first and last pieces first`. A file whose audio
+  names only languages other than the title's original is `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
-  one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six torrents and what
+  one listed, up to six torrents and 90 seconds. A torrent whose swarm delivers but whose header has not come after
+  45 s gives way when another torrent of the same ask waits for its slot (one of this round not opened yet, or the
+  dub-named round) and at least 25 s are left for it: `no header after 45 s while it delivered (...); 2 more torrents
+  waited, so it gave way`. Nothing waiting, it keeps the whole budget. A 139-file pack of A Record of a Mortal's
+  Journey to Immortality took in 15.3 MB for 85 s with no header, and the two releases behind it were never tried. The dub-named round after it has its own six torrents and what
   is left of the same 90 seconds, so one ask never takes longer.
 - **Asking again tries the next torrents, not the same ones.** The finder keeps up to twenty candidates, and one
   ask tries six. The torrent source remembers, per film or episode and in memory (until the daemon restarts), each
@@ -2372,7 +2381,10 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   arrived too", "still opening when ... was chosen"), leave their swarms at once, and are first in line for the
   shuffle button. Every torrent that does not play gets a log line saying why, with what its swarm gave:
   `torrent: TMDB movie 693134: <release> (2770fe27) lost: no_stream after 21 s, the swarm stalled before the header
-  arrived: 0.1 MB in the last 15 s (3.2 MB received, 2 peers, 0.1 Mbps in 16 s)`, `lost: its header arrived too
+  arrived: 0.1 MB in the last 15 s (3.2 MB received, 2 peers, 0.1 Mbps in 16 s) (from torrentio)`: a torrent that
+  failed names the index that listed it, since an index asked by IMDb id can list another film under it (TorrentsDB
+  lists two 2013 Korean releases under the 2019 Turkish Miracle in Cell No. 7; the title-search fit would drop them,
+  but it applies only to what only a title search listed), `lost: its header arrived too
   (720p listed; 4 peers connected, ...); <release> was chosen`, `lost: still opening (8.1 MB received, 5 peers, 2.2 Mbps) when <release> was
   chosen`.
 - **An episode TMDB numbers on across seasons.** TMDB files One Piece episode 1000 as season 21, episode 1000;

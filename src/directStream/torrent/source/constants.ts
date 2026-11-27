@@ -44,6 +44,13 @@ export const TORRENT_PROBE_TIMEOUT_MS = 30_000;
  */
 export const PROBE_STALL_MS = 15_000;
 export const PROBE_STALL_BYTES = 512 * 1024;
+/**
+ * A racer whose swarm delivers but whose header has not arrived after this long gives way, only when another torrent
+ * of the same play waits for its slot (one not yet opened in this round, or the dub-named round after it). A 139-file
+ * pack took in 15.3 MB at 5.4 Mbps for the whole 85 s and no header, and the two releases behind it were never tried
+ * (note 2-IFP). Single-file torrents at 1 to 2 Mbps had their header in 20 to 35 s. Nothing waiting: the whole budget.
+ */
+export const HEADER_GIVE_WAY_MS = 45_000;
 /** How often a probe's swarm is looked at. */
 export const PROBE_SAMPLE_MS = 1_000;
 /** Once a header of a less preferred height arrived, a racer of a preferred height (1080p) still opening gets up to this long to arrive too. */

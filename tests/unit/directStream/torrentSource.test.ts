@@ -63,6 +63,7 @@ interface Fakes {
   probeStallMs?: number;
   probeSampleMs?: number;
   heightSettleMs?: number;
+  headerGiveWayMs?: number;
 }
 
 const wait = (ms: number | undefined): Promise<void> => (ms === undefined ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
@@ -139,6 +140,7 @@ function setup(o: Fakes = {}) {
     ...(o.probeStallMs === undefined ? {} : { probeStallMs: o.probeStallMs }),
     ...(o.probeSampleMs === undefined ? {} : { probeSampleMs: o.probeSampleMs }),
     ...(o.heightSettleMs === undefined ? {} : { heightSettleMs: o.heightSettleMs }),
+    ...(o.headerGiveWayMs === undefined ? {} : { headerGiveWayMs: o.headerGiveWayMs }),
     log: (line) => void logged.push(line),
     ...(o.clock === undefined ? {} : { now: () => o.clock!.now }),
   });
@@ -187,6 +189,47 @@ describe('the header probe goes on while the swarm delivers', () => {
     expect(first).toMatchObject({ outcome: 'no_stream' });
     expect(first?.detail).toMatch(/stalled before the header arrived: 0\.0 MB in the last/);
     expect(t.logged.some((l) => l.includes(`(${h(1).slice(0, 8)}) lost: no_stream`))).toBe(true);
+  });
+});
+
+describe('a torrent that delivers but sends no header gives way to the ones waiting (note 2-IFP, A Record of a Mortal\'s Journey)', () => {
+  const growing = (perMs: number): (() => number) => {
+    const from = Date.now();
+    return () => (Date.now() - from) * perMs;
+  };
+  const PACK = 'A.Record.Of.A.Mortals.Journey.To.Immortality.S01-S03E117.1080p';
+
+  it('the only proper candidate, a pack, stops waiting for its header after the give-way time, and the dub-named round plays', async () => {
+    const t = setup({
+      candidates: [candidate(h(1), PACK)],
+      lastResort: [candidate(h(2), 'Fanren.Xiuxian.Chuan.S01E01.1080p.WEB-DL.Multi-Audio')],
+      received: { [h(1)]: growing(100_000), [h(2)]: growing(100_000) },
+      probeDelay: { [h(1)]: 10_000, [h(2)]: 50 },
+      probeStallMs: 60,
+      probeSampleMs: 10,
+      headerGiveWayMs: 150,
+      settleMs: 0,
+    });
+    const started = Date.now();
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0000001' });
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(out.ok && out.torrent.infoHash).toBe(h(2));
+    const pack = out.attempts.find((a) => a.provider === `Torrent: ${PACK}`);
+    expect(pack).toMatchObject({ outcome: 'no_stream' });
+    expect(pack?.detail).toMatch(/no header after 0 s while it delivered \(.*\); 1 more torrent waited/);
+  });
+
+  it('a torrent nothing waits behind keeps the whole budget, however long its header takes', async () => {
+    const t = setup({
+      candidates: [candidate(h(1), PACK)],
+      received: { [h(1)]: growing(100_000) },
+      probeDelay: { [h(1)]: 400 },
+      probeStallMs: 60,
+      probeSampleMs: 10,
+      headerGiveWayMs: 100,
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0000001' });
+    expect(out.ok && out.torrent.infoHash).toBe(h(1));
   });
 });
 
@@ -395,7 +438,7 @@ describe('TorrentSource.resolve', () => {
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
     expect(out.ok && out.torrent.infoHash).toBe(h(2));
     expect(out.attempts.slice(1).map((a) => [a.outcome, a.detail])).toEqual([
-      ['dubbed', 'its audio is de, not the original en'],
+      ['dubbed', 'its audio is de, not the original en (from torrentio)'],
       ['resolved', 'mov h264 720p / aac, 40 seeds'],
     ]);
     expect(await t.settled()).toContain(`release ${h(1)}`);
@@ -417,7 +460,7 @@ describe('TorrentSource.resolve', () => {
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
     expect(out.ok && out.torrent.infoHash).toBe(h(3));
     expect(out.attempts.slice(1).map((a) => a.outcome)).toEqual(['unplayable', 'no_stream', 'resolved']);
-    expect(out.attempts[1]?.detail).toBe('matroska hevc 1080p / eac3: Chrome does not play it as is');
+    expect(out.attempts[1]?.detail).toBe('matroska hevc 1080p / eac3: Chrome does not play it as is (from torrentio)');
     const calls = await t.settled();
     expect(calls).toContain(`release ${h(1)}`);
     expect(calls).toContain(`release ${h(2)}`);

@@ -8,6 +8,7 @@ import { installTrackerGuard } from './trackerGuard.js';
 import {
   BYTES_PER_KB,
   kilobits,
+  PROBE_HEAD_BYTES,
   TorrentError,
   type TorrentAddSpec,
   type TorrentEngine,
@@ -47,6 +48,36 @@ async function* take(file: TorrentFile, start: number, end: number): AsyncGenera
   } finally {
     await iterator.return?.();
   }
+}
+
+/**
+ * Reads start..end of one file and drops the bytes: its pieces are asked for beside the others being read. A second
+ * plain `select` inside a file already selected is merged into the file's selection by webtorrent (one range, one
+ * priority, fetched front to back), so the head and tail are asked for as reads. `stop` ends it early.
+ */
+function warm(file: TorrentFile, start: number, end: number): { stop(): void } {
+  const iterator = file[Symbol.asyncIterator]({ start, end });
+  let left = end - start + 1;
+  let stopped = false;
+  void (async () => {
+    try {
+      while (left > 0 && !stopped) {
+        const next = await iterator.next();
+        if (next.done === true) return;
+        left -= next.value.length;
+      }
+    } catch {
+      // A torrent left while its head was coming: nothing to keep.
+    } finally {
+      await iterator.return?.();
+    }
+  })();
+  return {
+    stop: () => {
+      stopped = true;
+      void iterator.return?.();
+    },
+  };
 }
 
 function destroyTorrent(torrent: Torrent): Promise<void> {
@@ -106,6 +137,8 @@ class WebTorrentHandle implements TorrentHandle {
   readonly infoHash: string;
   readonly name: string;
   readonly files: readonly TorrentFileInfo[];
+  /** The head and tail reads `headFirst` started, by file index. */
+  private readonly warming = new Map<number, { stop(): void }[]>();
 
   constructor(private readonly torrent: Torrent) {
     this.infoHash = torrent.infoHash;
@@ -118,8 +151,25 @@ class WebTorrentHandle implements TorrentHandle {
   }
 
   deselect(indexes: readonly number[]): void {
+    for (const index of indexes) {
+      for (const w of this.warming.get(index) ?? []) w.stop();
+      this.warming.delete(index);
+    }
     if (this.torrent.destroyed) return;
     for (const index of indexes) this.file(index).deselect();
+  }
+
+  headFirst(index: number): void {
+    const t = this.torrent;
+    const file = this.file(index);
+    if (t.destroyed || file.length === 0 || this.warming.has(index)) return;
+    const span = Math.min(file.length, Math.max(PROBE_HEAD_BYTES, t.pieceLength));
+    const spans: [number, number][] = [[0, span - 1]];
+    if (span < file.length) spans.push([Math.max(span, file.length - span), file.length - 1]);
+    this.warming.set(
+      index,
+      spans.map(([start, end]) => warm(file, start, end)),
+    );
   }
 
   read(index: number, range: { start: number; end: number }): Readable {

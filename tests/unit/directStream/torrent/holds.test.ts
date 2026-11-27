@@ -94,7 +94,7 @@ describe('a hold on a torrent is given back only by the caller that took it', ()
     // The same torrent is listed for an episode: it holds no file of it, so this ask takes no hold and lets go.
     const episode = await source.resolve(EPISODE, { audioLang: 'en', imdbId: 'tt0944947' });
     expect(episode.ok).toBe(false);
-    expect(episode.attempts.find((a) => a.provider.startsWith('Torrent: '))).toMatchObject({ outcome: 'no_stream', detail: 'the torrent holds no file of S01E02' });
+    expect(episode.attempts.find((a) => a.provider.startsWith('Torrent: '))).toMatchObject({ outcome: 'no_stream', detail: 'the torrent holds no file of S01E02 (from torrentio)' });
     await settled();
     expect(engine.removed).toEqual([]);
     expect(streams.status().swarm).toMatchObject([{ info_hash: HASH, users: 1 }]);

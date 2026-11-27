@@ -11,6 +11,8 @@ import type { StreamRef } from '../types.js';
 
 /** Where the downloads live under the data directory when NOTESD_TORRENT_DIR is unset. */
 export const TORRENT_SUBDIR = path.join('movies', 'torrents');
+/** What `headFirst` fetches first at each end of a file (at least one piece): an MKV's header and seek targets, an MP4's moov. */
+export const PROBE_HEAD_BYTES = 2 * 1_048_576;
 /** How long `open` waits for a peer to send the file list. */
 export const TORRENT_OPEN_TIMEOUT_MS = 60_000;
 /** An unfinished torrent nothing uses leaves the swarm this long after its last file request. */
@@ -100,6 +102,12 @@ export interface TorrentHandle {
   select(indexes: readonly number[]): void;
   /** Stops fetching these files ahead (a file route's read still fetches its own range). Absent: a disk handle, tests' fakes. */
   deselect?(indexes: readonly number[]): void;
+  /**
+   * Fetches this file's first and last PROBE_HEAD_BYTES (at least one piece each) before its middle: the header a probe
+   * reads and the end it seeks to (a Matroska file's Cues and Tags, an MP4's moov). Only a file already selected; stops
+   * with `deselect`. Absent: a disk handle, tests' fakes.
+   */
+  headFirst?(index: number): void;
   /** Bytes start..end of one file, `end` inclusive, in order; the swarm fetches their pieces first. */
   read(index: number, range: { start: number; end: number }): Readable;
   stats(): TorrentStats;

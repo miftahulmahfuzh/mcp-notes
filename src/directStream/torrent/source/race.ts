@@ -10,7 +10,7 @@ import type { SourceContext } from './context.js';
 import { chooseOrder, deliveryText, filmKbpsOf, remuxTimeoutOutcome, type Delivery } from './delivery.js';
 import { probeWhileDelivering } from './probeWhileDelivering.js';
 import { refusalOf, standIn } from './refusal.js';
-import { messageOf, pad, seconds, sleep } from './text.js';
+import { foundIn, messageOf, pad, seconds, sleep } from './text.js';
 import { trackersOf } from './trackers.js';
 import type { FindQuery, NoteFailure, OpenedTorrent, Passed, PlayFacts, Raced, Racer, Tried, TorrentProgress, TorrentResolve } from './types.js';
 
@@ -36,6 +36,8 @@ export async function tryCandidates(
   deadline: number,
   progress?: (progress: TorrentProgress) => void,
   note?: NoteFailure,
+  /** Torrents of the same play that a later round tries (the dub-named ones): a racer with no header gives way to them too. */
+  after = 0,
 ): Promise<TorrentResolve> {
   const { opts, now, log, hands } = ctx;
   const pool = candidates.slice(0, MAX_TORRENT_TRIES);
@@ -53,7 +55,9 @@ export async function tryCandidates(
     while (running.size < TORRENT_RACE_WIDTH && next < pool.length && deadline - now() > 0) {
       const position = next++;
       const c = pool[position]!;
-      const racer = race(ctx, ref, query, c, position, play, deadline - now());
+      // Torrents that wait for a slot: the ones of this round not opened yet, then a later round's, while the budget can still try one.
+      const waiting = (): number => (deadline - now() < TORRENT_OPEN_TIMEOUT_MS + PROBE_MIN_MS ? 0 : pool.length - next + after);
+      const racer = race(ctx, ref, query, c, position, play, deadline - now(), waiting);
       const done = racer.result.then((raced) => {
         if (!running.delete(position)) return;
         if (raced.ok) passed.push(raced.passed);
@@ -128,7 +132,7 @@ export async function tryCandidates(
  * the header through the file route. A torrent that fails lets go of itself; one that passes stays selected (it
  * keeps downloading) until it is chosen or dropped.
  */
-export function race(ctx: SourceContext, ref: StreamRef, query: FindQuery, c: TorrentCandidate, position: number, play: PlayFacts, budgetMs: number): Racer {
+export function race(ctx: SourceContext, ref: StreamRef, query: FindQuery, c: TorrentCandidate, position: number, play: PlayFacts, budgetMs: number, waiting: () => number = () => 0): Racer {
   const { opts, now, hands, ears } = ctx;
   const started = now();
   // `held`: this racer's `use` counted it as a user of the torrent; only then is there a hold to give back.
@@ -138,7 +142,8 @@ export function race(ctx: SourceContext, ref: StreamRef, query: FindQuery, c: To
     state.gone = true;
     hands.dropNow(c.infoHash, state.held);
   };
-  const attempt = (outcome: ResolveOutcome, detail: string): ResolveAttempt => ({ provider: torrentLabel(c.name), outcome, took_s: seconds(started, now()), detail });
+  // The index that listed it ends the detail: a release of another film comes from some index's listing, and only the attempt says which.
+  const attempt = (outcome: ResolveOutcome, detail: string): ResolveAttempt => ({ provider: torrentLabel(c.name), outcome, took_s: seconds(started, now()), detail: outcome === 'skipped' ? detail : `${detail}${foundIn(c)}` });
   const fail = (outcome: ResolveOutcome, detail: string, lasting = false): Raced => {
     drop();
     return { ok: false, attempt: attempt(outcome, detail), lasting };
@@ -169,6 +174,11 @@ export function race(ctx: SourceContext, ref: StreamRef, query: FindQuery, c: To
         throw err;
       }
       if (state.cancelled) return left();
+      const probedFile = opened.files.find((f) => f.index === picked.video);
+      ctx.log(
+        `[notesd] torrent: ${refLabel(ref)}: ${c.name} (${c.infoHash.slice(0, 8)}): probing ${probedFile?.path ?? `file ${picked.video}`} (file ${picked.video} of ${opened.files.length}, ${((probedFile?.length ?? 0) / 1e6).toFixed(0)} MB${picked.subtitles.length > 0 ? `, ${picked.subtitles.length} subtitle file${picked.subtitles.length === 1 ? '' : 's'} beside it` : ''}), its first and last pieces first`,
+      );
+      opts.swarm.headFirst?.(c.infoHash, picked.video);
       const manifestUrl = opts.swarm.localUrl(c.infoHash, picked.video);
       const probed = await probeWhileDelivering(
         { opts, now, receivedText: (hash) => hands.receivedText(hash) },
@@ -176,6 +186,7 @@ export function race(ctx: SourceContext, ref: StreamRef, query: FindQuery, c: To
         c.infoHash,
         budgetMs - (now() - started),
         () => state.cancelled,
+        waiting,
       );
       if (state.cancelled) return left();
       if (!probed.ok) return fail(probed.outcome, probed.detail);
