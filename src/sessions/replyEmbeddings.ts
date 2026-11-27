@@ -105,9 +105,11 @@ export function dbReplyEmbeddingStore(db: Db, repo: SessionsRepo, host: string):
 export type ReplyEmbeddingWorkerOptions = Omit<EmbeddingWorkerOptions, 'events' | 'label' | 'itemNoun'>;
 
 /**
- * Embeds pending replies at start, on `kick()` (the session ingester calls it after a sweep that
- * wrote rows) and every sweep (60 s: catches the watcher's reads, the one-time replies backfill and
- * due retries). `close()` waits at most `closeGraceMs` (5 s) for the in-flight batch.
+ * Embeds pending replies at start, on `kick()` (the session ingester calls it after every committed
+ * read that wrote rows, debounced to `REPLY_EMBED_KICK_MS` by src/background.ts) and every sweep
+ * (`sweepMs`, which src/background.ts leaves at the worker's 30-minute `DEFAULT_SWEEP_MS`: it catches
+ * the one-time replies backfill and due retries). `close()` waits at most `closeGraceMs` (5 s) for
+ * the in-flight batch.
  */
 export function startReplyEmbeddingWorker(opts: ReplyEmbeddingWorkerOptions): EmbeddingWorker {
   return startEmbeddingWorker({ ...opts, label: REPLY_EMBEDDINGS_LABEL, itemNoun: 'reply' });

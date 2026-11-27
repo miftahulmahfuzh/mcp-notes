@@ -144,14 +144,14 @@ export const STREAM_CACHE_TOOL_NAMES = ['direct_stream_cache'] as const;
 export const SUBTITLE_CHECK_TOOL_NAMES = ['direct_stream_sync_subtitle'] as const;
 
 /**
- * The four curated dword (daily-words) tools (DWORD_CONNECTOR_PLAN phases 3/4: src/mcp/dwordVocabTools.ts,
- * src/mcp/dwordJournalTools.ts). Named here only so `captionForToolUse` can give each one its own caption
- * and so this file's tests can assert on them by name. Unlike ADVERSARY_TOOL_NAMES/SESSION_TOOL_NAMES,
- * this array is deliberately NOT spread into `allowedChatTools()`'s return value: dword is a
- * `CONNECTOR_SYSTEMS` member (DWORD_CONNECTOR_PLAN phase 1), so all six of its tool names (these four
- * plus the generic `dword_schema`/`dword_sql`) already reach `allowedChatTools()` through
- * `ALL_CONNECTOR_TOOL_NAMES` below. Spreading this array too would list the same four names twice and
- * fail the no-duplicates assertion in tests/unit/chat-status.test.ts.
+ * The five curated dword (daily-words) tools (DWORD_CONNECTOR_PLAN phases 3/4: src/mcp/dwordVocabTools.ts,
+ * src/mcp/dwordJournalTools.ts; `dword_journal_set_source` came later). Named here only so
+ * `captionForToolUse` can give each one its own caption and so this file's tests can assert on them by
+ * name. Unlike ADVERSARY_TOOL_NAMES/SESSION_TOOL_NAMES, this array is deliberately NOT spread into
+ * `allowedChatTools()`'s return value: dword is a `CONNECTOR_SYSTEMS` member (DWORD_CONNECTOR_PLAN
+ * phase 1), so all seven of its tool names (these five plus the generic `dword_schema`/`dword_sql`)
+ * already reach `allowedChatTools()` through `ALL_CONNECTOR_TOOL_NAMES` below. Spreading this array too
+ * would list the same five names twice and fail the no-duplicates assertion in tests/unit/chat-status.test.ts.
  */
 export const DWORD_TOOL_NAMES = [
   'dword_vocab_lookup',
@@ -173,15 +173,17 @@ export const CONNECTOR_CAPTIONS = Object.fromEntries(
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
- * Exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 2
- * streaming tools, the 5 direct-stream tools the chat bar may call (not direct_stream_update_source), the connector tools and WebSearch + WebFetch (CONNECTORS_PLAN invariant 8, which supersedes
+ * Exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 8 movie tools, the 2
+ * streaming tools, `warp`, `stream_disk` and `direct_stream_health`, the 5 direct-stream tools the chat
+ * bar may call (not direct_stream_update_source), the 22 connector tools and WebSearch + WebFetch
+ * (tests/unit/chat-status.test.ts counts each group; CONNECTORS_PLAN invariant 8, which supersedes
  * CHAT_BAR_BRAIN_PLAN invariant 4; SEMANTIC_SEARCH_PLAN phase 5 adds `related`; WALL_EDITING_PLAN
  * phase 3 adds `attach_image`, `remove_image` and `restore_image`; CHAT_HISTORY_FILES_IMAGE_SEARCH_PLAN
  * phase 6 adds `similar_images`; PROJECT_SESSION_GRAPH_PLAN phase 7 adds the session tools;
  * PROJECT_SESSION_GRAPH_PLAN phase 9 adds `session_resume`; SEER_ADVERSARIAL_PLAN phase 5 adds the
  * adversary tools; MOVIES_LIBRARY_PLAN phase 7 adds the movie tools; DWORD_CONNECTOR_PLAN phases
- * 1/3/4 add dword's six tool names to `ALL_CONNECTOR_TOOL_NAMES`, 15 -> 21, with no change needed to
- * this function's body).
+ * 1/3/4 add dword's tool names to `ALL_CONNECTOR_TOOL_NAMES`, seven now with `dword_journal_set_source`,
+ * so 15 -> 22, with no change needed to this function's body).
  */
 export function allowedChatTools(): string[] {
   return [
@@ -194,7 +196,7 @@ export function allowedChatTools(): string[] {
     `${MCP_PREFIX}${STREAM_DISK_TOOL_NAME}`,
     `${MCP_PREFIX}${STREAM_HEALTH_TOOL_NAME}`,
     ...DIRECT_STREAM_TOOL_NAMES.filter((name) => !CLAUDE_CODE_ONLY_TOOL_NAMES.includes(name)).map((name) => `${MCP_PREFIX}${name}`),
-    // dword's six tool names (dword_schema, dword_sql, and DWORD_TOOL_NAMES above) arrive here
+    // dword's seven tool names (dword_schema, dword_sql, and DWORD_TOOL_NAMES above) arrive here
     // already, because CONNECTOR_SYSTEMS includes 'dword' (DWORD_CONNECTOR_PLAN phase 1).
     ...ALL_CONNECTOR_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...WEB_TOOL_NAMES,
