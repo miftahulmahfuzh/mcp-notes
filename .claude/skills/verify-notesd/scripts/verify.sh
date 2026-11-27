@@ -265,6 +265,9 @@ EOF
     # A throwaway daemon never reads the machine's Wi-Fi name for a download's office rule (downloads/plan.ts): the run
     # is "not the office", so a torrent download is tried wherever the run happens to be.
     NOTESD_STREAM_DOWNLOAD_SSID=verify-home
+    # A throwaway daemon never starts Seer's GitHub nightly (`gh workflow run`, src/adversary/dispatch.ts),
+    # with or without --adversary: its SEER_DIR is a scratch copy, but nothing else would guarantee it.
+    NOTESD_SEER_DISPATCH=off
     # Every run's tmux is the recording fake: the report button and resume never open a window in
     # the owner's tmux. TMUX_FAKE (printed below) is where its calls.log and switches live.
     NOTESD_TMUX_BIN="$HERE/stream/fake-tmux.sh"
