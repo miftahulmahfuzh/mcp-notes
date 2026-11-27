@@ -991,8 +991,11 @@ writer. A write that fails is one line in the daemon's log, `[notesd] play log: 
 the log never fails, delays or changes a play.
 
 What makes a row: a play (`via: play`: the tools, the play menu, `POST /api/stream/play`), a cache
-played from the Cache page (`cache`), a page carrying its play on after a restart (`continue`), and
-the player's previous and next buttons (`episode`).
+played from the Cache page (`cache`), and the player's previous and next buttons (`episode`). A page
+carrying its play on after a restart is no new ask: the row the daemon's start closed as `restart`
+is open again under the new session, with one more refresh and the new page load counted on it, and
+when there is no such row (or the carry-on finds nothing to play) nothing is written (`continue` is
+only on older rows).
 
 - **Answered.** The row holds when the ask began, the title, how the source was named (`asked`:
   `provider`, `cloud`, `torrent`, or none), the session, the channel (`cloud`, `torrent`, `cache`),

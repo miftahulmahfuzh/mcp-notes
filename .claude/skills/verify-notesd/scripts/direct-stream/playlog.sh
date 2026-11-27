@@ -3,7 +3,8 @@
 # on a `verify.sh up --direct-stream` run (without --torrent). Every stage drives the real daemon over HTTP as the
 # player page does (the fake resolver answers; nothing of the owner's is reached) and reads the row back from the
 # run's database, read-only. No stage named: all six, in order. Each stage that passes prints `PASS <stage>`; the
-# first failed check stops it with `playlog: FAIL at <stage>`. `beat` takes about 45 s; `restart` restarts the daemon.
+# first failed check stops it with `playlog: FAIL at <stage>`. `beat` takes about 45 s; `restart` restarts the daemon and
+# carries the play on as the page does (it must reopen the row closed as restart, never write a new one).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -143,6 +144,22 @@ stage_restart() {
   until_row "$(row "coalesce(ended,'-')||'|'||(ended_at is not null)::text")" "restart|true"
   until_row "select count(*) from stream_play_log where session is not null and ended is null" "0"
   ok "the daemon's start closed the open row as restart, and left no session row open"
+  # The page carries its play on, as web/src/stream/session.ts continueSession asks: no new ask, the same row reopened.
+  local was=$SID id rows body
+  id="$(q "$(row "id::text")")"
+  rows="$(q "select count(*) from stream_play_log")"
+  printf 'hls\n' >"$DIRECT/mode"
+  body="$(post /api/stream/continue "{\"kind\":\"movie\",\"tmdb_id\":$FILM,\"session_id\":\"$was\",\"provider\":\"$PROVIDER\",\"info_hash\":null,\"position_s\":5}")"
+  SID="$(jq -r '.session_id // empty' <<<"$body")"
+  [ -n "$SID" ] && [ "$SID" != "$was" ] && [ "$(jq -r '.continued' <<<"$body")" = true ] || fail "the play was not carried on: $body"
+  until_row "$(row "id||'|'||via||'|'||coalesce(ended,'-')||'|'||(ended_at is null)::text||'|'||refreshes||'|'||outcome")" "$id|play|-|true|1|played"
+  report '{"position_s":8,"duration_s":600,"paused":false,"stats":{"load":"loadDDDD4","first_frame_ms":700,"played_ms":3000,"stalls":0,"stalled_ms":0,"waits":0,"waited_ms":0,"errors":0}}' >/dev/null
+  until_row "$(row "played_ms::text")" "3000"
+  sleep 1
+  [ "$(q "select count(*) from stream_play_log")" = "$rows" ] || fail "the carry-on wrote a new row ($(q "select count(*) from stream_play_log") rows, were $rows)"
+  [ "$(q "select count(*) from stream_play_log where via = 'continue' or torrent_index = 'magnet'")" = 0 ] || fail "a continue or magnet row was written"
+  [ "$(q "select count(*) from stream_play_log where session = '$was'")" = 0 ] || fail "the old session still names a row"
+  ok "the carry-on is no new ask: row $id is open again under session ${SID:0:6} with one more refresh, and its new page load counts on it"
   pass
 }
 
