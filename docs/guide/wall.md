@@ -304,7 +304,7 @@ The folder icon ("Show in Explorer") opens Windows Explorer on the stored file.
 
 | Where | What it opens |
 |---|---|
-| A card, the editor's top bar | For a note with files, the note's files folder. For a note with only photos, its first photo, selected. |
+| A card, the editor's top bar | For a note with files, the note's files folder. For a note with only photos, its first photo on this machine, selected. |
 | The photo modal, each photo in the editor's strip | That photo, selected. |
 | A file chip | That file, selected. |
 

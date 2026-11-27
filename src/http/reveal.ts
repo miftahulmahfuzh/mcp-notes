@@ -255,7 +255,7 @@ export interface NoteRevealPlan {
  * Note-level "Show in Explorer". A missing or deleted note: not_found. A note with live files:
  * open `files/<noteId>/` (available when at least one of its live files is on this machine;
  * otherwise not_on_this_machine with the first file's host). No live files: select the first live
- * image, as the card button always did. Neither: not_found.
+ * image on this machine (else not_on_this_machine with the first image's host). Neither: not_found.
  */
 export async function noteRevealPlan(
   dataDir: string,
@@ -274,16 +274,18 @@ export async function noteRevealPlan(
       },
     };
   }
-  const firstImage = note.images[0];
-  if (firstImage === undefined) return { target: null, mode: 'select' };
-  return { mode: 'select', target: await locateImage(img, firstImage.id) };
+  // The first image on this machine, as the wall's `noteRevealable` (web/src/lib/files.ts) shows the
+  // icon when any image is local; with none here, the first one answers not_on_this_machine with its host.
+  const image = note.images.find((i) => i.available) ?? note.images[0];
+  if (image === undefined) return { target: null, mode: 'select' };
+  return { mode: 'select', target: await locateImage(img, image.id) };
 }
 
 /**
  * GET /api/capabilities -> { reveal, movies_playback } (movies_playback: deps.moviesPlayer can play on this host).
  * POST /api/images/:imageId/reveal (own Origin only) -> Explorer with the image's original selected.
  * POST /api/files/:fileId/reveal (own Origin only) -> Explorer with the file selected.
- * POST /api/notes/:id/reveal (own Origin only) -> the note's files folder, or its first image (noteRevealPlan).
+ * POST /api/notes/:id/reveal (own Origin only) -> the note's files folder, or its first image on this machine (noteRevealPlan).
  * Every route takes an id, never a path.
  */
 export function revealRoutes(deps: AppDeps, opts: RevealRoutesOptions = {}): Hono {

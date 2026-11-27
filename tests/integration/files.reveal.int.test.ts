@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises';
+import { readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -111,6 +111,29 @@ describe('reveal for note files', () => {
     expect(args).toHaveLength(1);
     expect(args[0]!.startsWith('/select,')).toBe(true);
     expect(args[0]).toContain(`${withImage.images[0]!.id}.png`);
+  });
+
+  it('selects the first photo that is on this machine, not the first photo, when an earlier one is not here', async () => {
+    await insertTextNote(h, 'A-B32', 'x');
+    const first = (await attachImage('A-B32', { r: 3, g: 3, b: 3 })).images[0]!;
+    const both = await attachImage('A-B32', { r: 4, g: 4, b: 4 });
+    const second = both.images.find((i) => i.id !== first.id)!;
+    // The first photo's original is not on this machine (made on the other laptop, or gone).
+    const originals = (await readdir(h.dataDir, { recursive: true })).filter((p) => path.basename(p) === `${first.id}.png`);
+    expect(originals).toHaveLength(1);
+    await rm(path.join(h.dataDir, originals[0]!));
+    const note = ((await (await h.app.request('/api/notes/A-B32')).json()) as { note?: Note } & Note);
+    const images = (note.note ?? note).images;
+    expect(images.map((i) => [i.id, i.available])).toEqual([
+      [first.id, false],
+      [second.id, true],
+    ]);
+
+    const fake = fakeReveal();
+    const app = createApp(h.deps, { reveal: fake });
+    expect((await post(app, '/api/notes/A-B32/reveal')).status).toBe(202);
+    const args = fake.spawn.mock.calls[0]![1];
+    expect(args[0]).toContain(`${second.id}.png`);
   });
 
   it('404s a text note, an unknown, malformed or deleted note', async () => {
