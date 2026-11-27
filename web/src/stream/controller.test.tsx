@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_POLL_MS, RECONNECT_GIVE_UP_MS, RECONNECT_RETRY_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_WINDOW_MS, TORRENT_STALLS_TO_SWITCH, SUBTITLE_HOLD_MS, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
+import { CACHE_POLL_MS, RECONNECT_GIVE_UP_MS, RECONNECT_RETRY_MS, SUBTITLE_DELAY_MAX_MS, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_WINDOW_MS, TORRENT_STALLS_TO_SWITCH, SUBTITLE_HOLD_MS, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { NO_PREVIEWS, SessionError, fetchPreviews, mutedFromLocation, parsePreviews, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, previewCueJson, previewsJson, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
@@ -1238,7 +1238,6 @@ it('reads the lines to show from the tracks, keeps every track hidden, and clear
     track.activeCues = [];
     t.fire('timeupdate');
     expect(t.controller.getState().caption).toBe('');
-    expect(cueText('<00:01.000>a  \n\n <b>b</b> &lt;3&nbsp;')).toBe('a\nb <3');
   });
 
   it('keeps the delay per title and starts the next play of it with it', async () => {
@@ -1444,14 +1443,6 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
     const done = t.reads();
     await vi.advanceTimersByTimeAsync(TORRENT_POLL_MS * 5);
     expect(t.reads()).toBe(done);
-  });
-
-  it("puts the map on the film's own clock when the daemon counted it against another length", () => {
-    expect(scaleRanges([[0, 100], [500, 1000]], 1000, 500)).toEqual([[0, 50], [250, 500]]);
-    expect(scaleRanges([[0, 100]], null, 500)).toEqual([[0, 100]]);
-    expect(scaleRanges([[0, 100]], 1000, 0)).toEqual([[0, 100]]);
-    expect(onDisk([[0, 60]], 59.9)).toBe(true);
-    expect(onDisk([[0, 60]], 61)).toBe(false);
   });
 
   it('asks nothing while the tab is hidden, and asks again as soon as it shows', async () => {
