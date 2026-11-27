@@ -2,7 +2,8 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/db/client.js';
 import { toVectorLiteral } from '../../src/embeddings/repo.js';
-import { SESSIONS_SEMANTIC_OFF_FALLBACK, VIA_REPLIES_MAX, searchSessions } from '../../src/sessions/search.js';
+import { SESSIONS_NO_VECTORS_FALLBACK, SESSIONS_SEMANTIC_OFF_FALLBACK, VIA_REPLIES_MAX, searchSessions } from '../../src/sessions/search.js';
+import { QueryVectorCache } from '../../src/search/queryVector.js';
 import { createFakeEmbedder, type FakeEmbedder } from '../helpers/fakeEmbedder.js';
 import { closeTestDb, migrateTestDb, openTestDb, truncateAll } from './setup.js';
 
@@ -240,5 +241,62 @@ describe('searchSessions: Claude\'s replies count as related text', () => {
   it('own-text hits keep an empty via_replies', async () => {
     const page = await searchSessions({ db, embedder, host: HOST }, 'photo delete');
     expect(page.sessions[0]?.via_replies).toEqual([]);
+  });
+});
+
+describe('searchSessions: no session vector of the embedder\'s model yet', () => {
+  it('with no session vector at all: text mode, the no-vectors fallback, and no embedding call', async () => {
+    await db.execute(sql`delete from cc_session_embeddings`);
+    embedder.reset();
+    const page = await searchSessions({ db, embedder, host: HOST, queryVectors: new QueryVectorCache() }, 'photo delete');
+    expect(page.mode).toBe('text');
+    expect(page.fallback).toBe(SESSIONS_NO_VECTORS_FALLBACK);
+    expect(page.sessions.map((s) => s.session_id)).toEqual(['s-literal']);
+    expect(embedder.calls).toEqual([]);
+  });
+
+  it('vectors of another model, or rows still waiting for their vector, count as none', async () => {
+    await db.execute(sql`update cc_session_embeddings set model = 'other/model' where session_id = 's-literal'`);
+    await db.execute(sql`update cc_session_embeddings set embedding = null where session_id <> 's-literal'`);
+    embedder.reset();
+    const page = await searchSessions({ db, embedder, host: HOST, queryVectors: new QueryVectorCache() }, 'auth failures after resume');
+    expect(page.mode).toBe('text');
+    expect(page.fallback).toBe(SESSIONS_NO_VECTORS_FALLBACK);
+    // Words only: no session shares a word with the query.
+    expect(page.sessions).toEqual([]);
+    expect(embedder.calls).toEqual([]);
+  });
+
+  it('one session with a vector of the model is enough: hybrid, no fallback, meaning still finds it', async () => {
+    await db.execute(sql`delete from cc_session_embeddings where session_id <> 's-meaning'`);
+    embedder.reset();
+    const page = await searchSessions({ db, embedder, host: HOST, queryVectors: new QueryVectorCache() }, 'auth failures after resume');
+    expect(page.mode).toBe('hybrid');
+    expect(page.fallback).toBeUndefined();
+    expect(page.sessions[0]?.session_id).toBe('s-meaning');
+    expect(embedder.calls).toHaveLength(1);
+  });
+
+  it('becomes hybrid as soon as the first vector lands (the answer is not cached while false)', async () => {
+    await db.execute(sql`delete from cc_session_embeddings`);
+    const before = await searchSessions({ db, embedder, host: HOST }, 'photo delete');
+    expect(before.fallback).toBe(SESSIONS_NO_VECTORS_FALLBACK);
+    await db.execute(sql`
+      insert into cc_session_embeddings (session_id, sha, model, embedding, embedded_at, created_at, updated_at)
+      values ('s-literal', 'sha', ${embedder.model}, ${toVectorLiteral(embedder.vectorFor('Wall photo delete button added to the editor.'))}::vector, now(), now(), now())
+    `);
+    const after = await searchSessions({ db, embedder, host: HOST }, 'photo delete');
+    expect(after.mode).toBe('hybrid');
+    expect(after.fallback).toBeUndefined();
+    expect(after.sessions[0]?.session_id).toBe('s-literal');
+  });
+
+  it('mode text and no embedder are unchanged by an empty vector table', async () => {
+    await db.execute(sql`delete from cc_session_embeddings`);
+    const text = await searchSessions({ db, embedder, host: HOST }, 'leaderboard', {}, { mode: 'text' });
+    expect(text.mode).toBe('text');
+    expect(text.fallback).toBeUndefined();
+    const off = await searchSessions({ db, embedder: null, host: HOST }, 'leaderboard');
+    expect(off.fallback).toBe(SESSIONS_SEMANTIC_OFF_FALLBACK);
   });
 });

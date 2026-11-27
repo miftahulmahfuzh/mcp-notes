@@ -35,6 +35,14 @@ export function sessionEmbedFailedFallback(err: unknown): string {
   return `The query could not be embedded (${reason}), so these are full-text results only: sessions that share words with the query.`;
 }
 
+/**
+ * Hybrid search asked for, an embedder configured, but no session has a vector of its model yet:
+ * the summary worker waits for the copy of the old shared database (src/background.ts), or has
+ * not reached any session. Matching would be on words only while saying `hybrid`, so say so.
+ */
+export const SESSIONS_NO_VECTORS_FALLBACK =
+  'Session vectors are not built yet (they wait for the copy of the old shared database, or have not been made), so these are full-text results only: sessions that share words with the query.';
+
 export interface SessionSearchDeps {
   db: Db;
   embedder: Embedder | null;
@@ -781,6 +789,21 @@ async function textSearch(
 }
 
 /**
+ * True when at least one session has a vector of `model` (the same test as currentEmbeddingOn).
+ * One EXISTS, asked before the query is embedded so a store with no session vectors costs no
+ * embedding call. Not cached: it is a single cheap query, and a cached answer could outlive a
+ * truncate (tests) or a model change.
+ */
+async function hasSessionVectors(db: Db, model: string): Promise<boolean> {
+  const res = await db.execute<{ found: boolean }>(sql`
+    select exists (
+      select 1 from cc_session_embeddings where model = ${model} and embedding is not null
+    ) as found
+  `);
+  return res.rows[0]?.found === true;
+}
+
+/**
  * Hybrid search over cc_sessions. Signals: full-text rank on the generated tsvector, closeness
  * in meaning from cc_session_embeddings, the repo as a tag, recency of last activity, and an
  * exact node id. Candidates come from HYBRID_SOURCES. The notes saved from or linked to a
@@ -788,8 +811,9 @@ async function textSearch(
  * better of its own signal and its related items' best times BLEND.related, per signal. Hits
  * list the notes in via_notes and the replies in via_replies. Everything is blended by
  * src/search/blend.ts. Falls back to full text (TEXT_SOURCES, same weighting), with `fallback`
- * saying why, when there is no embedder or the query cannot be embedded in time. The cursor is
- * an offset into whichever ranking produced the page.
+ * saying why, when there is no embedder, when no session has a vector of the embedder's model
+ * yet (checked before the query is embedded, so nothing is paid for), or when the query cannot be
+ * embedded in time. The cursor is an offset into whichever ranking produced the page.
  */
 export async function searchSessions(
   deps: SessionSearchDeps,
@@ -806,6 +830,10 @@ export async function searchSessions(
   if (opts.mode === 'text') return textSearch(deps, query, filter, offset, limit, tuning);
   const embedder = deps.embedder;
   if (embedder === null) return textSearch(deps, query, filter, offset, limit, tuning, SESSIONS_SEMANTIC_OFF_FALLBACK);
+  // No session vector of this model: hybrid would match on words only while saying hybrid.
+  if (!(await hasSessionVectors(deps.db, embedder.model))) {
+    return textSearch(deps, query, filter, offset, limit, tuning, SESSIONS_NO_VECTORS_FALLBACK);
+  }
 
   let vector: number[];
   try {

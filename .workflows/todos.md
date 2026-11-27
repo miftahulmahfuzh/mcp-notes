@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-20
+**Last Updated**: 2026-11-27
 **Total Active Tasks**: 21
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 7
-- Completed: 123
+- Completed: 124
 
 ---
 
@@ -686,6 +686,23 @@
 ---
 
 ## Completed Tasks
+- [x] **P1-NOTES-SV04** Phase 4: Sessions search says when it has no vectors
+  - **Difficulty**: EASY
+  - **Type**: Bug
+  - **Context**: Owns `src/sessions/search.ts` (`SESSIONS_NO_VECTORS_FALLBACK`, `hasSessionVectors`, the early return), `tests/integration/sessions.search.int.test.ts`, `docs/guide/sessions.md`, `.claude/skills/verify-notesd/features/projects.md`. `src/mcp/sessionTools.ts` is unchanged, so no `docs:gen`. Exit: R3.1 and R3.2 shown by integration tests against Postgres with the fake embedder.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R3 — `sessions_search` still answers `mode: hybrid` with no `fallback` while matching on words only; fix the missing `fallback` flag · criteria: R3.1, R3.2
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-SV04.md`
+  - **Completed**: 2026-11-27 08:53
+  - **Method**: /implement
+  - **Files**: src/sessions/search.ts, tests/integration/sessions.search.int.test.ts, docs/guide/sessions.md, .claude/skills/verify-notesd/features/projects.md, .workflows/todos.md, .workflows/plan/P1-NOTES-SV04.md, .workflows/plan/STREAM_PLAY_LOG_PLAN.md
+  - **Proof**: verified-first-pass — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/stream-play-log-p4/j1-j3.txt (J1-J3; J4 = 88/88 sessions integration tests, golden snapshot unchanged); neighbor check /home/miftah/.local/state/notesd-verify/1127-085212-2753890/evidence
+  - **Drift**: Plan line numbers for search.ts were off by one (doc comment at 783, not 782); same text, same edits.
+  - **Decided**: Index names worktree stream-play-log / feature/stream-play-log, session runs in stream-play-log-p4 / phase-4-stream-play-log → proceeded here (rung 6: the swarm's per-phase worktree; the coordinator integrates the branch)
+    Step 3 created only phase 4's task, in this worktree, and wrote its TaskID into the worktree's .workflows/plan/STREAM_PLAY_LOG_PLAN.md row 4 only → peers mint their own in their worktrees (tie-break: narrower blast radius)
+
 - [x] **P1-NOTES-A136** Phase 1: Stremio add-on providers: TorrentsDB and Peerflix
   - **Difficulty**: NORMAL
   - **Type**: Feature
