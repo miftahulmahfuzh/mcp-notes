@@ -15,7 +15,7 @@
   - A carry-on replaced seconds later is no longer counted as `no_picture`, so the health view's "could not be played" list stops reporting plays that played.
   - The row's counters stay whole across the restart: played time, stalls, waits and switches add up, the first frame stays the first load's, `refreshes` goes up by one.
 - **Branch:** token-maxxing-2026-11-27-playlog-restart-carry-on (commits `6328fe3`, `ff15afd`)
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit 871271d, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** ~1.5–2.5M tokens (test-first unit, service and integration work, two full suites, a throwaway-daemon verify run) 🔥
 
 ## Context & Motivation
