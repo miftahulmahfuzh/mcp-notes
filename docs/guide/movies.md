@@ -7,7 +7,7 @@ the position while they play. A second side of the same page, Stream, lists the 
 stream on this machine, your watch list and a daily list of what is trending on torrents, and
 plays them in notesd's own player (see [The Stream side](#the-stream-side) and
 [streaming.md](streaming.md)). On a title's page Play goes where the title last played, a caret
-names another source, and every person, studio and genre opens its own list. Seven `movies_*` MCP
+names another source, and every person, studio and genre opens its own list. Eight `movies_*` MCP
 tools answer questions about all of it from Claude Code (`/n ...`) and from the wall's chat.
 
 ![The poster grid of a real library: a film paused in VLC first, then the titles in progress](img/movies/grid.png)
@@ -28,8 +28,8 @@ a fake TMDB, a fake VLC), so their titles, ids and paths are the fixture's.
 | One Play, every source | Play goes where the title last played. The caret names the source by hand: the file, a cloud stream, a torrent, or one of four sites, each row saying what it remembers | [The play menu](#the-play-menu) |
 | Every name opens a list | A person, a studio or a genre on a title's page opens its titles with your marks on each. A genre's guide is written for that one title, with web search, once | [Names you can click](#names-you-can-click) |
 | A watch list and a shortlist | "Interested" keeps a title for later. Trending on torrents lists the most seeded films and series you have not seen | [The Stream side](#the-stream-side), [Trending on torrents](#trending-on-torrents) |
-| An episode's whole story | The book icon on an episode retells it from its own dialogue | [The Movies page](#the-movies-page) |
-| Ask it | Seven tools in Claude Code and the wall's chat: history, filmographies, "play something", marks, who is on the poster. An answer about a title you are halfway through stops where you stopped | [What you can ask](#what-you-can-ask) |
+| An episode's whole story | The book icon on an episode or a season retells it from published recaps on the web, and from the episode's own dialogue only when the web has nothing | [The Movies page](#the-movies-page) |
+| Ask it | Eight tools in Claude Code and the wall's chat: history, filmographies, "play something", marks, who is on the poster. An answer about a title you are halfway through stops where you stopped | [What you can ask](#what-you-can-ask) |
 | A broken VLC explains itself | A health log of every `vlc.exe`, driver resets and a lost picture included, and `/trace-vlc-bug` to read it | [The VLC health log](#the-vlc-health-log), [Tracing a VLC problem](#tracing-a-vlc-problem-trace-vlc-bug) |
 
 Contents: [What sets it apart](#what-sets-it-apart) · [Setup](#setup) ·
@@ -316,8 +316,8 @@ A title's state comes from its files:
 - An episode with several copies is finished when any copy is.
 - A stream counts as one more copy. A streamed film or episode has one stream source whose last
   play is its newest stream play. It is never deleted and has no duration of its own, so it is
-  `finished` at 90 % of the duration the player reported, `in_progress` when played past 0, and
-  `unwatched` otherwise. A film puts it in the precedence list with its files. An episode is
+  `finished` at 90 % of the duration the player reported, `in_progress` when played past 0 or
+  opened with the position unknown (a play on a streaming site), and `unwatched` otherwise. A film puts it in the precedence list with its files. An episode is
   finished when any copy or the stream is; otherwise the stream decides when it was played after
   the episode's primary copy (or there is no copy), and the primary copy decides when not.
 

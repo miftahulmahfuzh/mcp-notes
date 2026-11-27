@@ -32,8 +32,8 @@ Each system has the same three layers, and Claude is told to use them in this or
 3. **`<system>_sql`** runs one read-only `SELECT` (or `WITH ... SELECT`) for anything the curated
    tools do not answer. It returns `{columns, rows, row_count, truncated}`, 200 rows by default
    and 1,000 at most (`max_rows`). `truncated: true` means more rows existed. `seer_sql` and
-   `seer_schema` also cover the lab: `source: "db"` (Postgres, the default) or `"lab"`
-   (`lab.sqlite`, SQLite dialect).
+   `seer_schema` also cover the lab: `source: "db"` (Postgres, the default for `seer_sql`) or
+   `"lab"` (`lab.sqlite`, SQLite dialect). `seer_schema` also takes `"both"`, its default.
 
 | System | Curated tools |
 |---|---|
@@ -140,11 +140,12 @@ limits, and the tools store exactly what they are given.
    headword (`run`), with the original word, its language and the sentence kept as the origin.
 3. **Look up first** with `dword_vocab_lookup`. It matches, in order: the exact term, the
    original word behind an English entry, and an inflected form of the same single word
-   (`studying` finds `study`). A near-identical spelling (`naive` for `naïve`) comes back as
-   `candidates`, not as found, and Claude asks which one you meant.
+   (`studying` finds `study`; accents and case are ignored here, so `naive` finds `naïve`). A
+   phrase that differs only in accents or edge punctuation (`deja vu` for `déjà vu`) comes back
+   as `candidates`, not as found, and Claude asks which one you meant.
 4. **Found:** Claude shows the stored entry and stops. Nothing is written.
 5. **Not found:** Claude writes the entry in dictionary register (part of speech, British IPA, a
-   one-clause definition, exactly three example sentences that contain the term) and calls
+   one-clause definition, exactly three example sentences that contain the term or a form of it) and calls
    `dword_vocab_add`. An English term's sentence goes in `context`; a non-English term's goes in
    `origin`.
 
@@ -208,13 +209,14 @@ stops at "found".
 ### The write path
 
 Reads and writes are separate code. The read connector cannot write, and the writer
-(`src/dword/writer.ts`) can do exactly four things:
+(`src/dword/writer.ts`) can do exactly five things:
 
 | Statement | When |
 |---|---|
 | `INSERT INTO vocab_entries` | A new vocabulary entry |
 | `UPDATE vocab_entries` setting the three origin columns, guarded by `origin_term IS NULL` | Attaching a first origin to an existing entry |
 | `INSERT INTO journal_entries` | A new journal entry |
+| `UPDATE journal_entries` setting `source_note` and `updated_at`, for one id of one user | `dword_journal_set_source` |
 | `INSERT INTO journal_entry_embeddings` | That entry's embedding row (a `failed` row when no vector was made, which the app's backfill retries) |
 
 Every statement is parameterised and checked against that list before it reaches a connection
@@ -232,7 +234,7 @@ user id on every call, never cached.
 | Unset or blank | `daily-words user not configured: set DWORD_USER_EMAIL in .env.local` |
 | An email with no account | `daily-words user <email> not found` |
 
-In both cases the four curated tools refuse and nothing is written. `dword_schema` and
+In both cases the five curated tools refuse and nothing is written. `dword_schema` and
 `dword_sql` need no user and keep working.
 
 ## How a connector finds its database
@@ -240,8 +242,8 @@ In both cases the four curated tools refuse and nothing is written. `dword_schem
 Nothing is configured in mcp-notes beyond, optionally, where the sibling repositories are. A
 connector reads the app's own `.env.local`:
 
-1. **Find the repository.** The default is a sibling of the home directory; a setting overrides
-   it. Settings are read from the real environment first, then from mcp-notes' `.env.local`, on
+1. **Find the repository.** The default is the app's directory in the home directory; a setting
+   overrides it. Settings are read from the real environment first, then from mcp-notes' `.env.local`, on
    every call.
 
    | System | Setting | Default |
@@ -325,9 +327,11 @@ SQL is fixed in the code, but they run on the same read-only session and transac
 - **A forced duplicate is a real second row.** Nothing here can delete it; remove it in
   daily-words.
 - **The mirrored limits can drift.** daily-words' rules (parts of speech, length ceilings, the
-  daily cap) are copied into `src/dword/rules.ts`, and the journal normalisation into
-  `src/dword/journalSimilarity.ts`. `tests/unit/dword/rules.drift.test.ts` fails when they differ
-  from the real repository.
+  daily cap) are copied into `src/dword/rules.ts`, and the journal normalisation and its 0.25
+  threshold into `src/dword/journalSimilarity.ts`. `tests/unit/dword/rules.drift.test.ts` fails
+  when `rules.ts` differs from the real repository (it is skipped when `~/daily-words` is
+  missing). Nothing compares `journalSimilarity.ts` with daily-words:
+  `tests/unit/dword/journalSimilarity.test.ts` only pins its output to a fixed hash.
 - **No pictures of the connectors exist in these guides** on purpose: the only data they can show
   is real spending, runs, positions, vocabulary and journal lines.
 
@@ -343,7 +347,7 @@ SQL is fixed in the code, but they run on the same read-only session and transac
 | `src/connectors/errors.ts`, `rows.ts`, `types.ts` | Error wording and scrubbing, the row cap, limits and interfaces |
 | `src/connectors/expenses/`, `runs/`, `seer/` | Each system's description and curated tools |
 | `src/connectors/dword/` | The daily-words description and the `DWORD_USER_EMAIL` lookup |
-| `src/mcp/dwordTools.ts`, `dwordVocabTools.ts`, `dwordJournalTools.ts` | The four curated daily-words tools |
+| `src/mcp/dwordTools.ts`, `dwordVocabTools.ts`, `dwordJournalTools.ts` | The five curated daily-words tools |
 | `src/dword/writer.ts`, `rules.ts`, `journalSimilarity.ts` | The write allow-list, the mirrored limits, the duplicate check's normalisation and threshold |
 | `claude/skills/v`, `claude/skills/j` | The `/v` and `/j` skills |
 | `src/chat/prompt.ts` | The chat bar's connector and daily-words paragraphs |

@@ -27,7 +27,8 @@ Arguments and result shapes are in the reference:
 Claude passes a question to `search` as it was asked. It switches to `mode: "text"` when the
 note must contain an exact token, error string or command. Both modes take the same filters as
 `list`: `tags_any`, `tags_all`, a `from`/`to` date range on the created or updated date,
-`has_image`, `taken_from`/`taken_to`, `limit` (default 50, at most 200) and `cursor`.
+`has_image`, `taken_from`/`taken_to`, `deleted` (default `exclude`), `limit` (default 50, at most
+200) and `cursor`.
 
 ## Hybrid search
 
@@ -219,8 +220,8 @@ estimate. The backfill never runs by itself.
   same `blendScore`, over candidates from the session's own text and vector, its node id, the
   notes saved from or linked to it and Claude's replies in it. Evidence borrowed from a note or a
   reply counts `BLEND.related` (0.6) times the session's own. See [sessions.md](sessions.md).
-- **Session summaries and replies** are embedded with the same text model and worker, into their
-  own tables.
+- **Session summaries and replies** are embedded with the same text model, into their own tables:
+  replies by the same background worker as notes, summaries by the session summary worker.
 - **The chat bar** calls the same `search`, `related` and `similar_images` tools.
 - The daily-words journal's duplicate check uses the same embedding model but its own threshold
   and table; see [connectors.md](connectors.md).
@@ -245,8 +246,8 @@ estimate. The backfill never runs by itself.
   be compared from this daemon.
 - **Changing a model or its width** needs a migration and a full re-embed (the vector column is
   `vector(1536)`), then the matching backfill.
-- **Deleted notes** never appear in `search`, `related` or `similar_images`, but keep their
-  vectors.
+- **Deleted notes** never appear in `related` or `similar_images`, and appear in `search` only
+  when it is asked for them with `deleted: "include"` or `"only"`. They keep their vectors.
 
 ## Where the code is
 
