@@ -6,8 +6,16 @@ import type { ReviewStage } from './types.js';
 
 export type ReviewStatus = 'ok' | 'failed' | 'skipped_budget' | 'late';
 
-/** Statuses that spent a deep review (counted against the daily cap unless reused). */
+/** Statuses that spent a deep review (counted against the daily cap unless reused or a redo). */
 const DEEP: ReviewStatus[] = ['ok', 'failed', 'late'];
+
+/**
+ * A row that spent one of the day's deep reviews: a DEEP status, not a reused draft, and not a
+ * `/redo` (that verdict was researched by a Claude Code session on its own usage, 0 tokens here).
+ */
+export function spentReview(row: { status: string; reusedFrom: number | null; verdict: AdversaryStoredVerdict | null }): boolean {
+  return (DEEP as string[]).includes(row.status) && row.reusedFrom === null && row.verdict?.redo !== true;
+}
 
 export interface NewReview {
   strategyId: string;
@@ -74,12 +82,19 @@ export class ReviewsRepo {
     return id;
   }
 
-  /** Deep reviews started at or after `since`, every host in this database. */
+  /** Deep reviews started at or after `since`, every host in this database (the same rows as `spentReview`). */
   async countDeepSince(since: Date): Promise<number> {
     const rows = await this.db
       .select({ n: sql<number>`count(*)::int` })
       .from(adversaryReviews)
-      .where(and(gte(adversaryReviews.startedAt, since), inArray(adversaryReviews.status, DEEP), isNull(adversaryReviews.reusedFrom)));
+      .where(
+        and(
+          gte(adversaryReviews.startedAt, since),
+          inArray(adversaryReviews.status, DEEP),
+          isNull(adversaryReviews.reusedFrom),
+          sql`coalesce((${adversaryReviews.verdict} ->> 'redo')::boolean, false) = false`,
+        ),
+      );
     return rows[0]?.n ?? 0;
   }
 
@@ -93,7 +108,7 @@ export class ReviewsRepo {
       const today = row.startedAt.getTime() >= dayStart.getTime();
       if (row.status === 'failed') out.failures.set(attempt, (out.failures.get(attempt) ?? 0) + 1);
       if (row.status === 'skipped_budget' && today) out.skippedToday.add(attempt);
-      if (today && (DEEP as string[]).includes(row.status) && row.reusedFrom === null) out.usedToday += 1;
+      if (today && spentReview(row)) out.usedToday += 1;
       if (stage === 'draft' && row.status === 'ok' && row.verdict !== null) {
         out.drafts.set(draftKey(row.strategyId, row.sessionDate, row.symbol, row.promptVersion), {
           id: row.id,

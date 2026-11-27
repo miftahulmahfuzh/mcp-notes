@@ -376,7 +376,8 @@ a page.
    points the verdict it replaces at the new one.
 
 The same honesty rule applies: an `agree` or `object` submitted without a source is stored as
-`unsure`. A redo costs no reviewer budget and is logged in `adversary_reviews` with zero tokens.
+`unsure`. A redo costs no reviewer budget and is logged in `adversary_reviews` with zero tokens
+and a `redo` mark in its verdict, which keeps it out of the daily cap's count (`used_today`).
 
 ### /check-seer-adversarial-nightly
 

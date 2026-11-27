@@ -923,6 +923,12 @@ export interface AdversaryStoredVerdict {
   seer_verdict_id: number | null
   /** True when an agree/object that cited no fetched page was turned into unsure. */
   downgraded: boolean
+  /**
+   * True on the row of a `/redo` (`AdversaryService.redoSubmit`): the verdict came from a Claude
+   * Code session, which spent none of the reviewer's budget, so the row is never counted against
+   * the daily cap. Absent on every other row. Kept in this jsonb so no migration is needed.
+   */
+  redo?: true
 }
 
 /**
@@ -931,7 +937,8 @@ export interface AdversaryStoredVerdict {
  * stage 'final' is a review of a real decision, written to Seer's adversary_verdicts when it
  * succeeds. status 'late' means the Seer verdict was decided after the session opened (the engine
  * ignores it); 'skipped_budget' means the daily cap was reached. Deep reviews counted against the
- * cap: status ok/failed/late with reused_from null. Written only through src/adversary/reviewsRepo.ts.
+ * cap: status ok/failed/late with reused_from null and no `verdict.redo` mark (a `/redo` ran on a
+ * Claude Code session, not the reviewer). Written only through src/adversary/reviewsRepo.ts.
  */
 export const adversaryReviews = pgTable(
   'adversary_reviews',

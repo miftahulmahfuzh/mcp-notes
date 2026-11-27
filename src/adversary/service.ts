@@ -322,7 +322,8 @@ export class AdversaryService {
         symbol: pick.symbol,
         stage: 'final',
         status: late ? 'late' : 'ok',
-        verdict: { verdict: checked.verdict, reason: checked.reason, sources: checked.sources, lens: lens.id, seer_verdict_id: written.id, downgraded: checked.downgraded },
+        // `redo: true` keeps this row out of the daily cap: the session did the research, not the reviewer.
+        verdict: { verdict: checked.verdict, reason: checked.reason, sources: checked.sources, lens: lens.id, seer_verdict_id: written.id, downgraded: checked.downgraded, redo: true },
         promptVersion: pv,
         gatherModel: model,
         verdictModel: model,

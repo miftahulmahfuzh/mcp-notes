@@ -27,7 +27,8 @@
   redoes one verdict with real web search, only while the pick's session has not opened. The new
   verdict supersedes the old one (`superseded_by`); a closed session answers `can_redo: false`
   (`state: closed`) and a late submit `too_late`, writing nothing. No headless model is billed: the
-  session is the caller. Unit: `tests/unit/adversary/redo.test.ts`,
+  session is the caller, and the review row's `verdict.redo` mark keeps it out of the daily cap
+  (`used_today` unchanged; `tests/integration/adversary/reviewer.int.test.ts`). Unit: `tests/unit/adversary/redo.test.ts`,
   `tests/unit/adversary/redoService.test.ts`.
 - The nightly dispatch (`src/adversary/dispatch.ts`, `NOTESD_SEER_DISPATCH`, `NOTESD_GH_BIN`):
   starts Seer's GitHub nightly from this machine once its data can be fetched. Unit:

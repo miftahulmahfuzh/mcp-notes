@@ -5,6 +5,7 @@ import type { SeerReader } from '../../../src/adversary/seerReader.js';
 import type { SeerWriter } from '../../../src/adversary/seerWriter.js';
 import type { CandidateRow, RosterRow } from '../../../src/adversary/types.js';
 import type { Db } from '../../../src/db/client.js';
+import { spentReview, type NewReview } from '../../../src/adversary/reviewsRepo.js';
 import { fakeReviewer } from '../../helpers/fakeReviewer.js';
 
 const roster: RosterRow[] = [
@@ -90,6 +91,14 @@ describe('redoSubmit', () => {
     expect(writer.releaseLease).toHaveBeenCalled();
   });
 
+  it('marks its review row as a redo, so it costs none of the daily reviewer budget', async () => {
+    const { service, inserted } = build('2026-11-05T10:00:00Z');
+    await service.redoSubmit({ ...req, ...submission });
+    const row = inserted[0] as NewReview;
+    expect(row).toMatchObject({ inputTokens: 0, outputTokens: 0, costUsd: 0, reusedFrom: null, verdict: { redo: true } });
+    expect(spentReview(row)).toBe(false);
+  });
+
   it('writes nothing after the open, even when the caller started in time', async () => {
     const { service, writer } = build('2026-11-05T14:31:00Z');
     expect(await service.redoSubmit({ ...req, ...submission })).toMatchObject({ ok: false, code: 'too_late' });
@@ -104,5 +113,19 @@ describe('redoSubmit', () => {
     b.writer.claimLease.mockResolvedValueOnce(false);
     expect(await b.service.redoSubmit({ ...req, ...submission })).toMatchObject({ ok: false, code: 'leased' });
     expect(b.writer.insertVerdict).not.toHaveBeenCalled();
+  });
+});
+
+describe('spentReview (the rows the daily cap counts)', () => {
+  const verdict = { verdict: 'agree' as const, reason: 'r', sources: [], lens: 'L@1', seer_verdict_id: 1, downgraded: false };
+  it('counts a deep review that was ok, failed or late, and nothing else', () => {
+    for (const status of ['ok', 'failed', 'late']) expect(spentReview({ status, reusedFrom: null, verdict })).toBe(true);
+    expect(spentReview({ status: 'failed', reusedFrom: null, verdict: null })).toBe(true);
+    expect(spentReview({ status: 'skipped_budget', reusedFrom: null, verdict: null })).toBe(false);
+  });
+  it('leaves out a reused draft and a /redo, ok or late', () => {
+    expect(spentReview({ status: 'ok', reusedFrom: 12, verdict })).toBe(false);
+    expect(spentReview({ status: 'ok', reusedFrom: null, verdict: { ...verdict, redo: true } })).toBe(false);
+    expect(spentReview({ status: 'late', reusedFrom: null, verdict: { ...verdict, redo: true } })).toBe(false);
   });
 });
