@@ -87,6 +87,22 @@ describe('PlayLogRepo health reads', () => {
     expect(a).toMatchObject({ asks: 1, cloud_failure: null, torrent_failure: 'no_source' });
   });
 
+  it('an ask every asked channel of which only errored (the network was down) is no evidence a title cannot be played', async () => {
+    // Film A played at 120 min; an outage after that does not put it back on the list.
+    await log({ ...base, host: HERE, asked_at: ago(15), tmdb_id: 990001, outcome: 'failed', failure: 'no_source', cloud_failure: 'error', torrent_failure: 'error' });
+    // A title never played, asked once in an outage only: absent.
+    await log({ ...base, host: HERE, asked_at: ago(14), kind: 'tv', tmdb_id: 990004, season: 1, episode: 1, asked: 'torrent', outcome: 'failed', failure: 'no_source', torrent_failure: 'error' });
+    // An outage, then a real miss: present, with the real miss's word and one ask.
+    await log({ ...base, host: HERE, asked_at: ago(13), kind: 'tv', tmdb_id: 990005, season: 1, episode: 1, asked: 'torrent', outcome: 'failed', failure: 'no_source', torrent_failure: 'error' });
+    await log({ ...base, host: HERE, asked_at: ago(12), kind: 'tv', tmdb_id: 990005, season: 1, episode: 1, asked: 'torrent', outcome: 'failed', failure: 'no_source', torrent_failure: 'no_stream' });
+    const un = await repo.unhandled(HERE, 200);
+    expect(un.map((u) => u.tmdb_id).sort()).toEqual([990003, 990005]);
+    expect(un.find((u) => u.tmdb_id === 990005)).toMatchObject({ asks: 1, torrent_failure: 'no_stream', cloud_failure: null });
+    // Still a failed ask in the period's figures.
+    const h = await readHealth(repo, HERE, 7, NOW);
+    expect(h.failures).toContainEqual({ channel: 'torrent', failure: 'error', count: 3 });
+  });
+
   it('answers the health of the period', async () => {
     const h7 = await readHealth(repo, HERE, 7, NOW);
     expect(h7.totals.all).toMatchObject({ asks: 5, failed: 2, played: 3, success_rate: 0.6 });

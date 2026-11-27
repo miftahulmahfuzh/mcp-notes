@@ -2140,7 +2140,9 @@ per hour and the share at 1080p, the failures by word, the latest plays, and eve
 could not be played with what the cloud and the torrents answered. The wall's Stream health page
 (`/movies/health`, see [movies.md](movies.md#stream-health)), the `direct_stream_health` tool and
 `GET /api/stream/health?days=N` answer the same. They only read: nothing here changes which provider or
-torrent a play chooses.
+torrent a play chooses. A failed ask whose every asked channel only answered `error` (every index or
+provider timed out or could not be reached: this machine's network, not the title) still counts as a failed
+ask, but never puts a title on the list of those that could not be played.
 
 ### Reporting a stream bug: `/report-stream-bug`
 
