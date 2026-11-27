@@ -105,6 +105,8 @@ export interface TorrentSourceOptions {
   probeStallMs?: number;
   probeSampleMs?: number;
   heightSettleMs?: number;
+  /** HEADER_GIVE_WAY_MS; tests shorten it. */
+  headerGiveWayMs?: number;
   now?: () => number;
   log?: (line: string) => void;
 }

@@ -2329,7 +2329,11 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   <path> (file 0 of 10, 1450 MB, 1 subtitle file beside it), its first and last pieces first`. A file whose audio
   names only languages other than the title's original is `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
-  one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six torrents and what
+  one listed, up to six torrents and 90 seconds. A torrent whose swarm delivers but whose header has not come after
+  45 s gives way when another torrent of the same ask waits for its slot (one of this round not opened yet, or the
+  dub-named round) and at least 25 s are left for it: `no header after 45 s while it delivered (...); 2 more torrents
+  waited, so it gave way`. Nothing waiting, it keeps the whole budget. A 139-file pack of A Record of a Mortal's
+  Journey to Immortality took in 15.3 MB for 85 s with no header, and the two releases behind it were never tried. The dub-named round after it has its own six torrents and what
   is left of the same 90 seconds, so one ask never takes longer.
 - **Asking again tries the next torrents, not the same ones.** The finder keeps up to twenty candidates, and one
   ask tries six. The torrent source remembers, per film or episode and in memory (until the daemon restarts), each

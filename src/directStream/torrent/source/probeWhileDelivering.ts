@@ -1,6 +1,6 @@
 import type { ResolveOutcome } from '../../types.js';
 import { ProbeError, type MediaProbe } from '../probe.js';
-import { PROBE_MIN_MS, PROBE_SAMPLE_MS, PROBE_STALL_BYTES, PROBE_STALL_MS, TORRENT_PROBE_TIMEOUT_MS } from './constants.js';
+import { HEADER_GIVE_WAY_MS, PROBE_MIN_MS, PROBE_SAMPLE_MS, PROBE_STALL_BYTES, PROBE_STALL_MS, TORRENT_PROBE_TIMEOUT_MS } from './constants.js';
 import { messageOf, seconds } from './text.js';
 import type { TorrentSourceOptions } from './types.js';
 
@@ -8,7 +8,7 @@ export type Probed = { ok: true; probe: MediaProbe } | { ok: false; outcome: Res
 
 /** What the probe needs: the swarm's byte count, ffprobe, a clock, the stall window, and the log words for a swarm. */
 export interface ProbeDeps {
-  opts: Pick<TorrentSourceOptions, 'swarm' | 'probe' | 'probeStallMs' | 'probeSampleMs'>;
+  opts: Pick<TorrentSourceOptions, 'swarm' | 'probe' | 'probeStallMs' | 'probeSampleMs' | 'headerGiveWayMs'>;
   now: () => number;
   receivedText: (infoHash: string) => string;
 }
@@ -16,9 +16,11 @@ export interface ProbeDeps {
 /**
  * ffprobe on a racer's file, given as long as its swarm delivers (up to `budgetMs`, the play's whole budget left):
  * it is stopped when the torrent received less than PROBE_STALL_BYTES in the last PROBE_STALL_MS. A swarm that
- * cannot say what it received gets the flat TORRENT_PROBE_TIMEOUT_MS. Never throws.
+ * cannot say what it received gets the flat TORRENT_PROBE_TIMEOUT_MS. After HEADER_GIVE_WAY_MS it also gives way when
+ * `waiting()` says another torrent of the play waits for its slot (budget sharing; the candidates' order is not changed).
+ * Never throws.
  */
-export async function probeWhileDelivering(deps: ProbeDeps, url: string, infoHash: string, budgetMs: number, cancelled: () => boolean): Promise<Probed> {
+export async function probeWhileDelivering(deps: ProbeDeps, url: string, infoHash: string, budgetMs: number, cancelled: () => boolean, waiting: () => number = () => 0): Promise<Probed> {
   const { opts, now } = deps;
   const received = (): number | null => {
     try {
@@ -43,6 +45,7 @@ export async function probeWhileDelivering(deps: ProbeDeps, url: string, infoHas
   const probeMs = Math.max(PROBE_MIN_MS, budgetMs);
   const controller = new AbortController();
   const samples: Array<{ at: number; bytes: number }> = [{ at: started, bytes: first }];
+  const giveWayMs = opts.headerGiveWayMs ?? HEADER_GIVE_WAY_MS;
   let stalled: string | null = null;
   const watch = setInterval(() => {
     if (cancelled()) {
@@ -52,6 +55,12 @@ export async function probeWhileDelivering(deps: ProbeDeps, url: string, infoHas
     const at = now();
     const bytes = received() ?? samples.at(-1)!.bytes;
     samples.push({ at, bytes });
+    const behind = at - started >= giveWayMs ? waiting() : 0;
+    if (behind > 0) {
+      stalled = `no header after ${Math.round((at - started) / 1000)} s while it delivered (${deps.receivedText(infoHash)}); ${behind} more torrent${behind === 1 ? '' : 's'} waited, so it gave way`;
+      controller.abort();
+      return;
+    }
     // The newest sample at least stallMs old is the window's start; older ones are no longer needed.
     while (samples.length > 2 && at - samples[1]!.at >= stallMs) samples.shift();
     const from = samples[0]!;
