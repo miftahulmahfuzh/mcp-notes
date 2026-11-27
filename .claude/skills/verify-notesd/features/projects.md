@@ -480,3 +480,36 @@ Cleanup: `$V down "$RUN"; rm -rf "$S"`.
   `navigator.clipboard.writeText` with `page.addInitScript` before `goto` and read the stub back.
 - Compare a prompt with `.prm-text` `textContent()`, not `innerText()`: textContent keeps the
   prompt's whitespace byte for byte.
+
+## More of the page, and the switches (added by the 2026-11-27 guide audit)
+
+Each of these is described in `docs/guide/sessions.md` and had no entry above.
+
+- "unfinished" badge on an `orch-<slug>` node: `NOTESD_SWARM_SCRIPT`'s `verify` answer, cached
+  60 s (`UNFINISHED_TTL_MS`), not live. Proof: `tests/unit/sessions/unfinished.test.ts`,
+  `tests/integration/sessions.unfinished.int.test.ts`. On a run: point `NOTESD_SWARM_SCRIPT` at a
+  fake script that prints a phase not done, seed an `orch-x` row, then
+  `$V api RUN GET /api/projects/<repo>/sessions` shows `unfinished: true`.
+- `+N` chips and the toolbar's Expand all / Collapse all: click the button named
+  `Show N more sessions`, then `getByRole('button', { name: 'Expand all' })` and `'Collapse all'`.
+  Unit: `web/src/components/graph/SessionGraph.test.tsx`.
+- The deep link `/projects?repo=<repo>&node=<NODE>&focus=1`: the branch unfolds, the node panel
+  opens and the rail is hidden. A steps file `goto`s it and waits for the node's panel.
+- Parent links from hooks (`env`, `hook`): the journey is in `claude-code.md`. Guessed links:
+  `path.gedge.heur` in the graph and "(guessed)" in the node panel
+  (`tests/integration/sessions.links.int.test.ts`).
+- Graph marks: a running session has a halo (`.gnode-halo`, from a registry file under the run's
+  `claude/sessions/`); another machine's node has the class `remote` and no halo. Unit:
+  `SessionGraph.test.tsx`.
+- The graph's ETag: a second `GET /api/projects/<repo>/sessions` with `If-None-Match` answers 304
+  (see `egress.md`).
+- Context Rot's "no saving: resume is as cheap" caption, when the baseline plus the new tokens
+  reach the context: `web/src/components/graph/ContextRot.test.tsx`.
+- Resume falls back to another folder when the worktree is gone and answers `original_cwd`; the
+  button reads "Focus the running session" for a live one. Unit: `tests/unit/sessions/resume.test.ts`;
+  on a run, the fake-tmux journey above with a row whose `cwd` no longer exists.
+- `NOTESD_SESSIONS=off`: no ingest, summary or reply worker starts (`daemon.log`:
+  `[notesd] session ingest off: NOTESD_SESSIONS=off`), and the routes still answer from stored rows.
+- A pruned transcript: `session_transcript` answers `transcript_missing` and `session_get` still
+  works. Seed a row whose `transcript_path` does not exist, then
+  `$V mcp RUN session_transcript '{"node_id":"<NODE>"}'`.

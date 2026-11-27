@@ -255,7 +255,7 @@ to `/projects?repo=REPO&node=A0-3G` and `/movies/M-23T4`.
   daemon down they stay plain.
 - Movie ids become links to the title's page, and a movie id Claude wrote as a note link is
   redrawn as the movie link.
-- `/open <id>` opens a note or a session on the wall in the browser, for an id you typed or a
+- `/open <id>` opens a note, a session or a movie on the wall in the browser, for an id you typed or a
   terminal that cannot click. From WSL it tries `explorer.exe`, then `powershell.exe`, then
   `cmd.exe`, and prints the URL when none starts.
 
@@ -364,8 +364,9 @@ first start that had it). A done reminder is never stored again. Reminders live 
 
 `scripts/install.sh` is idempotent and does the whole Claude Code side:
 
-1. Registers the `notes` MCP server at user scope (it removes and re-adds it, so a port change is
-   picked up).
+1. Registers the `notes` MCP server at user scope as `http://localhost:7317/mcp` (it removes and
+   re-adds it, so an older registration is replaced; the port is fixed in the script, not read
+   from `NOTESD_PORT`).
 2. Symlinks each skill folder in `claude/skills/` into `~/.claude/skills/`: `n`, `migrate`, `v`,
    `j`, `redo`, `check-seer-adversarial-nightly`, `trace-vlc-bug`, `pahe`, `idlix`, `lk21`, `flicksy`, `dramacool`, `create-streaming-skill`, `direct-stream`, `update-cloud-source`, `report-stream-bug`, `sync-subtitle` and `warp`. It refuses to replace a real directory.
 3. Runs `scripts/claude-hooks.mjs install`, which merges the six hook entries into
@@ -445,7 +446,7 @@ it, checks the note holds them all, and then deletes the folder so the pictures 
 - It refuses dangerous targets (`/`, a drive root, `$HOME`, `Downloads`, `Desktop`, `Documents`,
   any path with fewer than three components) and asks first when the folder also holds files that
   are not images.
-- The skill pins its own model (`claude-sonnet-4-6`) in its front matter.
+- The skill pins its own model (the `sonnet` alias) in its front matter.
 
 ## Quirks and limits
 
@@ -468,7 +469,9 @@ it, checks the note holds them all, and then deletes the folder so the pictures 
   to add text.
 - **Links do not render in code.** A note link inside a code span or block shows its brackets.
 - **`search` needs a key for meaning.** Without `OPENROUTER_API_KEY` it returns word matches with
-  a `fallback` line, and `related` and `similar_images` refuse. See [search.md](search.md).
+  a `fallback` line. `related` and `similar_images` answer only from vectors already stored: a
+  note or picture not embedded yet, a `query` and a pasted picture are refused. See
+  [search.md](search.md).
 - **`/n` exchanges wait, hooks do not.** A capture survives a daemon restart through the outbox.
   A failed link, paste or session report is logged and not retried by the hook; the session graph
   recovers parent links later from the transcripts.

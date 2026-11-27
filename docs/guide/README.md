@@ -6,7 +6,7 @@ how to prove a change. The root [README](../../README.md) is the short overview.
 | Guide | Covers |
 | --- | --- |
 | [wall.md](wall.md) | The wall web app: views, tags, the big editor, photos, files, recycle bin, shortcuts |
-| [claude-code.md](claude-code.md) | The `notes` MCP server, `/n`, hooks, clickable ids, `/migrate` |
+| [claude-code.md](claude-code.md) | The `notes` MCP server, `/n`, hooks, clickable ids, reminders, `/migrate` |
 | [search.md](search.md) | Hybrid search, related notes, similar photos, embeddings |
 | [chat.md](chat.md) | The chat bar and the chat history page |
 | [sessions.md](sessions.md) | The project session graph: node ids, parent links, summaries, context rot, resume, swarms |
@@ -32,7 +32,7 @@ link is broken or a picture under `img/` is unused. The commands are in
 [install.md](install.md#docs-tooling).
 
 Pictures live in `img/<guide>/` and are written only by `npm run docs:shots -- <guide>`, which runs
-`scripts/docs/shots/<guide>.mjs` against a throwaway daemon with seeded, made-up data. The Movies page pictures are the exception:
+`scripts/docs/shots/<guide>.mjs` against a throwaway daemon with seeded, made-up data. Most Movies page pictures are the exception:
 they show the owner's real library and are retaken with `npm run docs:shots -- --live movies`. The chat
-pictures need a real, billed Claude run and are retaken only on request (`DOCS_CHAT_BILLED=1` for
+answer pictures need a real, billed Claude run and are retaken only on request (`DOCS_CHAT_BILLED=1` for
 `chat`, `DOCS_SHOTS_CHAT=1` for `movies`).

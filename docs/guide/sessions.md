@@ -114,7 +114,7 @@ compare 7K-2Q and A0-3G, which approach held up?
 ```
 
 - Write the id the way the wall shows it: upper case, with the dash. `to-do`, a page range like
-  `10-15`, a date, a file name such as `A0-3G.md` and a Jira key never match.
+  `10-15`, a date, a file name such as `A0-3G.md` and a Jira key such as `UATP-2960` never match.
 - At most five ids per prompt are looked up. An id that belongs to no session adds nothing.
 - A prompt with no candidate costs one regular expression test: no file read, no network.
 - A fork prints `Fork of <parent> (after prompt N, <time>)`. A session running as a background job
@@ -130,7 +130,7 @@ by a worse one:
 
 | Source | Where it comes from | Edge |
 | --- | --- | --- |
-| `fork` | A session made with `claude --resume X --fork-session`, or a background job forked from X, starts with a copy of X's conversation. Ingest links it to X from Claude Code's job record (`~/.claude/jobs/<first 8 of the id>/state.json`) or, without one, from the first message id it shares with another transcript. A fork of a fork links to the fork it was copied from. | round dots, fork icon |
+| `fork` | A session made with `claude --resume X --fork-session`, or a background job forked from X, starts with a copy of X's conversation. Ingest links it to X from Claude Code's job record (`~/.claude/jobs/<first 8 of the id>/state.json`) or, without one, from the first record uuid it shares with another transcript of this machine. A fork of a fork links to the fork it was copied from. | round dots, fork icon |
 | `env` | `swarm.py` starts each child with `CC_PARENT_SESSION=<its own session id>`, and the `notes-session` hook reports it. A tmux child does not inherit its parent's environment, so it is passed by hand. | solid |
 | `hook` | A session runs a Bash command that launches `claude` in tmux (`new-window`, `split-window`, `send-keys`…). The `notes-spawn` hook records a pending spawn, and the child claims it when it starts: within 30 seconds, same directory, on a fresh start only. A resumed or cleared session claims nothing. | solid |
 | `heuristic` | For sessions from before the hooks: the parent's transcript is read for `swarm.py launch|spawn --name X` and `SendMessage {to: X}`, and a child is matched by name, time and directory. | dashed, "(guessed)" |
@@ -200,9 +200,10 @@ matched through:
 `via_notes` and `via_replies` list at most three items each, best first, and are empty when the
 session matched on its own text. `seq` is the number of the prompt the reply answered.
 
-Session search is words only in two cases, and then every word must appear and the result carries
-`mode: "text"` and a `fallback` sentence saying which case it is: without `OPENROUTER_API_KEY`, and
-while no session has a vector of the embedder's model yet ("Session vectors are not built yet ...").
+Session search is words only in three cases, and then every word must appear and the result carries
+`mode: "text"` and a `fallback` sentence saying which case it is: without `OPENROUTER_API_KEY`,
+while no session has a vector of the embedder's model yet ("Session vectors are not built yet ..."),
+and when the query cannot be embedded in time.
 The second is the state of a new local database until the copy of the old shared database has run
 (the summary worker waits for it, see [architecture.md](architecture.md)) and the worker has
 embedded a first session; it is checked before the query is embedded, so it costs no embedding

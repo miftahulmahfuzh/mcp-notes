@@ -79,7 +79,7 @@ The view changes by itself when it would otherwise hide what you just did:
 ## Tags
 
 Tags are parsed from the text on every save: `#seer`, `#v250`, `#from_phone`. A tag is `#` followed
-by letters, digits, `_` or `-`, not directly after a word character (so `a#b` is not a tag), and it
+by ASCII letters, digits, `_` or `-`, not directly after a word character (so `a#b` is not a tag), and it
 is stored lower-case. To tag a note, write the hashtag into its text. To untag it, remove it.
 
 - The sidebar lists every tag on a live note with its count, most used first.
@@ -120,8 +120,8 @@ From top to bottom:
   files (paperclip), Show on wall (crosshair), Delete note and Close. When some of the note's photos
   or files live on another machine, a badge says how many and where (`2 on GPD`).
 - **Text.** A wide, tall text area in the wall's type.
-- **Tag suggestions.** Typing `#` and a few letters offers up to six existing tags that start with
-  them, most used first. Up and Down move, Enter or Tab accepts, Esc closes the list only.
+- **Tag suggestions.** Typing `#` offers up to six existing tags that start with the letters
+  typed after it, most used first. Up and Down move, Enter or Tab accepts, Esc closes the list only.
 - **Tag chips.** The tags currently in the text.
 - **File chips.** See [Files on a note](#files-on-a-note).
 - **Photo strip.** The note's photos that are on this machine, in the order they were added, each
@@ -217,7 +217,7 @@ The photo sits on the left. The column on the right has:
 Previous and Next, or the Left and Right arrow keys, step one photo at a time through every photo
 of a note and then on to the next note. Esc, the X or a click on the backdrop closes it.
 
-Delete image removes that one photo from its note, not the note. The note stays, even when that
+Delete image removes that one photo from its note, not the note, and closes the modal. The note stays, even when that
 was its only photo, and the photo goes to the recycle bin with a six-second undo.
 
 Chat about this image opens the chat history page with the photo attached to the message box. See
@@ -232,8 +232,9 @@ Delete image, and closing it leaves the editor open.
 
 ### The full-screen tab
 
-Show full screen opens `/full/<image id>` in a new tab, titled with the id. A note's first photo
-shares the note's id, so `/full/<note id>` opens that note's first photo.
+Show full screen opens `/full/<image id>` in a new tab, titled with the id. A note made from a photo
+shares its id with that photo, so `/full/<note id>` opens it. A photo attached to a note later has
+an id of its own.
 
 - The photo fits the window by default.
 - Click to switch between fit and 1:1 device pixels. Drag to pan at 1:1.
@@ -375,9 +376,11 @@ so it can itself be undone.
 
 ## Two machines
 
-Two machines can share the database. Text, tags and the record of every photo and file are
-shared. The bytes of photos and files are not: they stay on the disk of the machine that took
-them in, and every photo and file records that machine's host name.
+Each machine runs on its own database now, and the notes copied in from the other laptop came
+with the record of their photos and files. Two daemons pointed at one Postgres still work, and
+then text, tags and those records are shared (see [architecture.md](architecture.md#two-machines)).
+Either way the bytes of photos and files stay on the disk of the machine that took them in, and
+every photo and file records that machine's host name.
 
 On the machine that does not hold the bytes:
 
@@ -395,7 +398,8 @@ On the machine that does not hold the bytes:
 The API says the same thing: a photo or file made elsewhere has `available: false` in the note's
 JSON, and its bytes answer `404` with `{"error":"not_on_this_machine","host":"…"}`.
 
-Edits made on the other machine arrive by polling, not by events. While the tab is visible the
+When two daemons share one database, edits made on the other machine arrive by polling, not by
+events. While the tab is visible the
 wall refetches every 5 minutes, and when you switch back to the tab it refetches at once if its
 last load is more than 60 seconds old.
 
@@ -422,8 +426,8 @@ answer.
 Alt chords are Alt plus one letter, chosen so that none is a browser's own (Chrome and Firefox
 keep Alt+F, E, D, H and S, and Alt+1 to 9 switch tabs on Linux). The wall cancels its chord before
 the browser sees it, so it works with the cursor in a text field. Ctrl, Shift or Meta with the
-same letter is not the chord, and neither is a held-down key repeating. Alt+Z (focus mode) and
-Alt+C belong to the Projects and Seer Adversarial pages: see [sessions.md](sessions.md) and
+same letter is not the chord, and neither is a held-down key repeating. Alt+Z (focus mode)
+belongs to the Projects and Seer Adversarial pages, and Alt+C to the Projects page: see [sessions.md](sessions.md) and
 [adversary.md](adversary.md).
 
 ## Quirks and limits
@@ -452,8 +456,8 @@ Alt+C belong to the Projects and Seer Adversarial pages: see [sessions.md](sessi
 - **No photo editing.** No reorder, crop or rotate. Finding photos is covered in
   [search.md](search.md).
 - **Desktop first.** There is no phone layout. Bring phone photos in through the inbox folder.
-- **Text needs the database.** Notes live in Postgres (Neon). With no connection, the wall is
-  empty.
+- **Text needs the database.** Notes live in the local Postgres (the `mcp-notes-pg` Docker
+  container). With no connection, the wall is empty.
 - **Single user, no login.** The daemon binds to `127.0.0.1`.
 
 ## Where the code is

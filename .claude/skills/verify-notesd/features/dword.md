@@ -25,9 +25,8 @@ curated tools cannot answer.
   register, no advice or praise — mirrors dword's own `journal-insight.ts` prompt) and adds it.
 - Either skill also accepts a plain-English request with the same intent ("add this word to my
   vocab list", "save this quote to dword"), per each `SKILL.md`'s `description`.
-- The existing `notes-capture` Stop hook (`claude/hooks/notes-capture.mjs`) already captures the
-  whole `/v`/`/j` exchange into the wall's `claude_code` chat history; this phase adds no new
-  capture-path code.
+- `/v` and `/j` exchanges are not captured into the wall's chat history: the `notes-capture` Stop
+  hook stores `/n` turns only (`isNotesPrompt`, `claude/hooks/lib/transcript.mjs`).
 
 ### How to get to it (user POV)
 Type `/v <word or phrase>` or `/v <word or phrase> > <sentence>`, or `/j <saying>`, in any Claude
@@ -105,7 +104,25 @@ $V mcp RUN dword_journal_add '{"text":"A stitch in time saves nine.","insight":{
 P -d "$DWORDDB" -c "select count(*) from journal_entries where text = 'A stitch in time saves nine.'"
 # -> 2  -- "save anyway" inserted a second row instead of being blocked
 
+# /j: set where the saying is from (the id is the "entry.id" of an add above)
+$V mcp RUN dword_journal_set_source '{"id":"<entry id>","source_note":"Dune (2021)"}'
+# -> {"updated":true,"entry":{...,"source_note":"Dune (2021)"}}
+P -d "$DWORDDB" -c "select source_note, insight_status from journal_entries where id='<entry id>'"
+# -> the source is set; the insight is untouched
+
+# /v: the fold. A single word differing in accent or case is found; a phrase differing only in
+# accents or edge punctuation comes back as candidates
+# add "study" and "déjà vu" with dword_vocab_add, then:
+$V mcp RUN dword_vocab_lookup '{"term":"studying"}'         # -> found, the "study" entry
+$V mcp RUN dword_vocab_lookup '{"term":"deja vu"}'          # -> {"found":false,"candidates":[{"term":"déjà vu",...}]}
+
 $V down RUN
+
+# The user refusals: a second run with an email that has no account
+DAILY_WORDS_DIR="$S/daily-words" DWORD_USER_EMAIL=nobody@x.invalid $V up
+$V mcp RUN2 dword_vocab_lookup '{"term":"perch"}'           # -> "daily-words user nobody@x.invalid not found"
+$V mcp RUN2 dword_sql '{"sql":"select count(*) from vocab_entries"}'       # still answers
+$V down RUN2
 P -c "drop database $DWORDDB with (force)"
 ```
 
@@ -146,10 +163,10 @@ count), not the literal text any run happens to write.
   `dword_vocab_add` again so the one-time origin attach runs. It never overwrites an origin.
 - A saying-shaped message calls `dword_journal_find_similar` first; a `duplicate` is shown and
   nothing is inserted unless the owner says to save it anyway (`force: true`).
-- All six dword tool names are on the chat allow-list through `ALL_CONNECTOR_TOOL_NAMES` (dword is a
+- All seven dword tool names are on the chat allow-list through `ALL_CONNECTOR_TOOL_NAMES` (dword is a
   `CONNECTOR_SYSTEMS` member); `allowedChatTools()` needed no change.
 - The status panel shows `looking up a word`, `saving a word`, `checking for a similar saying` and
-  `saving a saying` for the four curated tools; `dword_schema`/`dword_sql` keep the generic
+  `saving a saying` and `noting where a saying is from` for the five curated tools; `dword_schema`/`dword_sql` keep the generic
   `reading daily-words`.
 - Every wall exchange, these included, is written to chat history by `POST /api/chat`
   (`src/http/api.ts`): the user row before the agent runs, the assistant row after a clean finish,

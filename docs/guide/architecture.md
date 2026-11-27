@@ -13,9 +13,9 @@ three ways, plus background jobs.
 ```
  Claude Code (/n, any repo) ──MCP──┐
  Claude Code hooks ────────────────┤     ┌──────────────────────────────┐     ┌──────────────────┐
- Browser http://localhost:7317 ────┼────▶│ notesd  (Hono, 127.0.0.1)    │────▶│ Postgres (Neon)  │
-   wall · projects · movies · chat │     │  /mcp   MCP, streamable HTTP │     │ shared by both   │
-                                   │     │  /api   JSON, SSE, uploads   │     │ machines         │
+ Browser http://localhost:7317 ────┼────▶│ notesd  (Hono, 127.0.0.1)    │────▶│ Postgres (Docker)│
+   wall · projects · movies · chat │     │  /mcp   MCP, streamable HTTP │     │ mcp-notes-pg     │
+                                   │     │  /api   JSON, SSE, uploads   │     │ on this machine  │
  ~/mcp-notes-data/inbox ──watch────┘     │  /      the web app          │     └──────────────────┘
                                          │  one NotesService + events   │────▶ ~/mcp-notes-data
                                          │  background jobs             │      (this machine only)
@@ -35,7 +35,7 @@ three ways, plus background jobs.
 | --- | --- |
 | `src/main.ts` | Entry point: `loadConfig()`, `startDaemon()`, and a shutdown on `SIGINT` / `SIGTERM` that is forced after 10 s. |
 | `src/config.ts` | Builds `Config` from `.env.local` under the process environment (the environment wins). Every bad value throws `ConfigError` here, so nothing downstream re-validates. The `DEFAULT_*_CONFIG` literals have sessions, the adversary, movies and direct streaming off, so a test that builds a `Config` by hand starts none of them. |
-| `src/daemon.ts` | `startDaemon`: data dirs, embedders, `createDb`, `NotesService`, `ChatService`, the adversary, movies, player and health monitor, direct streaming (each null when off; direct streaming loads the provider seed), `createApp`, listen on loopback, then `startBackground`. Returns `stop()`, which closes them in the reverse order. |
+| `src/daemon.ts` | `startDaemon`: data dirs, embedders, the database (`openLocalDb` for this machine's own, else `createDb`), the merge of a staged [one-time copy](#the-one-time-copy), the reminder seeds, `NotesService`, `ChatService`, the adversary, movies, player and health monitor, direct streaming (each null when off; direct streaming loads the provider seed), `createApp`, listen on loopback, then `startBackground`. Returns `stop()`, which closes them in the reverse order. |
 | `src/deps.ts` | `AppDeps`: what `startDaemon` hands to every router and job (`config`, `db`, `events`, `service`, `embedder`, `imageEmbedder`, `chat`, `adversary`, `movies`, `moviesPlayer`, `moviesHealth`, `sessionEvents`, and the streaming parts, `streaming`, `warp`, `directStream`, `streamCache`, `torrents`, `streamDownloads`, `cacheShelf`, `streamLive`, `streamPreviews`, `streamCanary`, `trending`, `trackerLists`, `streamEvidence` and `subtitleCheck` among them). A subsystem that is off is `null` there, and its routes answer 503. |
 | `src/http/app.ts` | `createApp(deps, options)`: mounts `/health`, `/mcp` and each router. `options` are the test seams (chat backend, reveal, sessions, resumer, Seer source). `mcpToolDeps` builds what the MCP tools get from the same `deps`. |
 | `src/background.ts` | `startBackground(deps)`: starts the jobs below and returns one stop function. |
@@ -90,7 +90,7 @@ next start (`npm run db:migrate` applies it by hand).
 
 | Subsystem | Tables | Notes |
 | --- | --- | --- |
-| Notes | `notes`, `note_revisions` | One plain-text body per note, `tags[]` derived from it, `origin`, `deleted_at`. A GIN full-text index over the body on the `simple` configuration. The `image_path` / `image_meta` columns are the old one-photo layout: read once at start to copy any stragglers into `note_images`, never written. |
+| Notes | `notes`, `note_revisions` | One plain-text body per note, `tags[]` derived from it, `origin`, `deleted_at`. A GIN full-text index over the body on the `simple` configuration. The `image_path` / `image_meta` columns are the old one-photo layout: read once at start to copy any stragglers into `note_images`, never written (delete forever only clears them). |
 | Photos and files | `note_images`, `note_files` | One row per photo or file with its own id, `sha256`, `host`, `position`, `deleted_at`. A note's first photo carries the note's id. Dedupe is by `sha256` among rows not removed. `note_files.extracted_text` is reserved; nothing fills it. |
 | Embeddings | `note_embeddings`, `note_image_embeddings` | pgvector, 1536 dimensions, HNSW cosine. A note vector is keyed to the sha256 of the body it came from, so a stale one is never used. |
 | Chat | `chat_threads`, `chat_messages`, `chat_message_revisions`, `chat_message_attachments`, `chat_images` | Threads from the wall and from `/n` captures; soft-deleted messages; pasted images. |
@@ -179,8 +179,9 @@ hosted database.
 - **Schema.** The daemon applies `drizzle/` to it at every start (`src/db/localDb.ts`), after
   waiting up to a minute for a container that is still coming up; when it does not answer the
   daemon exits and systemd starts it again. `npm run db:migrate` goes to the same database.
-- **One database.** Notes, chat, sessions, movies and streaming all live in it. Only one link
-  crosses subsystems without a foreign key: `movie_titles.review_note_id`, the review note.
+- **One database.** Notes, chat, sessions, movies and streaming all live in it. Two links
+  cross subsystems without a foreign key: `movie_titles.review_note_id`, the review note, and
+  `chat_message_attachments.ref_id`, a note's photo or file attached to a chat message.
 - **Backups are yours.** The volume is the only copy. `docker exec mcp-notes-pg pg_dump -U
   postgres mcp_notes` writes one.
 
@@ -219,8 +220,9 @@ re-read from its transcripts.
 Neon is only the source of the one-time copy now. What follows describes a daemon whose
 `DATABASE_URL` still names a Neon host.
 
-Nothing asks the database on a timer shorter than 30 minutes while the machine is idle. The
-embedding workers (notes, pictures, session replies) and the summary worker are woken by what
+The embedding and summary workers ask the database on no timer shorter than 30 minutes while the
+machine is idle (the movies sync and the adversary poll on their own timers). The embedding
+workers (notes, pictures, session replies) and the summary worker are woken by what
 this daemon writes: a note event, a session read (replies drain at most once a minute; summaries
 are checked once a session has been quiet for the idle time) and the summarize route. Their
 30-minute sweeps only catch what no event announced (and, on a shared Postgres, a second daemon's
@@ -233,7 +235,7 @@ On Neon the database is Postgres with pgvector.
   daemon uses the pooled host through `@neondatabase/serverless` over a websocket pool, which
   supports interactive transactions. Migrations (`drizzle.config.ts`) need the direct host. Both
   are picked by host name, not by which key holds them. A URL that is not `*.neon.tech` (the
-  Docker Postgres in tests) goes through `node-postgres`; both drivers sit behind one `Db` type
+  local Docker Postgres, and the one in tests) goes through `node-postgres`; both drivers sit behind one `Db` type
   (`src/db/client.ts`).
 - **The egress meter.** Every query result is counted per query shape (`src/db/meter.ts`): calls,
   rows and approximate bytes, estimated from the row JSON. `GET /api/debug/egress` (loopback only)
@@ -259,7 +261,7 @@ Single user, no authentication. The protections are about where a request comes 
 | --- | --- | --- |
 | Loopback bind | `src/config.ts`, `src/daemon.ts` | The daemon listens on `127.0.0.1` only. `NOTESD_HOST` set to anything else stops it at start. |
 | DNS-rebinding guard | `loopbackOnly` in `src/http/app.ts`, on `/mcp` | The request URL (from the `Host` header) must name loopback, and an `Origin`, when present, must be loopback. Claude Code sends no `Origin`. |
-| Same-origin routes | `sameOriginOnly` in `src/http/sameOrigin.ts` | The `Origin` must equal the request's own loopback origin, so only the wall's page can call them: delete forever, reveal in Explorer, chat edits and deletes, resume and summarize, the selected project, the adversary toggle and "Review now", every movie write and play, a direct-stream play or refresh. A `curl` without `Origin` gets 403 `forbidden_origin`. |
+| Same-origin routes | `sameOriginOnly` in `src/http/sameOrigin.ts` | The `Origin` must equal the request's own loopback origin, so only the wall's page can call them: delete forever, reveal in Explorer, chat edits and deletes, resume and summarize, the selected project, the adversary toggle and "Review now", every movie write and play, a direct-stream play or refresh. A `curl` without `Origin` gets 403 `forbidden_origin`. The one movie write that is not the wall's, the streaming command's report of a site play (`POST /api/movies/site-play`), needs loopback and an `X-Notes-Site-Play` header instead (`src/http/sitePlayApi.ts`). |
 | Capture header | `captureGuard` in `src/http/capture.ts` | The hook routes need loopback, a JSON body and `X-Notes-Capture: 1`. A custom header forces a CORS preflight, which notesd never answers, so a page on another origin cannot post. |
 | Loopback reads | `loopbackReadGuard` in `src/http/sessionsApi.ts` | `GET /api/sessions/context` and `GET /api/debug/egress`. |
 | Served files | `src/http/images.ts`, `files.ts` | Photos go out with `nosniff` and a sandbox CSP; other files always as attachments. Routes take ids, never paths. |
@@ -283,13 +285,16 @@ it is on.
 | Image embedding worker | `OPENROUTER_API_KEY` set | Embeds this machine's photos for `similar_images`. | `src/embeddings/imageWorker.ts` |
 | Session ingest | `NOTESD_SESSIONS` on | Runs the one-time backfills, then tails `<CLAUDE_HOME>/projects` from stored byte offsets. | `src/sessions/ingest.ts` |
 | Parent link worker | `NOTESD_SESSIONS` on | Links sessions to their parents from what the parent wrote. | `src/sessions/links.ts` |
-| Summary worker | `NOTESD_SESSIONS` on and `claude` found | One Haiku summary per idle session, then its embedding. | `src/sessions/summaryWorker.ts` |
+| Summary worker | `NOTESD_SESSIONS` on, and `claude` found or an embedder | One Haiku summary per idle session (with `claude`), then its embedding (with an embedder). | `src/sessions/summaryWorker.ts` |
 | Reply embedding worker | Sessions on and an embedder | One vector per stored reply of this host's sessions. | `src/sessions/replyEmbeddings.ts` |
 | Adversary reviewer | `NOTESD_ADVERSARY` on and `claude` found | Polls Seer's candidates, writes verdicts, starts Seer's nightly. | `src/adversary/service.ts`, `dispatch.ts` |
 | Movies sync | `NOTESD_MOVIES` on | Polls the roots, probes, matches against TMDB, reads VLC's recent list. | `src/movies/service.ts` |
 | VLC play tracking and health log | Movies on | Follows the VLC notesd started; samples every `vlc.exe` into the health log. | `src/movies/player.ts`, `src/movies/vlc/` |
 | Stream canary | `NOTESD_STREAM_CANARY` on (the default), with direct streaming | A few minutes after start and once a day, while nothing plays: every cloud provider asked for one known film out of sight, for its health only. | `src/directStream/canary.ts` |
 | Stream cache | Direct streaming on | Downloads the films and episodes asked for, one at a time; carries unfinished ones on after a restart. | `src/directStream/cache/` |
+| Torrents | `NOTESD_TORRENT` on, with direct streaming | Clears this host's downloads not played for the keep days, then starts the tick. Joins no swarm. | `src/directStream/torrent/service.ts` |
+| Seek previews | `NOTESD_STREAM_PREVIEWS` on, with direct streaming | A sweep of the films on disk 30 s after start and every half hour. | `src/directStream/previews/service.ts` |
+| Cache page | Torrents or the stream cache on | Carries out a deletion whose undo window a restart cut short. | `src/directStream/cacheShelf.ts` |
 | Trending list | `NOTESD_TRENDING` on | Two minutes after start, then once a day: the torrent indexes' top lists into `stream_trending`. No swarm is joined. | `src/directStream/trending/job.ts` |
 | Public tracker lists | Torrents and discovery on | A minute after start, then once a day: the public tracker lists read, up to 20 trackers kept. | `src/directStream/torrent/trackerLists.ts` |
 | Stream downloads | `NOTESD_STREAM_DOWNLOADS` on | Carries on the queued, running and paused downloads the owner asked for. | `src/directStream/downloads/service.ts` |
@@ -311,7 +316,7 @@ not in the route table: the app reads the URL itself (`web/src/lib/route.ts`,
 | `/history`, `/history?thread=<id>` | The chat history page, optionally opened on one thread. |
 | `/projects?repo=<repo>&node=<node id>&focus=1` | The project session graph on that repo with that node selected. `focus=1` shows the page alone, without rail, sidebar and header. With `node` and no `repo` (how Claude Code links a session) the app looks up the node's repo. |
 | `/adversary`, `/adversary/<strategy id>` | Seer Adversarial: the overview, or one method. `?focus=1` works here too. |
-| `/movies`, `/movies/<id>`, `/movies/unmatched` | The library, one title (a movie id such as `M-23T4`, or a title key such as `movie-467905`; an episode's id opens its series at that episode), and the files that matched no title. |
+| `/movies`, `/movies/<id>`, `/movies/unmatched`, `/movies/cache`, `/movies/health` | The library, one title (a movie id such as `M-23T4`, or a title key such as `movie-467905`; an episode's id opens its series at that episode), the files that matched no title, and the Stream side's Cache and Stream health pages. `?side=stream` opens the Stream side of `/movies` and of a title. |
 | `/full/<imageId>` | The full-screen photo page, a separate small bundle (`web/fullscreen.html`). |
 | `/stream/<sessionId>` | The direct-streaming player, a separate small bundle (`web/stream.html`) with hls.js and dash.js built in. A play opens it in the streaming Chrome: see [The player](streaming.md#the-player). |
 | `/assets/*` | Hashed build output, cached as immutable. |
@@ -365,8 +370,8 @@ Server code is ESM with `.js` import suffixes. The web app has its own tsconfig
   Claude Code session once `/n` is used in it, are copied to `chat-images/` and never deleted.
   The same picture is stored once (by sha256). They never appear on the wall unless one is made a
   note.
-- **Text needs the network.** Notes live in Neon. With no connection nothing loads, and a spent
-  transfer quota pauses the database for 30 minutes at a time.
+- **Text needs the local Postgres.** Notes live in the `mcp-notes-pg` container. When it is not
+  running nothing loads, and the daemon exits at start after waiting a minute for it.
 - **Meaning needs OpenRouter.** A note becomes findable by meaning shortly after it is saved, not
   in the same instant. Without `OPENROUTER_API_KEY`, or while OpenRouter is down, `search` falls
   back to full text and says so, `related` answers only for notes embedded earlier, and
@@ -404,8 +409,9 @@ Server code is ESM with `.js` import suffixes. The web app has its own tsconfig
   ingest off.
 - **Resume needs tmux on the same machine.** A session from the other laptop shows on the graph
   but cannot be resumed or read here.
-- **Movies play where the file is.** Titles, ratings and reviews are shared; files, plays and VLC
-  belong to one machine. A film opened from Explorer reaches the history only when VLC exits and
+- **Movies play where the file is.** Files, plays and VLC belong to one machine. Titles, ratings
+  and reviews are shared only by two daemons on one Postgres; each machine's own database holds
+  its own after the one-time copy. A film opened from Explorer reaches the history only when VLC exits and
   writes its recent list, which keeps the last 30. Playback needs Windows VLC under WSL.
 
 ## Proving a change

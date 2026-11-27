@@ -11,8 +11,9 @@ machine, running by hand, the test suites and the docs tooling. Settings are in
 - WSL 2 with systemd: `/etc/wsl.conf` has `[boot]` / `systemd=true`, and `systemctl --user
   is-system-running` answers. Other Linux setups work too: skip the Windows part, and skip the
   unit if you would rather run it by hand.
-- Node 22.22 or later (`.nvmrc`). The installer takes `node` from `PATH`, else
-  `~/tools/node-v22.23.1-linux-x64/bin/node`, else `NODE_BIN=/abs/path/to/node`.
+- Node 22.22 or later (`package.json` engines; `.nvmrc` pins 22.23.4). The installer takes
+  `NODE_BIN=/abs/path/to/node` when set, else `node` from `PATH`, else
+  `~/tools/node-v22.23.1-linux-x64/bin/node`.
 - The `claude` CLI, logged in. The chat bar, session summaries and the other Claude runs use
   your Claude Code login (`~/.claude/.credentials.json`). No API key goes in this repo.
 - A Postgres database with pgvector. The installer makes one on this machine, in Docker.
@@ -36,8 +37,8 @@ git clone git@github.com:miftahulmahfuzh/mcp-notes.git ~/mcp-notes
 cd ~/mcp-notes
 cp /path/to/your/.env.local .env.local
 npm ci
-npm run embed:backfill      # optional: embed existing notes now (notesd also does it in the background)
 scripts/install.sh
+npm run embed:backfill      # optional: embed existing notes now (notesd also does it in the background)
 ```
 
 Then open `http://localhost:7317` in the Windows browser. Logs: `journalctl --user -u notesd -f`.
@@ -51,6 +52,7 @@ and restarted. Each run:
 | Build | `npm ci` when `node_modules` is missing or older than `package-lock.json`, then `npm run build` (the server with `tsc`, the web app with Vite). |
 | Data dir | Creates `~/mcp-notes-data`, or `NOTES_DATA_DIR`. |
 | Whisper | Unless `.env.local` turns torrents or Whisper off: a virtual environment in `~/mcp-notes-data/whisper/venv` (`NOTESD_TORRENT_WHISPER_DIR`), `pip install faster-whisper==1.2.1`, and the model (`NOTESD_TORRENT_WHISPER_MODEL`, `small`: about 460 MB) loaded once so it is on disk before the first play. The first run takes about a minute; later runs only check. A failure warns and the install goes on; torrent sessions then have no Whisper subtitles. |
+| Local database | Creates or starts the `mcp-notes-pg` container (`pgvector/pgvector:pg16` on `127.0.0.1:55437`, a named volume, `--restart unless-stopped`) with the database `mcp_notes`, taking over `mcp-notes-pg-movies` / `mcp_notes_movies` from an earlier version. When `.env.local` names Neon or no database, it copies the file to `env.local.backup-<time>` in the data dir, then writes `DATABASE_URL` for the container and keeps the old address as `IMPORT_DATABASE_URL`. A `DATABASE_URL` that names another Postgres is left alone. Without a usable Docker, or on any failure, it warns and `.env.local` stays as it was. |
 | systemd user unit | Renders `deploy/notesd.service` with absolute paths (node, this checkout, the data dir, `HOME`, and the real path of `claude` as `NOTESD_CLAUDE_BIN`) into `~/.config/systemd/user/notesd.service`, then `daemon-reload`, `enable` and `restart`. The absolute paths matter: the user manager's `PATH` has no `~/tools/...`. |
 | Linger | `loginctl enable-linger $USER`, so the unit starts when the distro boots, not when you first open a shell. When that needs a password the script says so: run `sudo loginctl enable-linger $USER` once. |
 | Health | Waits up to 30 s for `GET http://127.0.0.1:7317/health`, and prints the journal when it does not answer. |
@@ -69,9 +71,9 @@ which brain answered; `brain=glm` is a warning that Claude failed and the fallba
 A restart ends every stream session and every play that is being started. So before it builds, and
 again right before the restart, the installer asks the running daemon (`GET /api/movies/player`)
 and reads `busy`: true while notesd follows a VLC play, while a stream is on screen, or while a
-stream play is still being started (`starting`: a cloud resolve, a torrent's indexes and swarms, or
-a page opened less than 30 s ago). A play in that last state shows no `stream` yet; reading
-`stream` alone restarted the daemon under one on 2026-11-17.
+stream play is still being started (`starting`: a cloud resolve, a torrent's indexes and swarms, a
+streaming site tried as the fallback, or a page opened less than 30 s ago). A play in that last
+state shows no `stream` yet; reading `stream` alone restarted the daemon under one on 2026-11-17.
 
 | Run | When the daemon is busy |
 | --- | --- |
@@ -209,6 +211,7 @@ There is one `vitest.config.ts`. Environment flags pick the suite, so do not add
 | `npm run test:live:connectors` | `tests/live/connectors.live.test.ts` | Each `*_schema` tool against the real connector databases, read-only |
 | `npm run test:live:embeddings` | `tests/live/embeddings.live.test.ts` | One real OpenRouter embeddings call over the labelled search set. Billed |
 | `npm run test:live:imageEmbeddings` | `tests/live/imageEmbeddings.live.test.ts` | A few real image embedding calls. Billed |
+| `npm run test:live:webStory` | `tests/live/webStory.live.test.ts` | One real web story run (Claude with WebSearch) for a well-covered episode. Billed |
 | `npm run verify:paste-hook` | `scripts/verify-paste-hook.mjs` | One real `claude -p` run that checks the paste hook's rewrite. Billed |
 | `npm run verify:prompt-hook` | `scripts/verify-prompt-hook.mjs` | One real `claude -p` run that checks `/n` sees a pasted image's id. Billed |
 

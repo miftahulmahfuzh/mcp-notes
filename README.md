@@ -1,9 +1,9 @@
 # mcp-notes
 
 A personal notes system for someone who has Claude Code open all day. One local daemon, `notesd`,
-keeps notes, photos and files in Postgres and serves them three ways: to every Claude Code session
-as an MCP server (`/n <anything>` from any repo), to a JSON API, and to a dark web wall at
-`http://localhost:7317` with its own chat bar. The same daemon maps your Claude Code sessions,
+keeps notes in Postgres and photos and files on disk, and serves them three ways: to every Claude
+Code session as an MCP server (`/n <anything>` from any repo), to a JSON API, and to a dark web
+wall at `http://localhost:7317` with its own chat bar. The same daemon maps your Claude Code sessions,
 reads your other apps, reviews Seer's stock picks and keeps your film library.
 
 ![The wall: text notes and photo notes mixed](docs/guide/img/wall/everything.png)
@@ -29,8 +29,8 @@ You mostly do not open it to find things. You ask:
   recycle bin can delete for good. No tool Claude has can.
 - **Originals stay byte for byte.** Photos and files are never re-encoded. Claude gets a preview
   it can look at.
-- **Two machines, one database.** Text is shared; photos, files, transcripts and videos stay on
-  the machine that holds them and say so (`not_on_this_machine`).
+- **Two machines.** Each runs its own database. Photos, files, transcripts and videos record the
+  machine that holds them, and elsewhere say so (`not_on_this_machine`).
 - **Yours alone.** One user, bound to `127.0.0.1`, no accounts, no telemetry.
 
 ## What is in it
@@ -38,9 +38,9 @@ You mostly do not open it to find things. You ask:
 | Part | What it does | Guide |
 | --- | --- | --- |
 | The wall | Notes as cards, tags, a big editor, photos, files, recycle bin, live updates when Claude edits | [wall](docs/guide/wall.md) |
-| Claude Code | The `notes` MCP server, `/n`, six hooks, clickable ids, pasted pictures saved as notes | [claude-code](docs/guide/claude-code.md) |
+| Claude Code | The `notes` MCP server, `/n`, six hooks, clickable ids, pasted pictures saved as notes, reminders | [claude-code](docs/guide/claude-code.md) |
 | Search | Hybrid search, related notes, similar photos, background embeddings | [search](docs/guide/search.md) |
-| Chat | The wall's chat bar (a Claude agent with the same tools) and one history page for every chat and `/n` exchange | [chat](docs/guide/chat.md) |
+| Chat | The wall's chat bar (a Claude agent with most of the same tools) and one history page for every chat and `/n` exchange | [chat](docs/guide/chat.md) |
 | Sessions | Every Claude Code session as a graph per repo: who started whom, summaries, search, cost, context rot, resume | [sessions](docs/guide/sessions.md) |
 | Connectors | Read-only answers from expense-tracking, run-insights and Seer; `/v` and `/j` write to daily-words | [connectors](docs/guide/connectors.md) |
 | Seer Adversarial | Claude reviews each Seer pick before the open; twin books show whether its objections paid | [adversary](docs/guide/adversary.md) |

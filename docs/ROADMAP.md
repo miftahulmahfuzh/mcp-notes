@@ -13,7 +13,7 @@ Claude Code is open all working day; `/n <anything>` from any repo talks to mcp-
 | MCP registration | `claude mcp add --scope user --transport http notes http://localhost:7317/mcp` |
 | Note shape | One text field. No title. Tags are `#hashtags` inside the text, parsed into a `tags text[]` column on every write. |
 | Note ID | `[0-9A-Z]-[0-9A-Z]{3}`, e.g. `A-B32`. Random, unique, case-insensitive on lookup. Every card in the UI has a copy-id icon. |
-| Text storage | Neon Postgres (this repo's `.env.local`). Lenovo and GPD both run `notesd` against the same DB. |
+| Text storage | A Postgres on each machine (the `mcp-notes-pg` Docker container, since 2026-11-18). Until then, Neon Postgres, shared by the Lenovo and the GPD; its rows were copied into each local database once. See [architecture.md](guide/architecture.md). |
 | Edit safety | Every edit keeps the previous body in `note_revisions`; deletes are soft. |
 | Images | An image note = a note with one or more local files (several images per note since iteration 7). Originals stored byte for byte in `~/mcp-notes-data/images`, never re-encoded. Derived thumbnail (grid) and capped preview (what Claude sees). **No image sync to the GPD, ever** — on the GPD the text shows, the image shows as "on Lenovo". Accepted limitation. |
 | Chat bar brain | Claude Agent SDK (headless Claude Code, existing login), one run per message, resumable thread, streamed. Same code runs on GLM by swapping `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` — fallback only. |
