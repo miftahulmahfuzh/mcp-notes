@@ -1005,7 +1005,9 @@ the player's previous and next buttons (`episode`).
   off, and `cloud_failure` and `torrent_failure` the word each channel ended with (`no_stream`,
   `bot_check`, `dubbed`, `no_source` when the indexes listed no torrent worth trying, `error`, ...;
   empty when that channel was not asked). Over time these say which titles no torrent, or no cloud
-  source, can play.
+  source, can play. An ask the daemon's own stop cuts short (a restart in the middle of a resolve) is
+  `failure` `error`, `failure_detail` `the daemon stopped during the ask`, and `error` on every channel it
+  asked: it says nothing about the title.
 - **A streaming site took it.** Outcome `site`, the site as the provider.
 
 The player page adds its counters to every position report (`stats`: first-frame time, playing time,

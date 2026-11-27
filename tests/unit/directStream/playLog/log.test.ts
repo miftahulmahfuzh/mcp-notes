@@ -218,4 +218,24 @@ describe('the play log', () => {
     await t.log.settled();
     expect(t.repo.bySession(session.id)?.ended ?? null).toBeNull();
   });
+  it('an ask the daemon\'s stop cut short is an error on every channel it asked, never "no torrent"', async () => {
+    const t = setup();
+    // The torrent indexes answered, the try was killed by the stop: the service ends the ask with no_source / no_stream.
+    const cut = new DirectStreamError('no_source', 'No torrent could stream it.', {
+      attempts: [
+        { provider: 'Index: torrentio', outcome: 'resolved', took_s: 2, detail: '81 listed' },
+        { provider: 'Torrent: Some.Film.1080p', outcome: 'no_stream', took_s: 20, detail: '' },
+      ],
+    });
+    t.log.failed(t.ask('torrent'), cut);
+    t.log.stopping();
+    t.log.failed(t.ask('torrent'), cut);
+    t.log.failed(t.ask(null), new Error('aborted'));
+    await t.log.settled();
+    const [before, during, unnamed] = t.repo.rows;
+    expect(before).toMatchObject({ failure: 'no_source', torrentFailure: 'no_stream' });
+    expect(during).toMatchObject({ outcome: 'failed', failure: 'error', failureDetail: 'the daemon stopped during the ask', torrentFailure: 'error' });
+    expect(during?.cloudFailure ?? null).toBeNull();
+    expect(unnamed).toMatchObject({ failure: 'error', cloudFailure: 'error', torrentFailure: 'error' });
+  });
 });

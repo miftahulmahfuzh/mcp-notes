@@ -3,7 +3,7 @@ import { SESSION_IDLE_MS, SESSION_MAX_MS, type StreamSession } from '../sessions
 import { channelFailures, channelOf, failureDetailOf, failureOf, heightOf, kbpsOf, slotOf, subtitleSourceOf } from './derive.js';
 import type { PlayLogInsert, PlayLogPatch, PlayLogWriter } from './repo.js';
 import { StatsTally } from './tally.js';
-import { PLAY_LOG_SWEEP_EVERY_MS, PLAY_LOG_WRITE_EVERY_MS, type PageReport, type PlayAsk } from './types.js';
+import { PLAY_LOG_SWEEP_EVERY_MS, PLAY_LOG_WRITE_EVERY_MS, type ChannelFailures, type PageReport, type PlayAsk } from './types.js';
 
 export interface PlayLogOptions {
   repo: PlayLogWriter;
@@ -48,6 +48,20 @@ const msBetween = (from: Date, to: Date): number => int4(to.getTime() - from.get
 /** When the session store counts the session ended (SessionStore.expiresAt: idle too long, or too old). */
 const expiryOf = (s: StreamSession): number => Math.min(s.lastUsedAt.getTime() + SESSION_IDLE_MS, s.createdAt.getTime() + SESSION_MAX_MS);
 
+/** A failed ask's detail when the daemon stopped during it. */
+export const STOPPED_DETAIL = 'the daemon stopped during the ask';
+
+/** Every channel the ask reached, or else the one it named (both when it named none), as `error`. */
+function stoppedChannels(ask: PlayAsk, reached: ChannelFailures): ChannelFailures {
+  let cloud = reached.cloud !== null;
+  let torrent = reached.torrent !== null;
+  if (!cloud && !torrent) {
+    cloud = ask.asked !== 'torrent';
+    torrent = ask.asked !== 'cloud' && ask.asked !== 'provider';
+  }
+  return { cloud: cloud ? 'error' : null, torrent: torrent ? 'error' : null };
+}
+
 function patchOf(t: SessionTally): PlayLogPatch {
   const s = t.session;
   const totals = t.stats.totals();
@@ -90,6 +104,8 @@ export class PlayLog {
   private readonly writing = new Set<Promise<void>>();
   private readonly sweepEveryMs: number;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  /** Set by the daemon's stop: an ask that fails from now on failed because the daemon stopped, not for its title. */
+  private isStopping = false;
 
   constructor(opts: PlayLogOptions) {
     this.repo = opts.repo;
@@ -152,7 +168,7 @@ export class PlayLog {
   failed(ask: PlayAsk, err: unknown): void {
     this.guard('a failed play', () => {
       const now = this.now();
-      const channels = channelFailures(ask.asked, err);
+      const channels = this.isStopping ? stoppedChannels(ask, channelFailures(ask.asked, err)) : channelFailures(ask.asked, err);
       const row: PlayLogInsert = {
         host: this.host,
         askedAt: ask.at,
@@ -160,8 +176,8 @@ export class PlayLog {
         ...slotOf(ask.ref),
         asked: ask.asked,
         outcome: 'failed',
-        failure: failureOf(err),
-        failureDetail: failureDetailOf(err),
+        failure: this.isStopping ? 'error' : failureOf(err),
+        failureDetail: this.isStopping ? STOPPED_DETAIL : failureDetailOf(err),
         cloudFailure: channels.cloud,
         torrentFailure: channels.torrent,
         resolveMs: msBetween(ask.at, now),
@@ -291,6 +307,16 @@ export class PlayLog {
     if (this.sweepTimer === null) return;
     clearInterval(this.sweepTimer);
     this.sweepTimer = null;
+  }
+
+  /**
+   * The daemon is stopping (its stop calls this first, before the stream service is torn down). An ask that fails
+   * from now on is cut short by the stop, never evidence about its title: it is logged `error` on every channel it
+   * asked, so the health view's outage rule keeps it off the could-not-be-played list. Changes no play's answer.
+   */
+  stopping(): void {
+    this.isStopping = true;
+    this.disarmSweep();
   }
 
   /** Daemon start: the rows the previous run left open are closed as `restart`. How many; 0 when the database did not answer. */
