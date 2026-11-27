@@ -40,21 +40,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "8755f1e",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": null,
+      "note": "stream health route, direct_stream_health tool and /movies/health page on phase-3-stream-play-log; Proof seed Film B id 990002 -> 990012 (990002 is the fake TMDB's The Dog Stars, rung 2); docs:gen must be rerun at integration with phase 5; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1127-091520-2849753/evidence",
       "package": "src/directStream/playLog`, `src/http`, `src/mcp`, `web/src/components/movies`, `web/src/pages",
       "plan": ".workflows/plan/stream-play-log/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-27T09:20:11+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SH03",
       "title": "Stream health: route, MCP tool, page"
     },
     {
@@ -97,6 +97,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-play-log",
-  "updated": "2026-11-27T09:10:13+07:00",
+  "updated": "2026-11-27T09:20:11+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-play-log"
 }
