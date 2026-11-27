@@ -1005,7 +1005,9 @@ the player's previous and next buttons (`episode`).
   off, and `cloud_failure` and `torrent_failure` the word each channel ended with (`no_stream`,
   `bot_check`, `dubbed`, `no_source` when the indexes listed no torrent worth trying, `error`, ...;
   empty when that channel was not asked). Over time these say which titles no torrent, or no cloud
-  source, can play.
+  source, can play. An ask the daemon's own stop cuts short (a restart in the middle of a resolve) is
+  `failure` `error`, `failure_detail` `the daemon stopped during the ask`, and `error` on every channel it
+  asked: it says nothing about the title.
 - **A streaming site took it.** Outcome `site`, the site as the provider.
 
 The player page adds its counters to every position report (`stats`: first-frame time, playing time,
@@ -2140,7 +2142,9 @@ per hour and the share at 1080p, the failures by word, the latest plays, and eve
 could not be played with what the cloud and the torrents answered. The wall's Stream health page
 (`/movies/health`, see [movies.md](movies.md#stream-health)), the `direct_stream_health` tool and
 `GET /api/stream/health?days=N` answer the same. They only read: nothing here changes which provider or
-torrent a play chooses.
+torrent a play chooses. A failed ask whose every asked channel only answered `error` (every index or
+provider timed out or could not be reached: this machine's network, not the title) still counts as a failed
+ask, but never puts a title on the list of those that could not be played.
 
 ### Reporting a stream bug: `/report-stream-bug`
 

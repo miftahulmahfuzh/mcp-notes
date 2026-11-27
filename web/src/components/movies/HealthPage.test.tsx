@@ -103,6 +103,53 @@ describe('the Stream health page', () => {
     expect((await screen.findByTestId('hp-nothing')).textContent).toBe('Nothing was played in the last 30 days.');
   });
 
+  it.each([
+    ['an answer', 200],
+    ['an error', 500],
+  ])('keeps the new period when the old period\'s %s arrives last', async (_what, status) => {
+    let release7: () => void = () => {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const days = Number(new URL(url, 'http://x').searchParams.get('days'));
+        if (days === 7) await new Promise<void>((r) => (release7 = r));
+        return new Response(JSON.stringify(status === 200 || days !== 7 ? empty(days) : { error: 'store_failed' }), { status: days === 7 ? status : 200 });
+      }),
+    );
+    render(<HealthPage onOpen={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Last 30 days' }));
+    expect((await screen.findByTestId('hp-nothing')).textContent).toBe('Nothing was played in the last 30 days.');
+    release7();
+    await settle();
+    expect(screen.getByTestId('hp-nothing').textContent).toBe('Nothing was played in the last 30 days.');
+  });
+
+  it('shows, per channel, the asks that showed no picture and the share of time the film stood still (R2.1, R2.3)', async () => {
+    answer = (days) => {
+      const h = seeded(days);
+      h.totals.torrent = { ...h.totals.torrent!, no_picture: 1 };
+      return h;
+    };
+    render(<HealthPage onOpen={() => {}} />);
+    const torrent = await screen.findByTestId('hp-channel-Torrents');
+    expect(torrent.textContent).toContain('0.3%stood still');
+    expect(torrent.textContent).toContain('1no picture');
+  });
+
+  it('the hover tip of a failure chip words the failure too', async () => {
+    render(<HealthPage onOpen={() => {}} />);
+    await screen.findAllByText(/×2/);
+    const tips = [...document.querySelectorAll('.hp-fails [data-tip]')].map((e) => e.getAttribute('data-tip'));
+    expect(tips.length).toBeGreaterThan(0);
+    for (const tip of tips) expect(tip).not.toMatch(/no_source/);
+  });
+
+  it('a play whose page has not reported yet is still loading, not a failure', () => {
+    const p = seeded(7).recent[1]!;
+    expect(endedText({ ...p, outcome: 'no_picture', ended: null })).toBe('no picture yet');
+    expect(endedText({ ...p, outcome: 'no_picture', ended: 'expired' })).toBe('no picture');
+  });
+
   it('words outcome words as what was missing', () => {
     expect(failureText('no_source', 'torrent')).toBe('no torrent found');
     expect(failureText('no_stream', 'cloud')).toBe('no cloud source');
@@ -111,6 +158,8 @@ describe('the Stream health page', () => {
     expect(failureText('resolved', 'cloud')).toBe('found, did not play');
     expect(failureText('skipped_browser_only', 'cloud')).toBe('not tried');
     expect(failureText('cache_language', null)).toBe('cache is a dub');
+    // Every index or provider asked errored: an outage, said as such (never a title we cannot stream).
+    expect(failureText('error', 'torrent')).toBe('unreachable');
     // Every word phase 1 can write has its own wording (none falls through to the underscore fallback).
     for (const w of ['no_source', 'resolve_failed', 'open_failed', 'unknown_session', 'no_episode', 'no_subtitle', 'torrent_off', 'bad_info_hash', 'not_on_this_machine', 'cache_failed', 'cache_language', 'error', 'resolved', 'no_stream', 'bot_check', 'dubbed', 'unplayable', 'skipped', 'skipped_browser_only', 'skipped_no_template']) {
       expect(failureText(w, 'cloud')).not.toContain('_');

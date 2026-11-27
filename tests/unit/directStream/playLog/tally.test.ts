@@ -27,3 +27,17 @@ describe('the page counters of one session', () => {
     expect(t.totals().playedMs).toBe((PLAY_LOG_MAX_LOADS + 4) * 1_000);
   });
 });
+
+describe('a folded page load that reports again', () => {
+  it('is not counted twice', async () => {
+    const { StatsTally } = await import('../../../../src/directStream/playLog/tally.js');
+    const { PLAY_LOG_MAX_LOADS } = await import('../../../../src/directStream/playLog/types.js');
+    const tally = new StatsTally();
+    const at = (load: string, playedMs: number) => ({ load, firstFrameMs: null, playedMs, stalls: 0, stalledMs: 0, waits: 0, waitedMs: 0, errors: 0 });
+    tally.add(at('oldest00', 1_000));
+    for (let i = 0; i < PLAY_LOG_MAX_LOADS; i += 1) tally.add(at(`load${String(i).padStart(4, '0')}`, 100));
+    // 'oldest00' is folded now; its page is still open and reports its counters since its load again.
+    tally.add(at('oldest00', 1_500));
+    expect(tally.totals().playedMs).toBe(1_500 + PLAY_LOG_MAX_LOADS * 100);
+  });
+});

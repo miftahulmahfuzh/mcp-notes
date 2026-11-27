@@ -204,6 +204,18 @@ describe('helpers', () => {
 });
 
 describe('reminders in the start context', () => {
+  it('says the due date as this machine counts days: midnight WIB is still that day', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'Asia/Jakarta';
+    try {
+      // `due: "2026-12-04"` is stored as midnight here: 2026-12-03T17:00Z.
+      expect(remindersOf({ node_id: 'A0-3G', reminders: [{ id: 1, body: 'x', due_at: '2026-12-03T17:00:00.000Z' }] })[0]?.due).toBe('2026-12-04');
+    } finally {
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
+    }
+  });
+
   const due = { id: 12, body: 'Decide  proposal\nitem 3.', due_at: '2026-12-04T01:17:56.000Z' };
 
   it('a fresh start reply with a due reminder puts its number, date and text after the node id, with the instruction', async () => {

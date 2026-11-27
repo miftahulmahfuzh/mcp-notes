@@ -104,7 +104,9 @@ export class PlayLogRepo implements PlayLogWriter {
   /**
    * Every film and episode on this host, over all time, whose failed asks came after its last play that reached the
    * screen (outcome played or site), newest failure first. `cloud_failure` / `torrent_failure` are the words of its
-   * latest failed ask that asked that channel.
+   * latest failed ask since that play that asked that channel (null: not asked there since).
+   * A failed ask whose every asked channel ended `error` (an outage, not the title) is left out: it neither lists
+   * the title nor counts in its asks.
    */
   async unhandled(host: string, limit: number): Promise<UnhandledEntry[]> {
     const res = await this.db.execute<UnhandledDbRow>(sql`
@@ -117,13 +119,16 @@ export class PlayLogRepo implements PlayLogWriter {
         select l.kind, l.tmdb_id, l.season, l.episode,
                (count(*) filter (where ok.at is null or l.asked_at > ok.at))::int as asks,
                max(l.asked_at) as last_asked_at,
-               (array_agg(l.cloud_failure order by l.asked_at desc, l.id desc) filter (where l.cloud_failure is not null))[1] as cloud_failure,
-               (array_agg(l.torrent_failure order by l.asked_at desc, l.id desc) filter (where l.torrent_failure is not null))[1] as torrent_failure
+               (array_agg(l.cloud_failure order by l.asked_at desc, l.id desc) filter (where l.cloud_failure is not null and (ok.at is null or l.asked_at > ok.at)))[1] as cloud_failure,
+               (array_agg(l.torrent_failure order by l.asked_at desc, l.id desc) filter (where l.torrent_failure is not null and (ok.at is null or l.asked_at > ok.at)))[1] as torrent_failure
           from stream_play_log l
           left join ok on ok.kind = l.kind and ok.tmdb_id = l.tmdb_id
                       and ok.season is not distinct from l.season
                       and ok.episode is not distinct from l.episode
          where l.host = ${host} and l.outcome = 'failed'
+           -- An ask whose every asked channel only errored (the network was down) says nothing about the title.
+           and not (coalesce(l.cloud_failure, 'error') = 'error' and coalesce(l.torrent_failure, 'error') = 'error'
+                    and (l.cloud_failure is not null or l.torrent_failure is not null))
          group by l.kind, l.tmdb_id, l.season, l.episode
         having count(*) filter (where ok.at is null or l.asked_at > ok.at) > 0
       )

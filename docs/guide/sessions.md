@@ -202,8 +202,9 @@ session matched on its own text. `seq` is the number of the prompt the reply ans
 
 Session search is words only in three cases, and then every word must appear and the result carries
 `mode: "text"` and a `fallback` sentence saying which case it is: without `OPENROUTER_API_KEY`,
-while no session has a vector of the embedder's model yet ("Session vectors are not built yet ..."),
-and when the query cannot be embedded in time.
+while no session, reply or note has a vector of the embedder's model yet ("Session vectors are not
+built yet ..."), and when the query cannot be embedded in time. While notes or replies have vectors,
+a session is still found by meaning through them, and the search stays hybrid.
 The second is the state of a new local database until the copy of the old shared database has run
 (the summary worker waits for it, see [architecture.md](architecture.md)) and the worker has
 embedded a first session; it is checked before the query is embedded, so it costs no embedding

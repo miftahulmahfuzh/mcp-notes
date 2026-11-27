@@ -60,9 +60,9 @@ export interface UnhandledEntry {
   /** Failed asks since its last successful play (all of them when it never played). */
   asks: number;
   last_asked_at: string;
-  /** The word of its latest failed ask that asked the cloud providers; null: never asked there. */
+  /** The word of its latest failed ask since its last play that asked the cloud providers; null: not asked there since. */
   cloud_failure: string | null;
-  /** The word of its latest failed ask that asked the torrents; null: never asked there. */
+  /** The word of its latest failed ask since its last play that asked the torrents; null: not asked there since. */
   torrent_failure: string | null;
 }
 

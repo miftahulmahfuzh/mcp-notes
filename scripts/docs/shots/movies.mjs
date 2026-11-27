@@ -10,7 +10,8 @@
 // daemon on 7317, the pop-ups of the film's director, its studio and one of its genres (a genre only
 // when its guide is already written: the first click is a model run), its play menu, and the Stream
 // side when this machine has a verified title (stream.png, the page of a streamed series as
-// stream-title.png, the Trending section as trending.png) and the Cache page (cache.png, nothing deleted); no Play is pressed there. It only looks: it
+// stream-title.png, the Trending section as trending.png), the Cache page (cache.png, nothing deleted) and the Stream health page
+// (health.png, the last 30 days of the play log); no Play is pressed there. It only looks: it
 // clicks filters, opens the trailer pop-up, a person's pop-up, the play menu and its torrent list, and reads pages.
 // It never presses Play, never marks, rates or reviews, and never starts or stops a VLC. The chat
 // picture sends a real, billed question (it is stored in the chat history), so it is retaken only
@@ -35,8 +36,9 @@
 //
 //   DOCS_SHOTS_PLAY=popup npm run docs:shots -- --live movies
 import { execFile } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
@@ -55,6 +57,21 @@ const TASKLIST = '/mnt/c/Windows/System32/tasklist.exe';
 const TASKKILL = '/mnt/c/Windows/System32/taskkill.exe';
 const VIEWPORT = { width: 1280, height: 800 };
 const TALL = { width: 1280, height: 1060 };
+
+// The movies guide marks where health.png goes until the first live run takes it (a link to a missing picture fails
+// docs:check, and this guide never shows a fixture picture). That run puts the picture's line in place of the mark.
+const GUIDE = fileURLToPath(new URL('../../../docs/guide/movies.md', import.meta.url));
+export const HEALTH_MARK = '<!-- health.png: the first `docs:shots -- --live movies` that finds a play log puts the picture here -->';
+export const HEALTH_LINE =
+  '![The Stream health page: per channel and per torrent index or cloud provider, how many asks reached the screen, the first frame, stalls per hour and the share at 1080p, then what could not be played and the latest plays](img/movies/health.png)';
+
+/** Puts health.png's line in the guide in place of its mark. False when the line is there already or the mark is gone. */
+export function showHealthPicture(file = GUIDE) {
+  const text = readFileSync(file, 'utf8');
+  if (text.includes('(img/movies/health.png)') || !text.includes(HEALTH_MARK)) return false;
+  writeFileSync(file, text.replace(HEALTH_MARK, HEALTH_LINE));
+  return true;
+}
 
 async function until(what, fn, { tries = 80, everyMs = 500 } = {}) {
   for (let i = 0; i < tries; i++) {
@@ -352,6 +369,25 @@ export async function live({ page, base, shot, clip, fetchJson }) {
     console.log(`movies: cache.png shows ${disk.titles.length} title(s)${series ? `, ${series.title} unfolded` : ''}`);
   } else {
     console.log('movies: nothing is cached on this machine (or no Cache page), cache.png is kept as it is');
+  }
+
+  // The Stream health page over the last 30 days: how the plays went, what could not be played, the latest plays.
+  // It reads only. Kept as it is when the play log has nothing in that period and nothing unplayable, or the route is missing.
+  const health = await fetchJson('GET', '/api/stream/health?days=30').catch(() => null);
+  const asks = health?.totals?.all?.asks ?? 0;
+  const unplayable = Array.isArray(health?.unhandled) ? health.unhandled.length : 0;
+  if (asks > 0 || unplayable > 0) {
+    await page.setViewportSize(TALL);
+    await page.goto(`${base}/movies/health`);
+    await page.getByRole('button', { name: 'Last 30 days' }).click();
+    await page.getByTestId('hp-channel-Torrents').waitFor();
+    await page.mouse.move(640, 60);
+    await shot('health');
+    await page.setViewportSize(VIEWPORT);
+    const placed = showHealthPicture();
+    console.log(`movies: health.png shows ${asks} ask(s) of the last 30 days and ${unplayable} title(s) that could not be played${placed ? '; docs/guide/movies.md now shows it' : ''}`);
+  } else {
+    console.log('movies: the play log is empty (or no Stream health page), health.png is kept as it is');
   }
 
   // A film: facts, Play, the trailer icon, watched flag, stars, review, credits, cast. A taller

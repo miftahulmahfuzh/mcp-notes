@@ -246,6 +246,7 @@ export function sessionHookRoutes(deps: AppDeps, options: SessionHookOptions = {
         : started.parent !== null && started.parent.sessionId === row.parentSessionId
           ? started.parent
           : await repo.getBySessionId(row.parentSessionId);
+    const spawned = envParent !== null || claimed || row.parentLinkSource === 'env' || row.parentLinkSource === 'hook';
     const reply: SessionHookStartReply = {
       session_id: row.sessionId,
       node_id: row.nodeId,
@@ -253,7 +254,9 @@ export function sessionHookRoutes(deps: AppDeps, options: SessionHookOptions = {
       parent_node_id: parentRow?.nodeId ?? null,
       parent_link_source: row.parentLinkSource ?? null,
       claimed,
-      reminders: fresh ? await dueReminders(row.repo, body.cwd) : [],
+      // A session another session started (swarm.py, /analyze, a spawned worker: a parent by env or by a claimed
+      // spawn) is not the owner's terminal: showing it a reminder would use up the owner's once-per-20-h showing.
+      reminders: fresh && !spawned ? await dueReminders(row.repo, body.cwd) : [],
     };
     return c.json(reply, 200);
   });

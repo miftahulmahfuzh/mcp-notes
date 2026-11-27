@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PlayLog } from '../../../../src/directStream/playLog/log.js';
 import type { PageStats, PlayAsk } from '../../../../src/directStream/playLog/types.js';
-import { SessionStore, type StreamSession } from '../../../../src/directStream/sessions.js';
+import { SESSION_IDLE_MS, SessionStore, type StreamSession } from '../../../../src/directStream/sessions.js';
 import { DirectStreamError, type ResolvedSource } from '../../../../src/directStream/types.js';
 import { MemoryPlayLog } from '../../../helpers/memoryPlayLog.js';
 
@@ -181,5 +181,61 @@ describe('the play log', () => {
     await t.log.settled();
     expect(await new PlayLog({ repo: t.repo, host: 'host-a', now: t.clock }).closeLeftOpen()).toBe(1);
     expect(t.repo.bySession(session.id)).toMatchObject({ ended: 'restart' });
+  });
+  it('closes a session that expired while nothing swept the store, as expired at the time it expired (not later as restart)', async () => {
+    const t = setup();
+    const session = t.play();
+    const usedAt = session.lastUsedAt.getTime();
+    t.log.report(session.id, { stats: stats('loadAAAA', 10_000), over: null, quiet: false });
+    // Nothing touches the store for a day: no new play, no torrent sweep. The row must not wait for a restart.
+    t.advance(SESSION_IDLE_MS + 24 * 60 * 60 * 1000);
+    t.log.expire();
+    await t.log.settled();
+    expect(t.repo.bySession(session.id)).toMatchObject({ ended: 'expired', endedAt: new Date(usedAt + SESSION_IDLE_MS), playedMs: 10_000 });
+    // The store's own drop later changes nothing.
+    t.log.ended(session, 'expired');
+    await t.log.settled();
+    expect(t.repo.bySession(session.id)).toMatchObject({ endedAt: new Date(usedAt + SESSION_IDLE_MS) });
+  });
+
+  it('a session the store drops long after it expired ends at the time it expired', async () => {
+    const t = setup();
+    const session = t.play();
+    const usedAt = session.lastUsedAt.getTime();
+    t.advance(SESSION_IDLE_MS + 3 * 60 * 60 * 1000);
+    t.log.ended(session, 'expired');
+    await t.log.settled();
+    expect(t.repo.bySession(session.id)).toMatchObject({ ended: 'expired', endedAt: new Date(usedAt + SESSION_IDLE_MS) });
+  });
+
+  it('a session still in use is not expired', async () => {
+    const t = setup();
+    const session = t.play();
+    t.advance(SESSION_IDLE_MS - 1_000);
+    t.store.get(session.id);
+    t.advance(2_000);
+    t.log.expire();
+    await t.log.settled();
+    expect(t.repo.bySession(session.id)?.ended ?? null).toBeNull();
+  });
+  it('an ask the daemon\'s stop cut short is an error on every channel it asked, never "no torrent"', async () => {
+    const t = setup();
+    // The torrent indexes answered, the try was killed by the stop: the service ends the ask with no_source / no_stream.
+    const cut = new DirectStreamError('no_source', 'No torrent could stream it.', {
+      attempts: [
+        { provider: 'Index: torrentio', outcome: 'resolved', took_s: 2, detail: '81 listed' },
+        { provider: 'Torrent: Some.Film.1080p', outcome: 'no_stream', took_s: 20, detail: '' },
+      ],
+    });
+    t.log.failed(t.ask('torrent'), cut);
+    t.log.stopping();
+    t.log.failed(t.ask('torrent'), cut);
+    t.log.failed(t.ask(null), new Error('aborted'));
+    await t.log.settled();
+    const [before, during, unnamed] = t.repo.rows;
+    expect(before).toMatchObject({ failure: 'no_source', torrentFailure: 'no_stream' });
+    expect(during).toMatchObject({ outcome: 'failed', failure: 'error', failureDetail: 'the daemon stopped during the ask', torrentFailure: 'error' });
+    expect(during?.cloudFailure ?? null).toBeNull();
+    expect(unnamed).toMatchObject({ failure: 'error', cloudFailure: 'error', torrentFailure: 'error' });
   });
 });

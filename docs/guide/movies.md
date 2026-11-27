@@ -780,15 +780,19 @@ The heartbeat icon beside the Cache drive icon on the Stream side opens `/movies
 plays went on this machine, read from the [play log](streaming.md#the-play-log) the daemon keeps of every
 play ask. Only this machine's rows are read. The three buttons at the top choose the period: 7, 30 or 90 days.
 
+<!-- health.png: the first `docs:shots -- --live movies` that finds a play log puts the picture here -->
+
 - **By channel.** One row for every ask, then Torrents, Cloud, and From disk, Streaming sites or No source
   named when they have asks. Each says how many asks reached the screen (`3/5` and `60%`), the median time to the first frame
-  and from the ask to a player, stalls per hour played and the share of plays at 1080p or better. A play
+  and from the ask to a player, stalls per hour played, the share of plays at 1080p or better, the share of
+  played time the film stood still, and how many asks got a player that never showed the film (a play
+  still loading says `no picture yet` in Latest plays). The last two are left out on a phone. A play
   that reached the screen is a success however short it was: a one-minute test of a torrent counts as a
   play, never as a failure. Under each channel, its torrent indexes or cloud providers with the same
   figures, and the failed asks by what they ended with (`no torrent found ×2`).
 - **Could not be played.** Every film or episode whose asks failed and that has not played since, over
-  all time and not only the period: what the cloud providers and the torrents each last answered (`no
-  cloud source`, `no torrent found`, `bot check`, `dub only`, `not asked`), how many asks failed and
+  all time and not only the period: what the cloud providers and the torrents each last answered since it
+  last played (`no cloud source`, `no torrent found`, `bot check`, `dub only`, `unreachable`, `not asked`), how many asks failed and
   when the last one was. It leaves the list once it plays.
 - **Latest plays.** The newest 30 asks of the period: the title (with its episode), the provider or
   index, the height, the first frame, the stalls with how long the film stood still, and how it ended
