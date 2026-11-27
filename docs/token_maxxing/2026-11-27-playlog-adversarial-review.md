@@ -2,7 +2,7 @@
 
 ## 🎯 Achievement / End Result
 - **Goal of the burn:** independently review and re-prove the stream-play-log set that landed at `ec89d99` (play log, stream health route/tool/page, reminders, the sessions-search no-vectors fallback). Every real defect gets a failing test first, then the fix. Also do the owner's post-landing ask: a `health.png` step in `scripts/docs/shots/movies.mjs` on a `--live` run, plus the guide line.
-- **Concrete changes:** nine commits on this branch:
+- **Concrete changes:** ten commits on this branch:
   - `2c49a09` play log: expired plays are closed when they expire, and a folded page load is never counted twice
   - `579ee77` reminders: spawned sessions never use up a reminder, the due date is printed in local time, and impossible or past due dates are refused
   - `50c0aa9` stream health: an unhandled title's channel words come only from failures after its last play (R2.5)
@@ -12,8 +12,9 @@
   - `5343789` docs(shots): `health.png` from `/movies/health` on a `--live` movies run
   - `bec545c` stream health: an outage never lists a title as could-not-be-played
   - `567df8f` health page: an all-errored channel is worded `unreachable`
+  - `f6fc086` play log: an ask the daemon's stop cuts short is logged `error` on every channel it asked, never `no_stream`
 - **Real value delivered:**
-  - Six real defects found and fixed in the newest and least-proven code in the repo. Two of its five phases had only been verified after a fix, and nothing independent had checked any of them.
+  - Seven real defects found and fixed in the newest and least-proven code in the repo. Two of its five phases had only been verified after a fix, and nothing independent had checked any of them.
   - The owner's own terminal now gets its due reminders. Before, a swarm worker or any other spawned session used them up silently for 20 h.
   - Health figures are now accurate. A crashed page is closed as `expired` (not `restart`) with the right `ended_at`, a reload never double-counts, an outage no longer lists a title as could-not-be-played, and channel words no longer come from failures that happened before the title last played successfully.
   - Meaning search over sessions works again when only notes and replies have vectors.
@@ -43,6 +44,7 @@ Two of the five phases were verified only after a fix, and no reviewer independe
    4. **Sessions search (`5fe7e9f`).** Phase 4's no-vectors early return looked only at session vectors. That turned off meaning matches through notes and replies, which are embedded on write. The fallback now applies only when no session, reply or note has a vector of the current model.
    5. **Health page (`6d8e1ca`).** Changing the period while a read was in flight let the old answer or error land on the new period. Reads are now aborted per period. A chip's hover tip showed the raw word. Each channel row now shows the `no picture` and `stood still` shares that R2.3 asked for. An open `no_picture` play reads `no picture yet`.
    6. **Outage is not a miss (`bec545c`, `567df8f`).** The coordinator raised this from row 12 of the torrent soak's live log. A failed ask whose every asked channel only errored (a network outage) put the title on the could-not-be-played list. Such a title is now left out of `unhandled` but still counts as a failed ask. The page words `error` as `unreachable`.
+   7. **A restart is not a miss (`f6fc086`).** The coordinator raised this from row 21 of the live log: `install.sh --force` restarted the daemon mid-torrent-try, and the ask was logged `no_source` / `no_stream`, as if no torrent existed (the title played a minute later). The daemon's stop now calls `PlayLog.stopping()` first; a failed ask from then on is `error`, detail `the daemon stopped during the ask`, `error` on every channel it asked, so the outage rule keeps it off the list. What the play answers is unchanged. The test was written after the fix but proven to fail with the stop flag disabled.
 5. **Did the owner's ask (`5343789`).** `scripts/docs/shots/movies.mjs` saves `health.png` from `/movies/health` (last 30 days) on a `--live` movies run. When the log is empty it skips with a log line, the same as `cache.png`. A link to a missing picture fails `docs:check`, and the movies guide never shows a fixture picture. So `docs/guide/movies.md` holds an HTML-comment mark where the picture goes, and the first live run that takes `health.png` writes the picture line there. The live picture was not taken in this session, as instructed.
 6. **Proved it** (see Appendix): typecheck, unit, integration, `docs:check`, and the verify-notesd throwaway daemon with Playwright.
 
