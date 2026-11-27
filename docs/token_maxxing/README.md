@@ -4,6 +4,7 @@ A log of deliberately high-token-consumption sessions and the real value each de
 
 | Date | Title | Achievement | Doc |
 |------|-------|-------------|-----|
+| 2026-11-27 | Torrent Soak Findings | Fixed torrent soak failures: header of big-piece packs fetched first, stuck racers give way, failures name their cause | [link](./2026-11-27-torrent-soak-findings.md) |
 | 2026-11-27 | Split Torrent Source | Split the torrent source and stream service into small tested modules, behaviour unchanged | [link](./2026-11-27-split-torrent-source.md) |
 | 2026-11-27 | Split Player Controller | Split the 1669-line player controller into one tested module per rule, behaviour unchanged | [link](./2026-11-27-split-player-controller.md) |
 | 2026-11-27 | Movies Web Page Tests | Pinned the Movies page, title page and its pop-ups with jsdom tests from the movies guide; no bugs found | [link](./2026-11-27-movies-web-page-tests.md) |
