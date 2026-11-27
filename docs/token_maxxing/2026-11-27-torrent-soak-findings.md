@@ -16,7 +16,7 @@
   - A torrent that cannot produce a header no longer uses up the whole budget while better candidates wait. In the soak, A Record of a Mortal's Journey S01E01 sat on a 139-file pack for 85 s and the two releases behind it were never tried.
   - The owner gets written evidence (rows 39 and 11 of the play log) for the 2026-12-04 ranking decision.
 - **Branch:** token-maxxing-2026-11-27-torrent-soak-findings
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit 37a1b29, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** several million tokens (a real-webtorrent loopback experiment, live index checks, full unit and integration suites, a verify-notesd torrent journey, and a second base worktree to rule out a pre-existing failure) 🔥
 
 ## Context & Motivation
