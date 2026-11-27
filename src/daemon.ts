@@ -75,6 +75,8 @@ import { scriptRunner } from './streaming/service.js';
 import { scriptWarp } from './streaming/warp.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
+import { RemindersRepo } from './reminders/repo.js';
+import { seedReminders } from './reminders/seeds.js';
 
 /** `<dataDir>/chat`: the fixed cwd of every chat brain run. Sessions are not persisted there (persistSession: false). */
 export const CHAT_SUBDIR = 'chat';
@@ -108,6 +110,8 @@ export interface StartDaemonOptions {
    * it again. Omitted (tests): the stage waits for whoever starts the daemon next.
    */
   onRestartWanted?: () => void;
+  /** The clock of the reminder seeds (src/reminders/seeds.ts): a seed is due its days after this. Omitted: the wall clock. */
+  now?: () => Date;
 }
 
 /** How often a daemon that wants a restart looks whether something still plays. */
@@ -168,6 +172,14 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       importPending = true;
       console.error(`[notesd] shared import: the merge failed, nothing was changed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+  // Reminders (src/reminders/): each seed is stored once by its key, due its days after the first start that knows it.
+  // A failure here costs the seed, never the start.
+  try {
+    const seeded = await seedReminders(new RemindersRepo(db, options.now ?? (() => new Date())));
+    if (seeded.length > 0) console.log(`[notesd] reminders: stored ${seeded.join(', ')}`);
+  } catch (err) {
+    console.error(`[notesd] reminders: could not store the seeds: ${err instanceof Error ? err.message : String(err)}`);
   }
   const events = new NoteEvents();
   const sessionEvents = new SessionEvents();

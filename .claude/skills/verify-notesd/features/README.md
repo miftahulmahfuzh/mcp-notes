@@ -12,6 +12,7 @@ feature, each with the same four sections: `Sub-features`, `How to get to it (us
 | Recycle bin (restore, delete forever) | [recycle-bin.md](recycle-bin.md) | API, wall |
 | The wall: live updates, editor, sidebar | [wall.md](wall.md) | wall |
 | Projects: Claude Code session graph | [projects.md](projects.md) | API, MCP, wall `/projects` |
+| Reminders: `remind` tool, due reminders in a fresh Claude Code session's start context, the daemon's one-week seed | [reminders.md](reminders.md) | MCP, the SessionStart hook route, database |
 | Chat bar and chat history | [chat.md](chat.md) | wall, API (billed) |
 | Seer Adversarial: reviewer, verdicts in Seer, toggle, budget, read API, MCP, SSE, wall | [adversary.md](adversary.md) | background job (`up --adversary`), Seer DB, API, MCP, SSE, wall |
 | dword vocabulary (`/v`) and journal (`/j`) | [dword.md](dword.md) | MCP, Claude Code skills |

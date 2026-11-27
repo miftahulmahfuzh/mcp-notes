@@ -66,6 +66,29 @@
     - playlog.sh plays film 467905 instead of 550 → rung 2 (exit criterion: all six stages pass on a --direct-stream run); an unknown title's position report answers 404 unknown_title so its page never becomes the stream on screen, which the beat and replaced stages need. Every check of the script is unchanged.
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent; the coordinator's integrator reconciles them. No successor to unblock: phases 2-5 mint their own tasks in their own worktrees.
 
+- [x] **P1-NOTES-RM05** Phase 5: Reminders: table, tool, hook, the one-week seed
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `reminders` in `src/db/schema.ts` and migration `0045`; `src/reminders/*` (repo, seeds); the start-hook reply's `reminders` array (`src/http/sessionHooks.ts`) and `claude/hooks/notes-session.mjs` printing them; the MCP tool `remind` (not on the chat allow-list); the seed at daemon start (`src/daemon.ts`); docs, generated references, feature map (`reminders.md`), `truncateAll`, tests. Exit criteria: R4.1-R4.4 shown with an injected clock; a fresh database's seed is not due, so no existing hook test changes its expected output.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R4 — "for no 3, make sure we add a hook reminder or something. after one week, you will automatically remind me about this feature" · criteria: R4.1, R4.2, R4.3, R4.4
+  - **Depends on**: phase 1 (landed on feature/stream-play-log @ f9eb9ef)
+  - **Plan**: `.workflows/plan/P1-NOTES-RM05.md`
+  - **Completed**: 2026-11-27 09:30
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/README.md, .claude/skills/verify-notesd/features/reminders.md, .workflows/todos.md, .workflows/plan/P1-NOTES-RM05.md, CLAUDE.md, claude/hooks/notes-session.d.mts, claude/hooks/notes-session.mjs, docs/guide/architecture.md, docs/guide/claude-code.md, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, drizzle/0045_reminders.sql, drizzle/meta/0045_snapshot.json, drizzle/meta/_journal.json, scripts/docs/httpRoutes.ts, src/daemon.ts, src/db/schema.ts, src/http/sessionHooks.ts, src/mcp/remindTool.ts, src/mcp/server.ts, src/reminders/repo.ts, src/reminders/seeds.ts, tests/integration/daemon.int.test.ts, tests/integration/reminders.int.test.ts, tests/integration/setup.ts, tests/unit/hooks/notesSession.test.ts, tests/unit/mcp.remindTool.test.ts, tests/unit/reminders.seeds.test.ts
+  - **Proof**: verified-first-pass — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/1127-091708-2857326/evidence
+  - **Drift**:
+    - src/daemon.ts line numbers moved by phase 1's imports; anchored by text as the plan says.
+    - origin/feature/stream-play-log still at f9eb9ef at report time; nothing to catch up to.
+    - The reminders id sequence skips a number at each daemon start after the first (insert ... on conflict do nothing consumes one); harmless.
+  - **Decided**:
+    - Index names worktree stream-play-log / feature/stream-play-log; session runs in stream-play-log-p5 / phase-5-stream-play-log → proceeded here (rung 6: the swarm's per-phase worktree; the coordinator integrates)
+    - Step 3 task creation → only phase 5's task (P1-NOTES-RM05) (tie-break: narrower blast radius; peers create their own)
+    - Plan's integration test 'dueFor shows a due, open reminder...' made `future` due at T0+1h yet expected it absent at T0+20h-1ms → code kept (a due, open, never-shown reminder is shown), fixture's due time moved to T0+20h, every assertion unchanged (rung 1/2: R4.1, R4.2 outrank a fixture value)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent, to avoid conflicts with phase 3 in its own worktree; the coordinator's integrator reconciles them. readme-updater skipped: no package_readme.md, subsystems documented in docs/guide/* (updated by this phase). Last phase of the set: no successor to unblock; the swarm coordinator lands the set.
+
 - [x] **P1-NOTES-SD01** Phase 1: Schema and single writers: the download queue, the kept mark, the story store
   - **Difficulty**: NORMAL
   - **Type**: Feature

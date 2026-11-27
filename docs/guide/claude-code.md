@@ -284,7 +284,7 @@ a log under `~/.local/state/notes-capture/` (or `$XDG_STATE_HOME/notes-capture/`
 | `notes-link` | After `create`, `create_image`, `update`, `append`, `attach_image` | Links the note just written to this session's node | `link.log` |
 | `notes-paste` | Before `similar_images`, `create_image`, `attach_image` | Uploads a pasted picture and swaps `pasted_image` for its id | `paste.log` |
 | `notes-prompt` | When a prompt is submitted | Stores pasted pictures for `/n` prompts; resolves session node ids in any prompt | `prompt.log` |
-| `notes-session` | SessionStart | Reports the session and its parent to the daemon; tells Claude its node id | `session.log` |
+| `notes-session` | SessionStart | Reports the session and its parent to the daemon; tells Claude its node id and the reminders due | `session.log` |
 | `notes-spawn` | Before every Bash command | Records a hand-started `claude` in tmux so the child links to its parent | `spawn.log` |
 
 **notes-capture.** At the end of a turn it reads the transcript, and when the turn's prompt was a
@@ -327,6 +327,9 @@ parent (from `CC_PARENT_SESSION`, which `swarm.py` sets on the sessions it spawn
 directory, the session name, the tmux pane and the host. Then it tells Claude its own node id and
 its parent's, so the session knows them from the first turn. Sessions that are not interactive
 (the wall's chat agent, `claude -p`) are skipped.
+On a fresh start (`startup`, `/clear`) the daemon's answer also carries the
+[reminders](#reminders) that are due, and the hook adds them after the node id, with the
+instruction to tell you at the start of the first reply.
 
 **notes-spawn.** When a Bash command starts `claude` in a new tmux window, split or session
 without going through `swarm.py`, it records a pending spawn. The child's notes-session hook
@@ -335,6 +338,27 @@ claims it within 30 seconds, which links child to parent exactly. `claude -p`, `
 
 The session side of these hooks (parent links, their sources, the graph) is explained in
 [sessions.md](sessions.md).
+
+### Reminders
+
+A reminder is a line of text with a due time and, optionally, a repository. When a terminal
+session starts fresh (`startup` or `/clear`) in that repository, or anywhere for a reminder
+without one, and the reminder is due and not done, notes-session puts it at the top of the
+session's context with its number, and Claude tells you about it in its first reply. A shown
+reminder is not shown again for 20 hours, so a burst of new sessions mentions it once; it comes
+back the next day until it is marked done. At most five are shown at one start, soonest first.
+
+The `remind` tool manages them: "remind me in two weeks to look at the Seer twins" is `add` with
+`in_days: 14` (or `due: "2026-12-11"`, midnight on this machine), `list` shows the open ones,
+and "that's handled" is `done` with the number. A reminder's repository is the same key the
+Projects page uses (`mcp-notes`), worked out from the session's working directory the way the
+session graph does it.
+
+The daemon also stores reminders of its own, once each, when a change asks for one: the play
+log's one-week review (`play-log-ranking`, repository `mcp-notes`, due seven days after the
+first start that had it). A done reminder is never stored again. Reminders live in the
+`reminders` table, written only by `RemindersRepo` (`src/reminders/repo.ts`); the seeds are in
+`src/reminders/seeds.ts`. Nothing on the wall shows them.
 
 ### How they are installed
 
@@ -458,6 +482,7 @@ it, checks the note holds them all, and then deletes the folder so the pictures 
 | `src/mcp/tools.ts` | Note tools: `create`, `get`, `update`, `append`, `delete`, `restore`, `list`, `search`, `tags`, `related`, `revisions`, `revert` |
 | `src/mcp/imageTools.ts`, `similarTools.ts` | `create_image`, `attach_image`, `view_images`, `remove_image`, `restore_image`, `move_image`; `similar_images` |
 | `src/mcp/sessionTools.ts` | Session tools, including `link_note` and `unlink_note` |
+| `src/mcp/remindTool.ts`, `src/reminders/` | The `remind` tool; `RemindersRepo` and the seeds the daemon stores at start |
 | `src/http/app.ts` | The `/mcp` mount and its loopback guard |
 | `src/http/capture.ts`, `src/chat/capture.ts` | `POST /api/capture/claude-code`: guard, validation, storing the exchange |
 | `src/notes/ids.ts` | Note id generation and the tolerant lookup form |
@@ -468,8 +493,8 @@ it, checks the note holds them all, and then deletes the folder so the pictures 
 
 ## Proving a change
 
-- **MCP tools:** the feature map entries `notes.md`, `images-files.md`, `search.md` and
-  `projects.md` under `.claude/skills/verify-notesd/features/`. Launch a throwaway daemon with
+- **MCP tools:** the feature map entries `notes.md`, `images-files.md`, `search.md`,
+  `projects.md` and `reminders.md` under `.claude/skills/verify-notesd/features/`. Launch a throwaway daemon with
   `verify.sh up` and call tools with `verify.sh mcp RUN <tool> '<json>'`; add `--web` to watch
   the wall update live after an `update`.
 - **Instructions and tool descriptions:** `tests/unit/mcp.instructions.test.ts` and

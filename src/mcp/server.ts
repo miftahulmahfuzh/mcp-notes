@@ -13,6 +13,7 @@ import { registerDirectStreamTools } from './directStreamTools.js';
 import { registerStreamCacheTool } from './streamCacheTools.js';
 import { registerStreamDiskTool } from './streamDiskTool.js';
 import { registerSubtitleCheckTools } from './subtitleCheckTools.js';
+import { registerRemindTool } from './remindTool.js';
 import { registerNoteTools, type ToolDeps } from './tools.js';
 
 export const SERVER_NAME = 'mcp-notes';
@@ -45,6 +46,8 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   // The Cache page's reading and deletions. Answers stream_disk_off when deps.streamDisk is unset.
   registerStreamDiskTool(server, deps);
   registerSubtitleCheckTools(server, deps);
+  // Reminders for the owner, shown by the notes-session hook (STREAM_PLAY_LOG_PLAN phase 5). Claude Code only.
+  registerRemindTool(server, deps);
   return server;
 }
 
