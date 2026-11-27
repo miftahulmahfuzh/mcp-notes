@@ -13,7 +13,7 @@
   - Stale counts in `chat/status.ts` comments, the reply worker's sweep interval and the `DWORD_USER_EMAIL` config row are corrected. A broken script that nothing cited was removed.
   - The CachePage timer test is deflaked at the root: the interval moved to a layout effect, which closes a scheduler race that showed up under load. A second real race was fixed too: when reads overlapped, an older answer arriving last restored a stale view.
 - **Branch:** token-maxxing-2026-11-27-guide-audit-code-fixes
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit bc24a19, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** high (11 fix commits, the full unit and integration suites run more than once, a CPU-load flake repro of 48 runs, one verify-notesd throwaway) 🔥
 
 ## Context & Motivation
