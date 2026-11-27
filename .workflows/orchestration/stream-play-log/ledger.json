@@ -1,0 +1,102 @@
+{
+  "branch": "feature/stream-play-log",
+  "coordinator": "orch-stream-play-log",
+  "coordinator_session_id": "1a4af456-00dc-4405-90be-e574d233cb06",
+  "created": "2026-11-27T08:48:37+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": null,
+      "package": "src/directStream`, `src/db`, `src/http",
+      "plan": ".workflows/plan/stream-play-log/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Play log: table, writer, daemon wiring"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "web/src/stream",
+      "plan": ".workflows/plan/stream-play-log/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Player page counters"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": null,
+      "package": "src/directStream/playLog`, `src/http`, `src/mcp`, `web/src/components/movies`, `web/src/pages",
+      "plan": ".workflows/plan/stream-play-log/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Stream health: route, MCP tool, page"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "EASY",
+      "n": 4,
+      "note": null,
+      "package": "src/sessions",
+      "plan": ".workflows/plan/stream-play-log/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Sessions search says when it has no vectors"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "src/reminders`, `claude/hooks`, `src/mcp`, `src/http",
+      "plan": ".workflows/plan/stream-play-log/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Reminders: table, tool, hook, the one-week seed"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "stream-play-log",
+  "updated": "2026-11-27T08:48:37+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/stream-play-log"
+}
