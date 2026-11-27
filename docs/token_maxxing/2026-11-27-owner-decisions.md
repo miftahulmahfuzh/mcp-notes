@@ -20,7 +20,7 @@
   - Dropping or pasting SVG/BMP on the wall with no editor open no longer posts files the server will reject.
   - Torrent racing picks a racer with clearly better delivery (≥1.5× the other's rate-to-bitrate ratio) over one that only has an English subtitle file. Every "was chosen" log line now names the step that decided.
 - **Branch:** token-maxxing-2026-11-27-owner-decisions
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit 8685030)
 - **Approx token burn:** ~2–3M tokens (seven changes test-first, two live writes, full unit and integration suites, four throwaway-daemon verify journeys) 🔥
 
 ## Context & Motivation
