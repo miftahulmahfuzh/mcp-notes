@@ -14,7 +14,7 @@
   - Seams that had no tests now have them, including the prune order, the activity clock and the failure memory.
   - Proven unchanged three ways: unit and integration suites, a fresh-context reviewer comparing every method line by line, and verify-notesd torrent journeys on throwaway daemons.
 - **Branch:** token-maxxing-2026-11-27-split-torrent-source
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit fc9f7e8, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** several million tokens (two large refactors, a line-by-line review agent, full unit and integration suites, three verify-notesd journeys and a cacheShelf stress comparison) 🔥
 
 ## Context & Motivation
