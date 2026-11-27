@@ -228,6 +228,24 @@ describeWithAdversarySchema('Seer Adversarial reviewer against the Seer schema r
     expect((await svc.status()).used_today).toBe(2);
   });
 
+  it('a /redo costs no reviewer budget: used_today stays put and the cap still lets the reviewer through', async () => {
+    await seedCandidates(BRK, S1, D1, 'bracket', ['AAA', 'BBB']);
+    const reviewer = fakeReviewer();
+    const svc = makeService('lenovo', reviewer, { config: { dailyCap: 1 } });
+
+    const redo = await svc.redoSubmit({ strategy: BRK, symbol: 'AAA', verdict: 'unsure', reason: 'No page could be opened.', sources: [] });
+    expect(redo).toMatchObject({ ok: true, written: true });
+    const logged = await db.select().from(adversaryReviews);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ symbol: 'AAA', status: 'ok', inputTokens: 0, costUsd: 0 });
+    expect((await svc.status()).used_today).toBe(0);
+
+    // AAA has its verdict; BBB is the one pick left and the day's single deep review is still free.
+    expect(await svc.reviewNow()).toMatchObject({ reviewed: 1, skipped_budget: 0 });
+    expect(reviewer.calls.map((c) => c.pick.symbol)).toEqual(['BBB']);
+    expect((await svc.status()).used_today).toBe(1);
+  });
+
   it('drafts a book preview early, then reuses the draft when the real targets appear', async () => {
     const today = utcDate(new Date());
     const next = addDays(today, 3);

@@ -27,7 +27,8 @@
   redoes one verdict with real web search, only while the pick's session has not opened. The new
   verdict supersedes the old one (`superseded_by`); a closed session answers `can_redo: false`
   (`state: closed`) and a late submit `too_late`, writing nothing. No headless model is billed: the
-  session is the caller. Unit: `tests/unit/adversary/redo.test.ts`,
+  session is the caller, and the review row's `verdict.redo` mark keeps it out of the daily cap
+  (`used_today` unchanged; `tests/integration/adversary/reviewer.int.test.ts`). Unit: `tests/unit/adversary/redo.test.ts`,
   `tests/unit/adversary/redoService.test.ts`.
 - The nightly dispatch (`src/adversary/dispatch.ts`, `NOTESD_SEER_DISPATCH`, `NOTESD_GH_BIN`):
   starts Seer's GitHub nightly from this machine once its data can be fetched. Unit:
@@ -60,12 +61,10 @@
   throwaway Seer DB.
 - Seed the toggle before the roster: the first poll runs within `ADVERSARY_POLL_MS` of `up`.
 - `strategy_candidates` rows for a session whose open has passed are never reviewed (cutoff).
-- `verify.sh up --adversary` does not pin `NOTESD_SEER_DISPATCH=off` (the docs shots script does).
-  Set it yourself: `NOTESD_SEER_DISPATCH=off $V up --adversary`, so a run with the toggle on can never
-  try `gh workflow run` against Seer.
-- A redo row counts toward `ADVERSARY_DAILY_CAP` today (see
-  `docs/plans/2026-11-27-guide-audit-findings.md`); on a capped run, a redo can push a later pick to
-  `skipped_budget`.
+- Every `$V up` pins `NOTESD_SEER_DISPATCH=off` (`--adversary` too), so a run never tries
+  `gh workflow run` against Seer; the nightly dispatch is proven by its unit tests only.
+- A redo row does not count toward `ADVERSARY_DAILY_CAP` (its verdict carries `redo: true`): on a
+  capped run, a redo leaves `reviewer.used_today` unchanged.
 - The integration tests (`tests/integration/adversary`) need `SEER_DIR` pointing at a Seer checkout
   with migration 027, else they skip with that reason.
 

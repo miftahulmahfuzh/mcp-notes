@@ -20,6 +20,8 @@ const LIMIT_USER_ID = randomUUID();
 const GENTEEL_ID = randomUUID();
 const SMEAR_ID = randomUUID();
 const MELUMURI_ID = randomUUID();
+const NAIVE_ID = randomUUID();
+const DEJA_VU_ID = randomUUID();
 
 async function seed(): Promise<void> {
   await truncateSystem('dword');
@@ -48,6 +50,17 @@ async function seed(): Promise<void> {
                'melumuri', 'Indonesian', NULL)`,
       [MELUMURI_ID, VOCAB_USER_ID],
     );
+
+    for (const [id, term] of [
+      [NAIVE_ID, 'Naive'],
+      [DEJA_VU_ID, 'deja vu'],
+    ]) {
+      await db.query(
+        `INSERT INTO vocab_entries (id, user_id, term, source, status, part_of_speech, pronunciation, definition, examples, enrichment_status)
+         VALUES ($1, $2, $3, 'manual', 'active', 'adjective', 'x', 'x', '["x","x","x"]'::jsonb, 'ready')`,
+        [id, VOCAB_USER_ID, term],
+      );
+    }
 
     for (let i = 0; i < 50; i++) {
       await db.query(
@@ -132,6 +145,23 @@ describeWithRepo('dword', 'dword vocab curated tools', () => {
     const out = await call<{ found: boolean; candidates?: unknown[] }>('dword_vocab_lookup', { term: 'xenophobia' });
     expect(out.found).toBe(false);
     expect(out.candidates ?? []).toEqual([]);
+  });
+
+  it('dword_vocab_lookup: a single word differing only in accents or case is found; a phrase comes back as candidates', async () => {
+    const word = await call<{ found: boolean; entry?: { id: string } }>('dword_vocab_lookup', { term: 'naïve' });
+    expect(word).toMatchObject({ found: true, entry: { id: NAIVE_ID } });
+    const phrase = await call<{ found: boolean; candidates?: Array<{ id: string }> }>('dword_vocab_lookup', { term: 'déjà vu' });
+    expect(phrase.found).toBe(false);
+    expect((phrase.candidates ?? []).map((c) => c.id)).toEqual([DEJA_VU_ID]);
+  });
+
+  it("dword_vocab_lookup's description, which Claude reads, says what the lookup does", async () => {
+    const { tools } = await client.listTools();
+    const description = tools.find((t) => t.name === 'dword_vocab_lookup')?.description ?? '';
+    // A single word with other accents is found (it is not a candidate); only a phrase is.
+    expect(description).not.toMatch(/naïve\/naive\), returned as candidates/);
+    expect(description).toMatch(/naïve\/naive/);
+    expect(description).toMatch(/déjà vu\/deja vu/);
   });
 
   it('dword_vocab_add: a brand-new term is created and then found by lookup', async () => {

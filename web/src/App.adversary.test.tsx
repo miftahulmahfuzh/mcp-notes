@@ -25,6 +25,8 @@ beforeEach(() => {
       if (url === '/api/adversary/overview') return json(OVERVIEW);
       if (url === '/api/adversary/methods/RAW35-FR-GT') return json(METHOD_BOOK);
       if (url === '/api/adversary/methods/A-GT') return json(METHOD_DAILY);
+      // The server answers a twin's id and any case with the original (findPairing).
+      if (url === '/api/adversary/methods/raw35-fr-gt-cx' || url === '/api/adversary/methods/raw35-fr-gt') return json(METHOD_BOOK);
       if (url === '/api/adversary/toggle') {
         if (method === 'PUT') toggle = { on: (JSON.parse(String(init?.body)) as { on: boolean }).on, changed_at: '2026-11-05T02:00:00Z', host: 'lenovo' };
         return json(toggle);
@@ -90,6 +92,19 @@ describe('App: Seer Adversarial', () => {
     await screen.findByRole('region', { name: 'A, C and Claude compared' });
     expect(h1()).toBe('Dip buy.');
     expect(document.querySelector('.side')).not.toBeNull();
+  });
+
+  it("a twin's id or a lower-case id in the URL opens its original and rewrites the address to it", async () => {
+    for (const typed of ['/adversary/raw35-fr-gt-cx', '/adversary/raw35-fr-gt']) {
+      at(typed);
+      const view = render(<App />);
+      await screen.findByRole('region', { name: 'Go-live checklist' });
+      expect(h1()).toBe('RAW35.');
+      await waitFor(() => expect(where()).toBe('/adversary/RAW35-FR-GT'));
+      const row = within(await screen.findByRole('list', { name: 'Seer roster' })).getByText('RAW35 · Momentum').closest('[data-strategy]');
+      expect(row?.getAttribute('aria-current')).toBe('true');
+      view.unmount();
+    }
   });
 
   it('Alt+Z enters focus mode (no rail, sidebar or header) and Esc leaves it', async () => {

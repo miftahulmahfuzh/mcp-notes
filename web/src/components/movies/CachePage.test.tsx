@@ -229,6 +229,35 @@ describe('what downloads, on the Cache page', () => {
     expect(screen.queryByText('Season 1')).toBeNull();
   });
 
+  it('keeps the newest read when an older one answers last (the reads are never awaited by the timer)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    downloads = true;
+    render(<CachePage onOpen={() => {}} />);
+    await screen.findByRole('button', { name: 'Downloading · 2' });
+    // The next read hangs until released; the one after it answers at once, saying nothing downloads.
+    let release: () => void = () => {};
+    const slow = view();
+    vi.mocked(fetch).mockImplementationOnce((input) => {
+      calls.push({ url: String(input), method: 'GET', body: null });
+      return new Promise<Response>((resolve) => {
+        release = () => resolve(new Response(JSON.stringify(slow), { status: 200 }));
+      });
+    });
+    const first = reads();
+    act(() => void vi.advanceTimersByTime(FAST_REFRESH_MS));
+    downloads = false;
+    act(() => void vi.advanceTimersByTime(FAST_REFRESH_MS));
+    expect(reads()).toBe(first + 2);
+    await screen.findByRole('button', { name: 'Downloading · 0' });
+    // The older read answers last: it is stale and must not bring "Downloading · 2" back.
+    release();
+    await settle();
+    await settle();
+    expect(screen.getByRole('button', { name: 'Downloading · 0' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Downloading · 2' })).toBeNull();
+  });
+
   it('reads the disk every 3 s while something downloads, and every 15 s once nothing does', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });

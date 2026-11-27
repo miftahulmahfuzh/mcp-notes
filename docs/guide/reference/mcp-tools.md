@@ -773,7 +773,7 @@ One read-only SELECT (or WITH ... SELECT) against daily-words: the owner's vocab
 
 **Look up a dword vocab entry** · read-only
 
-Checks whether the user already holds a word or phrase in daily-words (dword), their personal vocabulary app, before adding it. Matches in order: the exact term; the original (often non-English) word that resolved to an English term (origin_term); an inflected form of the same single word (studying/study); a near-identical spelling (naïve/naive), returned as candidates rather than a confident match since the user may still want to add it separately. Call this before dword_vocab_add.
+Checks whether the user already holds a word or phrase in daily-words (dword), their personal vocabulary app, before adding it. Matches in order: the exact term; the original (often non-English) word that resolved to an English term (origin_term); the same single word in another inflection, case or accent (studying/study, naïve/naive), which counts as found; a phrase that differs only in accents, case, spacing or leading and trailing punctuation (déjà vu/deja vu), returned as candidates rather than a confident match since the user may still want to add it separately. Call this before dword_vocab_add.
 
 | Argument | Type | Required | Meaning |
 | --- | --- | --- | --- |

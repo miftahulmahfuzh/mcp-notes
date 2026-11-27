@@ -57,7 +57,7 @@ restart. See [connectors.md](../connectors.md).
 | `SEER_DIR` | `~/seer` | The Seer repo, for the `seer_*` tools, the Seer Adversarial reviewer and its nightly dispatch. |
 | `DAILY_WORDS_DIR` | `~/daily-words` | The daily-words repo, for the `dword_*` tools. |
 | `CONNECTOR_TIMEOUT_MS` | `10000` | Statement timeout per connector query, 100 to 300000. A value outside that range is ignored. |
-| `DWORD_USER_EMAIL` | unset | The owner's `users.email` in daily-words, resolved to a user id on every write. Unset or no matching row: `dword_vocab_add` and `dword_journal_add` refuse and write nothing; `dword_schema` and `dword_sql` still work. Read at start. |
+| `DWORD_USER_EMAIL` | unset | The owner's `users.email` in daily-words, resolved to a user id on every call of a curated dword tool. Unset or no matching row: all five (`dword_vocab_lookup`, `dword_vocab_add`, `dword_journal_find_similar`, `dword_journal_add`, `dword_journal_set_source`) refuse and write nothing; `dword_schema` and `dword_sql` still work. Read from `.env.local` on every call, so a change needs no restart. |
 
 ## Sessions
 

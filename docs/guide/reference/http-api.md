@@ -82,7 +82,7 @@ The reveal routes start Windows Explorer from WSL (`explorer.exe` with a path fr
 | `GET /api/capabilities` | `{reveal, movies_playback}`: whether "open file location" can work on this machine (Linux, WSL interop, `wslpath`, an Explorer binary), and whether Play can start VLC here. The wall hides the folder and play controls when false. |
 | `POST /api/images/:imageId/reveal` | Open Explorer with the photo's original selected. |
 | `POST /api/files/:fileId/reveal` | Open Explorer with the file selected. |
-| `POST /api/notes/:id/reveal` | Open the note's `files/<noteId>/` folder when it has files (available when at least one is on this machine), else select its first photo. 404 `not_found` for a missing or deleted note, or one with neither. |
+| `POST /api/notes/:id/reveal` | Open the note's `files/<noteId>/` folder when it has files (available when at least one is on this machine), else select its first photo that is on this machine (404 `not_on_this_machine` when none is). 404 `not_found` for a missing or deleted note, or one with neither. |
 
 ## Chat
 

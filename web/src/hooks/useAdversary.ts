@@ -10,7 +10,11 @@ export const ADVERSARY_POLL_MS = 120_000;
 export interface AdversaryStore {
   overview: OverviewPayload | null;
   overviewError: string | null;
-  /** The detail of the strategy asked for (null while loading or on the overview). */
+  /**
+   * The detail of the strategy asked for (null while loading or on the overview). It answers the
+   * route id as typed: a twin's id or a lower-case id gets the original's detail, so a reader never
+   * compares `method.strategy_id` with the route id.
+   */
   method: MethodPayload | null;
   methodError: string | null;
   /** null until the first GET answers. */
@@ -39,7 +43,8 @@ function codeOf(e: unknown): string {
 export function useAdversary(enabled: boolean, strategy: string | null): AdversaryStore {
   const [overview, setOverview] = useState<OverviewPayload | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
-  const [method, setMethod] = useState<MethodPayload | null>(null);
+  /** The detail last fetched and the route id it answered (a twin's id or any case answers with the original). */
+  const [held, setHeld] = useState<{ asked: string; detail: MethodPayload } | null>(null);
   const [methodError, setMethodError] = useState<string | null>(null);
   const [toggle, setToggle] = useState<AdversaryToggle | null>(null);
   const [tick, setTick] = useState(0);
@@ -98,9 +103,8 @@ export function useAdversary(enabled: boolean, strategy: string | null): Adversa
     return () => ac.abort();
   }, [enabled, tick]);
 
-  // A switch to another method drops the old detail at once, so its numbers never show under the new heading.
+  // A switch to another method clears the old error at once; the old detail is hidden by `method` below.
   useEffect(() => {
-    setMethod((m) => (m !== null && m.method.strategy_id === strategy ? m : null));
     setMethodError(null);
   }, [strategy]);
 
@@ -110,7 +114,7 @@ export function useAdversary(enabled: boolean, strategy: string | null): Adversa
     fetchMethod(strategy, ac.signal).then(
       (d) => {
         if (ac.signal.aborted) return;
-        setMethod(d);
+        setHeld({ asked: strategy, detail: d });
         setMethodError(null);
       },
       (e: unknown) => {
@@ -131,6 +135,11 @@ export function useAdversary(enabled: boolean, strategy: string | null): Adversa
   }, []);
 
   const reviewNow = useCallback((strategyId: string | null) => postReviewNow(strategyId), []);
+
+  // The detail answers `strategy` when it was fetched for that id as typed, or when it is that
+  // method's own detail (the page rewrites a twin's or lower-case id to the original's: no refetch).
+  // Anything else is another method's, and never shows under the new heading.
+  const method = held !== null && strategy !== null && (held.asked === strategy || held.detail.method.strategy_id === strategy) ? held.detail : null;
 
   return { overview, overviewError, method, methodError, toggle, setAuto, reviewNow, refresh };
 }
