@@ -39,13 +39,13 @@ export function routeFiles(files: FileSource): RoutedFile[] {
 
 /**
  * What a ctrl-v hands on. With a note open (`attaching`), every pasted file attaches to it. Otherwise
- * only the first image counts, because it becomes a new photo note. Any other pasted file is left
+ * only the first image the image path takes counts (never an SVG or a BMP), because it becomes a new photo note. Any other pasted file is left
  * alone (outside the editor a pasted PDF is ignored, as before).
  */
 export function pastedFiles(files: FileSource, attaching: boolean): File[] {
   const all = Array.from(files ?? []);
   if (attaching) return all;
-  const image = all.find((f) => f.type.startsWith('image/'));
+  const image = all.find((f) => ATTACHABLE_IMAGE_TYPES.has(f.type.toLowerCase()));
   return image ? [image] : [];
 }
 

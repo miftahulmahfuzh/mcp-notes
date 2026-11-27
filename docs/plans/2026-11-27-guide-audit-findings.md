@@ -122,6 +122,8 @@ All fixed on 2026-11-27; the last column names the commit.
    with 415, logged only to the console (`DropOverlay.tsx`). The guide's "files that are not images
    are ignored" (`docs/guide/wall.md:158`) is right in effect; the editor's `routeFiles` filters them
    on the client, the drop overlay does not.
+   **Decided 2026-11-27: filtered on the client.** With no editor open, a drop or a paste keeps only the
+   types `routeFiles` sends to the image path (`ATTACHABLE_IMAGE_TYPES`); nothing else is posted.
 
 ## What was fixed in the docs
 

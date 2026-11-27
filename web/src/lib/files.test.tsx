@@ -97,3 +97,12 @@ describe('hasAttachments / noteRevealable', () => {
     expect(noteRevealable({ images: [local], files: [away] })).toBe(false);
   });
 });
+
+describe('pastedFiles: no note open', () => {
+  it('takes the first image the image path accepts, never an SVG or a BMP', () => {
+    const svg = new File(['<svg/>'], 'd.svg', { type: 'image/svg+xml' });
+    const png = new File(['png'], 'b.png', { type: 'image/png' });
+    expect(pastedFiles([svg, png], false)).toEqual([png]);
+    expect(pastedFiles([svg], false)).toEqual([]);
+  });
+});

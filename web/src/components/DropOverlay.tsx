@@ -78,8 +78,10 @@ export function DropOverlay({ onImageAdded, target = null, onAttached, onAttachF
     const enqueue = (files: File[]) => {
       const to = targetRef.current;
       // Open note (R2): images keep the image path and every other file goes to /files, in order.
-      // No open note: only images, each a new photo note (non-images are ignored, as before).
-      const jobs: RoutedFile[] = to ? routeFiles(files) : imageFiles(files).map((file): RoutedFile => ({ kind: 'image', file }));
+      // No open note: only the images the image path takes, each a new photo note. Anything else is ignored,
+      // SVG and BMP too: routeFiles sends those to /files, which needs a note, and /api/images refuses them.
+      const routed = routeFiles(files);
+      const jobs: RoutedFile[] = to ? routed : routed.filter((job) => job.kind === 'image');
       for (const job of jobs) {
         queue.current = queue.current.then(async () => {
           try {

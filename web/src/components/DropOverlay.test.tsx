@@ -224,6 +224,29 @@ describe('DropOverlay', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('without a target, dropped SVG and BMP files are ignored like the editor routes them, never posted to /api/images', async () => {
+    const svg = new File(['<svg/>'], 'd.svg', { type: 'image/svg+xml' });
+    const bmp = new File(['BM'], 'e.bmp', { type: 'image/bmp' });
+    fetchMock.mockResolvedValue(okResponse({ note: { id: 'A-B32' }, created: true }));
+    render(<DropOverlay onImageAdded={() => {}} />);
+    act(() => {
+      document.dispatchEvent(eventWith('drop', 'dataTransfer', { types: ['Files'], files: [svg, png, bmp] }));
+    });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(((fetchMock.mock.calls[0]?.[1] as RequestInit).body as FormData).get('file')).toMatchObject({ name: 'b.png' });
+  });
+
+  it('without a target, a pasted SVG is ignored too', async () => {
+    const svg = new File(['<svg/>'], 'd.svg', { type: 'image/svg+xml' });
+    render(<DropOverlay onImageAdded={() => {}} />);
+    act(() => {
+      document.dispatchEvent(eventWith('paste', 'clipboardData', { files: [svg] }));
+    });
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('a failed attach is reported through onAttachFailed and the queue keeps going', async () => {
     const ok = { note: { id: 'A-B32', body: '', tags: [], created_at: '', updated_at: '', origin: null, images: [], files: [] }, attached: true };
     fetchMock
