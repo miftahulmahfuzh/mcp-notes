@@ -17,7 +17,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Play log: table, writer, daemon wiring"
     },
@@ -34,7 +34,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Player page counters"
     },
@@ -59,19 +59,19 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "ede3b8bff65d1d92c60eb511a644723b43b5272c",
       "depends_on": [],
       "difficulty": "EASY",
       "n": 4,
-      "note": null,
+      "note": "sessions search answers mode text + SESSIONS_NO_VECTORS_FALLBACK when no session vector of the embedder's model exists (one EXISTS before embedding); branch phase-4-stream-play-log pushed; only phase 4's task minted, TaskID written to the worktree index row 4 only; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/stream-play-log-p4/j1-j3.txt + /home/miftah/.local/state/notesd-verify/1127-085212-2753890/evidence",
       "package": "src/sessions",
       "plan": ".workflows/plan/stream-play-log/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-27T08:54:53+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-SV04",
       "title": "Sessions search says when it has no vectors"
     },
     {
@@ -97,6 +97,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-play-log",
-  "updated": "2026-11-27T08:48:37+07:00",
+  "updated": "2026-11-27T08:54:53+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-play-log"
 }
