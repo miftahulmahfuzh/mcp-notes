@@ -12,7 +12,14 @@ Line numbers are as of commit `d3f0297` plus the audit's doc edits.
 
 ## Doc right, code wrong
 
+All four were fixed on 2026-11-27 (branch `token-maxxing-2026-11-27-guide-audit-code-fixes`), each with
+a test that failed first, in the same commit.
+
 ### 1. A twin's id or a lower-case id in the `/adversary` URL never loads
+
+**Fixed in `5c12d27`.** `useAdversary` keeps the id each detail answered and hands over only a detail
+that answers the route id; the page, heading and count line trust it; the heading's roster fallback
+matches any case and the twin id; App rewrites the address in place to the original's id.
 
 - **Doc:** `docs/guide/adversary.md:45`: "A twin's id in the URL or in a tool argument means its
   original."
@@ -31,6 +38,9 @@ Line numbers are as of commit `d3f0297` plus the audit's doc edits.
 
 ### 2. A `/redo` counts against the daily reviewer cap
 
+**Fixed in `df979f3`.** The redo's review row carries `redo: true` in its verdict jsonb (no
+migration) and both counts (`countDeepSince`, `recent().usedToday` via `spentReview`) leave it out.
+
 - **Doc:** `docs/guide/adversary.md:378`: "A redo costs no reviewer budget and is logged in
   `adversary_reviews` with zero tokens."
 - **Code:** the redo's review row has status `ok` or `late` and `reusedFrom: null`
@@ -46,6 +56,9 @@ Line numbers are as of commit `d3f0297` plus the audit's doc edits.
 
 ### 3. The note-level Show in Explorer icon can show and then do nothing
 
+**Fixed in `a6c97cd`.** `noteRevealPlan` selects the first photo on this machine (the first photo,
+with its host in the 404, only when none is here).
+
 - **Doc:** `docs/guide/wall.md:313`: "The icon appears only when it can work: the file must be on
   this machine ..."
 - **Code:** for a note with photos and no files, `noteRevealable` shows the icon when **any** photo
@@ -59,6 +72,9 @@ Line numbers are as of commit `d3f0297` plus the audit's doc edits.
 
 ### 4. `install.sh` does not check that `notes-link.mjs` exists
 
+**Fixed in `1dc5566`.** Added to the loop; a test sources `install.sh` and runs `check_preconditions`
+once per entry of `HOOK_SCRIPTS`.
+
 - **Doc:** `docs/guide/install.md:51`: the installer "checks ... the hook scripts" before changing
   anything.
 - **Code:** the precondition loop (`scripts/install.sh:157-160`) checks notes-capture, notes-paste,
@@ -71,15 +87,17 @@ Line numbers are as of commit `d3f0297` plus the audit's doc edits.
 
 ## Stale strings in source and scripts (behaviour is right, the text is not)
 
-| Where | What it says | What is true |
-| --- | --- | --- |
-| `src/mcp/dwordVocabTools.ts:432` (`dword_vocab_lookup`'s description, which Claude reads) | "a near-identical spelling (naïve/naive), returned as candidates" | A single word differing only in accents or case is **found** (`dedupKey` folds accents, `:298-301`); only a phrase such as `deja vu` / `déjà vu` comes back as candidates. `docs/guide/connectors.md` was fixed to match. |
-| `src/chat/status.ts:146-153` | "The four curated dword tools", "all six of its tool names" | Five curated tools (`dword_journal_set_source` was added), seven names in all. |
-| `src/chat/status.ts:176` | "the 6 movie tools" | Eight (`movies_pictures`, `movies_refresh`). |
-| `src/sessions/replyEmbeddings.ts:108` | the reply worker sweeps "every sweep (60 s ...)" | `src/background.ts` passes no `sweepMs`, so it uses the 30-minute default (`DEFAULT_SWEEP_MS`); the guides say 30 minutes. |
-| `.claude/skills/verify-notesd/scripts/movies/doc-check.sh:14-20` and on | requires a `README.md` Configuration row for every movies env var and an HTTP API row for every `/api/movies` path | Those tables moved to the generated `docs/guide/reference/`; the script would fail if run. Point it at `configuration.md` and `http-api.md`, or delete it (no feature file cites it). |
-| `docs/guide/reference/configuration.md:60` (hand-written, outside this audit's scope) | `DWORD_USER_EMAIL` is "Read at start"; names two tools as refusing | It is read on every call (`src/connectors/dword/user.ts`), and all five curated tools refuse. |
-| `.claude/skills/verify-notesd/scripts/verify.sh` (`up --adversary`) | does not pin `NOTESD_SEER_DISPATCH` | `scripts/docs/shots/adversary.mjs:20` pins it `off`. A throwaway run with the toggle on could try `gh workflow run` against Seer. It most likely fails because `SEER_DIR` is a scratch copy, but nothing guarantees it. `features/adversary.md` now tells the reader to pin it by hand. |
+All fixed on 2026-11-27; the last column names the commit.
+
+| Where | What it says | What is true | Fixed |
+| --- | --- | --- | --- |
+| `src/mcp/dwordVocabTools.ts:432` (`dword_vocab_lookup`'s description, which Claude reads) | "a near-identical spelling (naïve/naive), returned as candidates" | A single word differing only in accents or case is **found** (`dedupKey` folds accents, `:298-301`); only a phrase such as `deja vu` / `déjà vu` comes back as candidates. `docs/guide/connectors.md` was fixed to match. | `ff38941`: description rewritten, pinned by `dword.vocab.curated.int.test.ts` |
+| `src/chat/status.ts:146-153` | "The four curated dword tools", "all six of its tool names" | Five curated tools (`dword_journal_set_source` was added), seven names in all. | `7b4ecc0` |
+| `src/chat/status.ts:176` | "the 6 movie tools" | Eight (`movies_pictures`, `movies_refresh`). | `7b4ecc0` |
+| `src/sessions/replyEmbeddings.ts:108` | the reply worker sweeps "every sweep (60 s ...)" | `src/background.ts` passes no `sweepMs`, so it uses the 30-minute default (`DEFAULT_SWEEP_MS`); the guides say 30 minutes. | `7b4ecc0` |
+| `.claude/skills/verify-notesd/scripts/movies/doc-check.sh:14-20` and on | requires a `README.md` Configuration row for every movies env var and an HTTP API row for every `/api/movies` path | Those tables moved to the generated `docs/guide/reference/`; the script would fail if run. Point it at `configuration.md` and `http-api.md`, or delete it (no feature file cites it). | `3d457d0`: deleted (`docs:check` covers it) |
+| `docs/guide/reference/configuration.md:60` (hand-written, outside this audit's scope) | `DWORD_USER_EMAIL` is "Read at start"; names two tools as refusing | It is read on every call (`src/connectors/dword/user.ts`), and all five curated tools refuse. | `6c06315` |
+| `.claude/skills/verify-notesd/scripts/verify.sh` (`up --adversary`) | does not pin `NOTESD_SEER_DISPATCH` | `scripts/docs/shots/adversary.mjs:20` pins it `off`. A throwaway run with the toggle on could try `gh workflow run` against Seer. It most likely fails because `SEER_DIR` is a scratch copy, but nothing guarantees it. `features/adversary.md` now tells the reader to pin it by hand. | `d05dd18`: pinned for every run, `tests/unit/scripts/verifyPins.test.ts` |
 
 ## For the owner to decide
 
@@ -149,3 +167,14 @@ were added to wall, recycle-bin, search, chat, images-files, projects, adversary
 for every user-facing feature the guides describe that had no proof. Stale entries were corrected:
 the wall's nonexistent font toggle, the bin's place on the rail, the adversary page's 120 s poll,
 `/v` and `/j` not being captured, and seven dword tools, not six.
+
+## Also fixed: the flaky Cache page timer test
+
+**Fixed in `6b864bd`.** `CachePage.test.tsx`'s "reads the disk every 3 s while something downloads,
+and every 15 s once nothing does" failed under load (expected 1 to be 2). The 3 s interval was set in a
+passive effect; `findByRole` resolved as soon as the DOM showed "Downloading · 2", RTL drains with a
+real `setTimeout(0)`, React's scheduler flushes passive effects with `setImmediate` in Node, and on a
+loaded machine the timeout can win, so the test moved the fake clock while the 15 s interval still ran.
+The interval is now set in a layout effect. Reproduced 2 of 12 runs before, 0 of 36 after, under the
+same load. The page's second race, overlapping unawaited reads where an older answer landed last, is
+fixed in the same commit (only the newest read's answer is kept), with its own test.
