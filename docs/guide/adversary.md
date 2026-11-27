@@ -42,7 +42,8 @@ is forward only.
 
 The Sword icon ("Seer Adversarial") in the rail and the sidebar opens `/adversary`. A second press
 returns to the wall. `/adversary/<strategy_id>` opens one method; a click on a method row or a
-sidebar entry goes there. A twin's id in the URL or in a tool argument means its original.
+sidebar entry goes there. A twin's id in the URL or in a tool argument means its original, and so
+does an id in any case: the page opens the original and rewrites the address to its id in place.
 
 The sidebar lists Seer's roster the way Projects lists repositories: "Overview" first with the
 number of active methods, then the active methods, then the retired ones greyed.

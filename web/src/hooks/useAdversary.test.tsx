@@ -34,6 +34,8 @@ beforeEach(() => {
       if (url === '/api/adversary/overview') return json(OVERVIEW);
       if (url === '/api/adversary/toggle') return method === 'PUT' ? json({ ...TOGGLE_ON, ...(JSON.parse(String(init?.body)) as object) }) : json(TOGGLE_ON);
       if (url === '/api/adversary/methods/RAW35-FR-GT') return json(METHOD_BOOK);
+      if (url === '/api/adversary/methods/raw35-fr-gt-cx') return json(METHOD_BOOK);
+      if (url === '/api/adversary/methods/A-GT') return json({ ...METHOD_BOOK, method: { ...METHOD_BOOK.method, strategy_id: 'A-GT' } });
       if (url === '/api/adversary/methods/GONE') return json({ error: 'not_found' }, 404);
       return json({ error: 'seer_unavailable' }, 503);
     }),
@@ -59,6 +61,17 @@ describe('useAdversary', () => {
     await waitFor(() => expect(result.current.method?.method.strategy_id).toBe('RAW35-FR-GT'));
     expect(result.current.overview?.methods).toHaveLength(3);
     expect(result.current.toggle?.on).toBe(true);
+  });
+
+  it("answers a twin's id with its original, and drops it once another method is asked for", async () => {
+    const { result, rerender } = renderHook(({ s }) => useAdversary(true, s), { initialProps: { s: 'raw35-fr-gt-cx' } });
+    await waitFor(() => expect(result.current.method?.method.strategy_id).toBe('RAW35-FR-GT'));
+    // The page canonicalises the address to the original: the detail is kept, not refetched.
+    rerender({ s: 'RAW35-FR-GT' });
+    expect(result.current.method?.method.strategy_id).toBe('RAW35-FR-GT');
+    rerender({ s: 'A-GT' });
+    expect(result.current.method).toBeNull();
+    await waitFor(() => expect(result.current.method?.method.strategy_id).toBe('A-GT'));
   });
 
   it('reports an unknown method by its code', async () => {

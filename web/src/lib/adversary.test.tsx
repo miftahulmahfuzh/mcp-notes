@@ -79,8 +79,13 @@ describe('adversary formatting', () => {
     const s = { overview: OVERVIEW, overviewError: null, method: METHOD_BOOK, methodError: null };
     expect(adversaryHeading(s, null)).toBe('Adversary.');
     expect(adversaryHeading(s, 'RAW35-FR-GT')).toBe('RAW35.');
-    expect(adversaryHeading(s, 'A-GT')).toBe('Dip buy.');
-    expect(adversaryHeading(s, 'NOPE')).toBe('Adversary.');
+    expect(adversaryHeading({ ...s, method: null }, 'A-GT')).toBe('Dip buy.');
+    expect(adversaryHeading({ ...s, method: null }, 'NOPE')).toBe('Adversary.');
+    // A twin's id and any case name the original (the store's method answers the id as typed).
+    expect(adversaryHeading(s, 'raw35-fr-gt-cx')).toBe('RAW35.');
+    expect(adversaryHeading({ ...s, method: null }, 'a-gt')).toBe('Dip buy.');
+    expect(adversaryHeading({ ...s, method: null }, 'RAW35-FR-GT-CX')).toBe('RAW35.');
+    expect(adversaryCountLine(s, 'raw35-fr-gt-cx', NOW)).toMatch(/^The 35 stocks/);
     expect(adversaryCountLine(s, 'RAW35-FR-GT', NOW)).toBe(
       'The 35 stocks that rose most beyond the market, re-picked each month. Nov 2 decision: 4 picks, 1 objection, 1 can\'t tell.',
     );

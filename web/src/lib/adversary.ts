@@ -243,10 +243,22 @@ export interface AdversaryView {
   methodError: string | null;
 }
 
-/** The wall header's heading for /adversary[/<id>]. */
+/**
+ * The roster row a route id names: its own id or its twin's, in any case (the server's
+ * `findPairing` resolves an id the same way, so the page follows what the API answered).
+ */
+export function rosterRowFor<R extends { strategy_id: string; twin_id: string | null }>(roster: readonly R[], id: string): R | undefined {
+  const want = id.trim().toUpperCase();
+  return roster.find((r) => r.strategy_id.toUpperCase() === want) ?? roster.find((r) => r.twin_id !== null && r.twin_id.toUpperCase() === want);
+}
+
+/**
+ * The wall header's heading for /adversary[/<id>]. `s.method` is the store's detail for the id as
+ * typed (`useAdversary` only hands over a detail that answers it), so it is trusted as it is.
+ */
 export function adversaryHeading(s: AdversaryView, strategy: string | null): string {
   if (strategy === null) return ADVERSARY_HEADING;
-  const m = s.method !== null && s.method.method.strategy_id === strategy ? s.method.method : s.overview?.roster.find((r) => r.strategy_id === strategy);
+  const m = s.method !== null ? s.method.method : s.overview ? rosterRowFor(s.overview.roster, strategy) : undefined;
   return m ? methodHeading(m.name) : ADVERSARY_HEADING;
 }
 
@@ -254,7 +266,7 @@ export function adversaryHeading(s: AdversaryView, strategy: string | null): str
 export function adversaryCountLine(s: AdversaryView, strategy: string | null, now: Date): string {
   if (strategy === null) return overviewCountLine(s.overview, s.overviewError, now);
   if (s.methodError !== null) return errorText(s.methodError, strategy);
-  if (s.method === null || s.method.method.strategy_id !== strategy) return `Loading ${strategy}.`;
+  if (s.method === null) return `Loading ${strategy}.`;
   return methodCountLine(s.method);
 }
 

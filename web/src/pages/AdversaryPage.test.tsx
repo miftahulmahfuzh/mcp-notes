@@ -107,6 +107,17 @@ describe('AdversaryPage content', () => {
     expect(screen.getByText('31 of 48')).toBeTruthy();
   });
 
+  it("shows the method the store answered for a twin's id or a lower-case id, not a loading line", () => {
+    const { rerender } = page({ store: store({ method: METHOD_BOOK }), strategy: 'RAW35-FR-GT-CX' });
+    expect(screen.queryByText(/^loading /)).toBeNull();
+    expect(screen.getByRole('region', { name: 'Go-live checklist' })).toBeTruthy();
+    rerender(
+      <AdversaryPage store={store({ method: METHOD_BOOK })} strategy="raw35-fr-gt" focus onToggleFocus={vi.fn()} escapeLeavesFocus onPickStrategy={vi.fn()} onAsk={vi.fn()} />,
+    );
+    expect(screen.getByRole('region', { name: 'Go-live checklist' })).toBeTruthy();
+    expect(document.querySelector('.adv-focus-h')?.textContent).toBe('RAW35.');
+  });
+
   it('shows the empty states', () => {
     const { rerender } = page({ store: store({ overview: null, overviewError: 'seer_unavailable' }) });
     expect(screen.getByText("Seer's database can't be reached from this machine, so there is nothing to show.")).toBeTruthy();

@@ -73,7 +73,8 @@ export function AdversaryPage({ store, strategy, focus, onToggleFocus, escapeLea
     else content = <AdversaryOverview overview={store.overview} onPick={(id) => onPickStrategy(id)} />;
   } else if (store.methodError !== null) {
     content = <p className="adv-empty">{errorText(store.methodError, strategy)}</p>;
-  } else if (store.method === null || store.method.method.strategy_id !== strategy) {
+  } else if (store.method === null) {
+    // The store's method always answers `strategy` (a twin's id and any case get the original).
     content = <p className="adv-empty">loading {strategy}</p>;
   } else if (store.method.three_way !== null) {
     content = <AdversaryDaily detail={store.method} tw={store.method.three_way} />;

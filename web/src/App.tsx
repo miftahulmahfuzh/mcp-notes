@@ -16,7 +16,7 @@ import { useBin } from './hooks/useBin';
 import { useDeepLink } from './hooks/useDeepLink';
 import { useHistory } from './hooks/useHistory';
 import { normalizeNoteId, noteHref } from './lib/deepLink';
-import { adversaryRouteFromLocation, hrefForView, moviesRouteFromLocation, NO_ADVERSARY_ROUTE, NO_MOVIES_ROUTE, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation, type AdversaryRoute, type MoviesRoute, type ProjectsRoute } from './lib/route';
+import { adversaryHref, adversaryRouteFromLocation, hrefForView, moviesRouteFromLocation, NO_ADVERSARY_ROUTE, NO_MOVIES_ROUTE, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation, type AdversaryRoute, type MoviesRoute, type ProjectsRoute } from './lib/route';
 import { AdversaryPage } from './pages/AdversaryPage';
 import { useAdversary } from './hooks/useAdversary';
 import { adversaryChatMessage, adversaryCountLine, adversaryHeading } from './lib/adversary';
@@ -371,6 +371,20 @@ export function App() {
 
   /** Sidebar roster row or overview table row: `/adversary/<id>` (null = the overview), keeping focus mode. */
   const pickStrategy = useCallback((strategy: string | null) => setAdversaryRoute((r) => ({ strategy, focus: r.focus })), []);
+
+  // `/adversary/<twin id>` or a lower-case id: the server answers with the original's detail, and the
+  // address is rewritten in place to the original's id (no new history entry), so the roster row,
+  // Review this method now and the chat all name the original.
+  const answeredStrategy = adversary.method?.method.strategy_id ?? null;
+  useEffect(() => {
+    if (answeredStrategy === null) return;
+    setAdversaryRoute((r) => {
+      if (r.strategy === null || r.strategy === answeredStrategy) return r;
+      const next = { ...r, strategy: answeredStrategy };
+      window.history.replaceState(null, '', adversaryHref(next));
+      return next;
+    });
+  }, [answeredStrategy]);
 
   /** The adversary toolbar's focus icon, Alt+Z, and Esc in focus mode. */
   const toggleAdversaryFocus = useCallback(() => setAdversaryRoute((r) => ({ ...r, focus: !r.focus })), []);
