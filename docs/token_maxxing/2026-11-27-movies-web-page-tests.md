@@ -16,7 +16,7 @@
   - No bugs found. Every behaviour checked matched the movies guide. One suspected AssignDialog bug was disproved and is now pinned by a test.
 - **Branch:** token-maxxing-2026-11-27-movies-web-page-tests
 - **Commits:** 7ff8497, 35b0b0f, 0cf6dc7, b1647e1, 2949fb4, 143c8eb, 9431b8c, 43e9a98, ed6ddfa
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit 87158a6, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** several million tokens over a long worker session (six component suites, mutation runs, full unit and integration suites, a verify-notesd journey) 🔥
 
 ## Context & Motivation
