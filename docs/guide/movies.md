@@ -787,7 +787,8 @@ play ask. Only this machine's rows are read. The three buttons at the top choose
   play, never as a failure. Under each channel, its torrent indexes or cloud providers with the same
   figures, and the failed asks by what they ended with (`no torrent found ×2`).
 - **Could not be played.** Every film or episode whose asks failed and that has not played since, over
-  all time and not only the period: what the cloud providers and the torrents each last answered (`no
+  all time and not only the period: what the cloud providers and the torrents each last answered since it
+  last played (`no
   cloud source`, `no torrent found`, `bot check`, `dub only`, `not asked`), how many asks failed and
   when the last one was. It leaves the list once it plays.
 - **Latest plays.** The newest 30 asks of the period: the title (with its episode), the provider or

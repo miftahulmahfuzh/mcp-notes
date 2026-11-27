@@ -79,6 +79,14 @@ describe('PlayLogRepo health reads', () => {
     expect(await repo.unhandled(HERE, 200)).toEqual([]);
   });
 
+  it('a channel\'s word is never one from before the title last played', async () => {
+    // Film A played on the cloud at 180 min; a cloud failure before that, then a torrent-only failure after it.
+    await log({ ...base, host: HERE, asked_at: ago(400), tmdb_id: 990001, asked: 'cloud', outcome: 'failed', failure: 'no_source', cloud_failure: 'no_stream' });
+    await log({ ...base, host: HERE, asked_at: ago(20), tmdb_id: 990001, asked: 'torrent', outcome: 'failed', failure: 'no_source', torrent_failure: 'no_source' });
+    const a = (await repo.unhandled(HERE, 200)).find((u) => u.tmdb_id === 990001);
+    expect(a).toMatchObject({ asks: 1, cloud_failure: null, torrent_failure: 'no_source' });
+  });
+
   it('answers the health of the period', async () => {
     const h7 = await readHealth(repo, HERE, 7, NOW);
     expect(h7.totals.all).toMatchObject({ asks: 5, failed: 2, played: 3, success_rate: 0.6 });
