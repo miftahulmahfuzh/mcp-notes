@@ -173,7 +173,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const stop = (): Promise<void> => {
     stopping ??= (async () => {
       // First: a play ask cut short from here on is the stop's doing, never logged as a title no source can play.
-      playLog?.stopping();
+      stream.playLog?.stopping();
       agent?.close();
       // Ends the tracked play at its last read position while the DB is still open; VLC stays open.
       await moviesPlayer?.close();
