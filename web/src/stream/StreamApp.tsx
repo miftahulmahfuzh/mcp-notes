@@ -26,6 +26,7 @@ import {
 } from '@phosphor-icons/react';
 import { INITIAL_STATE, NO_OTHER_SOURCE, SUBTITLE_DELAY_STEP_MS, StreamController, type BugReportState, type ControllerDeps, type StreamState, type TorrentView } from './controller';
 import { createEngine } from './createEngine';
+import { keyAction } from './keys';
 import type { Quality } from './engine';
 import type { CachedInfo, EpisodeNumber, PreviewCue, TimeRange } from './session';
 import { pickDefaultSubtitle } from './subtitles';
@@ -671,21 +672,22 @@ export function StreamApp({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      if (key === ' ' || key === 'k') togglePlay();
-      else if (key === 'arrowleft') seekBy(-SEEK_STEP_S);
-      else if (key === 'arrowright') seekBy(SEEK_STEP_S);
-      else if (key === 'm') toggleMute();
-      else if (key === 'c') toggleSubtitles();
-      else if (key === 's' && !e.shiftKey && !e.ctrlKey && !e.metaKey) controller?.anotherSource();
+      const action = keyAction(e);
+      if (action === null) return;
+      if (action === 'togglePlay') togglePlay();
+      else if (action === 'back') seekBy(-SEEK_STEP_S);
+      else if (action === 'forward') seekBy(SEEK_STEP_S);
+      else if (action === 'toggleMute') toggleMute();
+      else if (action === 'toggleSubtitles') toggleSubtitles();
+      else if (action === 'anotherSource') controller?.anotherSource();
       // G and H, as VLC has them: the subtitles 50 ms earlier, 50 ms later.
-      else if (key === 'g' || key === 'h') shiftSubtitles(key === 'h' ? SUBTITLE_DELAY_STEP_MS : -SUBTITLE_DELAY_STEP_MS);
-      else if (key === 'f') fullscreenToggle();
+      else if (action === 'subtitlesEarlier') shiftSubtitles(-SUBTITLE_DELAY_STEP_MS);
+      else if (action === 'subtitlesLater') shiftSubtitles(SUBTITLE_DELAY_STEP_MS);
+      else if (action === 'toggleFullscreen') fullscreenToggle();
       // Shift+N and Shift+P, as other players have them: the next and the previous episode.
-      else if (key === 'n' && e.shiftKey) goToEpisode('next');
-      else if (key === 'p' && e.shiftKey) goToEpisode('prev');
-      else if (key === 'escape') setMenu(null);
-      else return;
+      else if (action === 'nextEpisode') goToEpisode('next');
+      else if (action === 'prevEpisode') goToEpisode('prev');
+      else setMenu(null);
       e.preventDefault();
       wake();
     };
