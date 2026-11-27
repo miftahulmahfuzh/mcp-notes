@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowSquareOut, Broom, CaretDown, CaretRight, CheckCircle, Cloud, DownloadSimple, EyeSlash, FilmSlate, MagnetStraight, Trash } from '@phosphor-icons/react';
 import {
   deleteStreamDisk,
@@ -161,14 +161,20 @@ export function CachePage({ onOpen }: CachePageProps) {
   const [toast, setToast] = useState<Toast | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
 
+  /** Bumped by every read: only the newest read's answer is shown. */
+  const readSeq = useRef(0);
   const load = useCallback(async () => {
+    // The timer never awaits a read, so two can overlap (a slow disk, a busy daemon). One that answers
+    // after a newer one started is stale: it would put back an older view, and with it the old pace.
+    const seq = ++readSeq.current;
     try {
       const v = await fetchStreamDisk();
+      if (seq !== readSeq.current) return;
       setView(v);
       setError(null);
       setHidden(new Set());
     } catch (e) {
-      setError(errorCode(e));
+      if (seq === readSeq.current) setError(errorCode(e));
     }
   }, []);
 
@@ -176,7 +182,11 @@ export function CachePage({ onOpen }: CachePageProps) {
   useEffect(() => {
     void load();
   }, [load]);
-  useEffect(() => {
+  // A layout effect: the pace changes in the same commit as the "Downloading · N" it follows. A passive
+  // effect runs some time after the screen already shows the new count (React's scheduler, setImmediate
+  // in Node), so for that moment the old pace still ran; a test that read the screen and then moved the
+  // clock saw no read on a loaded machine.
+  useLayoutEffect(() => {
     const t = window.setInterval(
       () => {
         if (document.visibilityState === 'visible') void load();
