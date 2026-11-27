@@ -1,22 +1,14 @@
-import { hostname } from 'node:os';
-import { dbInstruments } from './db/client.js';
+import { startAdversary } from './adversary/start.js';
+import { startEgressLine } from './db/egressStart.js';
 import type { AppDeps } from './deps.js';
-import { dbEmbeddingStore } from './embeddings/backfill.js';
-import { dbImageEmbeddingStore } from './embeddings/imageBackfill.js';
-import { startImageEmbeddingWorker } from './embeddings/imageWorker.js';
-import { startEmbeddingWorker, type EmbeddingWorker } from './embeddings/worker.js';
-import { imageDeps, ingestImage } from './images/ingest.js';
-import { startInboxWatcher } from './images/inbox.js';
-import { reconcileLegacyImages } from './images/legacy.js';
-import { ensureDataDirs } from './images/store.js';
-import { startSessionIngest, type SessionIngester } from './sessions/ingest.js';
-import { sessionContextObserver } from './sessions/events.js';
-import { dbLinkStore, startLinkWorker, type LinkWorker } from './sessions/links.js';
-import { readLiveSessions } from './sessions/registry.js';
-import { dbReplyEmbeddingStore, startReplyEmbeddingWorker } from './sessions/replyEmbeddings.js';
-import { SessionsRepo } from './sessions/repo.js';
+import { startStreamJobs } from './directStream/startJobs.js';
+import { startEmbeddingWorkers } from './embeddings/start.js';
+import { startImagesBackground } from './images/start.js';
+import { startMoviesSync } from './movies/start.js';
+import { startSessionsBackground } from './sessions/start.js';
 import type { Summarizer } from './sessions/summarize.js';
-import { DEFAULT_SUMMARY_IDLE_MS, dbSummaryStore, startSummaryWorker, type SummaryWorker } from './sessions/summaryWorker.js';
+
+export { REPLY_EMBED_KICK_MS, SUMMARY_DUE_MARGIN_MS } from './sessions/start.js';
 
 export type StopBackground = () => Promise<void>;
 
@@ -29,300 +21,27 @@ export interface BackgroundOptions {
   sessionSummarizer?: Summarizer | null;
 }
 
-/** A busy session's replies are embedded at most this often (the reply worker's kick debounce). */
-export const REPLY_EMBED_KICK_MS = 60_000;
-/** How long after a session's idle time the summary worker is woken, so the idle test has passed. */
-export const SUMMARY_DUE_MARGIN_MS = 30_000;
-
 /**
- * Long-running work beside the HTTP server: the inbox watcher (iteration 2) and, when
- * OPENROUTER_API_KEY is set, the note embedding worker (iteration 6) and the image embedding
- * worker (image similarity search); with `config.sessions.enabled`, the Claude Code session
- * ingester (iteration 8: backfill, then tail `<claudeHome>/projects`), its parent linker, the
- * session summary worker (summaries only with `options.sessionSummarizer`) and, with an embedder,
- * the reply embedding worker (one vector per Claude reply of this host's sessions). With
- * `deps.adversary`, the Seer Adversarial reviewer's poll loop. With deps.movies, the movies
- * library's poll loop over NOTESD_MOVIES_ROOTS. With deps.streamCanary, the daily
- * stream canary. With deps.trending, the daily trending list's loop; with deps.trackerLists, the public tracker lists' daily refresh.
- * Creates images/, cache/, inbox/, inbox/failed/, chat-images/ under the data dir first (idempotent; the
- * daemon already made them, but tests call this without startDaemon). Then copies any legacy
- * image (notes.image_path/image_meta without a note_images row, e.g. ingested by an older daemon
- * after migration 0002 ran) into note_images, once, before the inbox can dedupe against it.
+ * Long-running work beside the HTTP server, each started by a function beside its subsystem, in this order: the inbox
+ * (after the legacy images are copied in), the note and image embedding workers, the Claude Code session jobs, the
+ * Seer Adversarial reviewer, the movies library's poll loop, the Stream side's jobs, and the hourly egress line.
+ * Returns one stop: timers first, then the inbox, then the seek previews and the downloads, then every other closer
+ * in parallel (each bounded by its grace, well under main.ts's 10 s exit).
  */
 export async function startBackground(deps: AppDeps, options: BackgroundOptions = {}): Promise<StopBackground> {
-  const img = imageDeps(deps);
-  const dirs = await ensureDataDirs(img.dataDir);
-  try {
-    const copied = await reconcileLegacyImages(deps.db);
-    console.log(`[notesd] legacy images reconciled into note_images: ${copied}`);
-  } catch (err) {
-    // Never block the daemon on it: the next start retries (the copy is idempotent).
-    console.error(`[notesd] legacy image reconcile failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  const inbox = await startInboxWatcher({
-    inboxDir: dirs.inbox,
-    failedDir: dirs.failed,
-    ingest: (absPath) => ingestImage(img, { path: absPath, move: true, origin: { source: 'inbox' } }),
-  });
-  console.log(`[notesd] watching ${dirs.inbox}`);
-
-  let embeddings: EmbeddingWorker | null = null;
-  if (!deps.embedder) {
-    console.log('[notesd] embeddings off: OPENROUTER_API_KEY is not set, search stays full text');
-  } else {
-    embeddings = startEmbeddingWorker({
-      store: dbEmbeddingStore(deps.db),
-      events: deps.events,
-      embedder: deps.embedder,
-    });
-    console.log(`[notesd] embedding notes with ${deps.embedder.model}`);
-  }
-
-  let imageEmbeddings: EmbeddingWorker | null = null;
-  if (!deps.imageEmbedder) {
-    console.log('[notesd] image search off: OPENROUTER_API_KEY is not set, similar_images cannot compare pictures');
-  } else {
-    imageEmbeddings = startImageEmbeddingWorker({
-      store: dbImageEmbeddingStore(deps.db, img.dataDir),
-      events: deps.events,
-      embedder: deps.imageEmbedder,
-    });
-    console.log(`[notesd] embedding images with ${deps.imageEmbedder.model}`);
-  }
-
-  // Session ingest (iteration 8). The backfill runs in the background: startBackground does not
-  // wait for it, and a failure is logged, never thrown. Later session work (phase 4 links, phase 6
-  // summaries, reply embeddings) hangs off `sessionIngest` / `sessionsRepo` / `sessionsHost` here.
-  let sessionIngest: SessionIngester | null = null;
-  let sessionLinks: LinkWorker | null = null;
-  let replyEmbeddings: EmbeddingWorker | null = null;
-  if (!deps.config.sessions.enabled) {
-    console.log('[notesd] session ingest off: NOTESD_SESSIONS=off');
-  } else {
-    const sessionsHost = hostname();
-    const sessionsRepo = new SessionsRepo(deps.db, { dataDir: deps.config.dataDir, hostname: () => sessionsHost });
-    sessionLinks = startLinkWorker({
-      store: dbLinkStore(deps.db, sessionsRepo),
-      host: sessionsHost,
-      backfillAfter: () => sessionIngest?.forkBackfill,
-    });
-    sessionIngest = startSessionIngest({
-      claudeHome: deps.config.sessions.claudeHome,
-      worktreesDir: deps.config.sessions.worktreesDir,
-      store: sessionsRepo,
-      hostname: () => sessionsHost,
-      // The context observer feeds GET /api/sessions/:nodeId/context/stream (src/sessions/events.ts).
-      observers: deps.sessionEvents === undefined ? [sessionLinks] : [sessionLinks, sessionContextObserver(deps.sessionEvents)],
-    });
-    console.log(`[notesd] ingesting Claude Code sessions from ${deps.config.sessions.claudeHome}/projects as ${sessionsHost}`);
-
-    if (deps.importPending === true) {
-      console.log('[notesd] session reply vectors wait: the old shared database is not copied in yet');
-    } else if (deps.embedder === null) {
-      console.log('[notesd] session reply vectors off: OPENROUTER_API_KEY is not set, replies are searched by words only');
-    } else {
-      const worker = startReplyEmbeddingWorker({
-        store: dbReplyEmbeddingStore(deps.db, sessionsRepo, sessionsHost),
-        embedder: deps.embedder,
-        debounceMs: REPLY_EMBED_KICK_MS,
-      });
-      replyEmbeddings = worker;
-      // Only a kick: never awaited, never blocks or fails a read. Every committed read kicks, and the
-      // worker's long debounce turns a busy session into one drain a minute; nothing is asked while
-      // no session writes.
-      sessionIngest.addObserver({
-        onBatch: () => worker.kick(),
-        onPassComplete: (pass) => {
-          if (pass.sessionIds.length > 0) worker.kick();
-        },
-      });
-      console.log(`[notesd] embedding session replies with ${deps.embedder.model}`);
-    }
-  }
-
-  let sessionSummaries: SummaryWorker | null = null;
-  let summaryDue: ReturnType<typeof setTimeout> | null = null;
-  if (deps.config.sessions.enabled && deps.importPending === true) {
-    // The copy brings the old sessions with their summaries; summarizing them here first would be paid for twice.
-    console.log('[notesd] session summaries wait: the old shared database is not copied in yet');
-  } else if (deps.config.sessions.enabled) {
-    const summarizer = options.sessionSummarizer ?? null;
-    if (summarizer === null && deps.embedder === null) {
-      console.log('[notesd] session summaries and session embeddings off');
-    } else {
-      const claudeHome = deps.config.sessions.claudeHome;
-      sessionSummaries = startSummaryWorker({
-        store: dbSummaryStore(deps.db, new SessionsRepo(deps.db)),
-        summarizer,
-        embedder: deps.embedder,
-        liveSessionIds: async () => new Set((await readLiveSessions(claudeHome)).map((s) => s.sessionId)),
-      });
-      // A session is due once it has been quiet for the idle time: each read of this host re-arms one
-      // timer for that moment, so the worker asks the database when something can be due, not every minute.
-      const summaries = sessionSummaries;
-      deps.kickSummaries = () => summaries.kick();
-      sessionIngest?.addObserver({
-        onBatch: () => {
-          if (summaryDue !== null) clearTimeout(summaryDue);
-          summaryDue = setTimeout(() => {
-            summaryDue = null;
-            summaries.kick();
-          }, DEFAULT_SUMMARY_IDLE_MS + SUMMARY_DUE_MARGIN_MS);
-          summaryDue.unref();
-        },
-      });
-      console.log(
-        `[notesd] session summaries: ${summarizer === null ? 'off' : summarizer.model}, session embeddings: ${deps.embedder === null ? 'off' : deps.embedder.model}`,
-      );
-    }
-  }
-
-  // Seer Adversarial reviewer (phase 4): built by the daemon, started here, closed on stop.
-  if (deps.adversary === null) {
-    console.log(
-      deps.config.adversary.enabled
-        ? '[notesd] adversary off: no reviewer could be built'
-        : '[notesd] adversary off: NOTESD_ADVERSARY=off',
-    );
-  } else {
-    deps.adversary.start();
-    const a = deps.config.adversary;
-    console.log(
-      `[notesd] adversary reviewer on as ${deps.adversary.host}: a pass every ${Math.round(a.pollMs / 1000)} s, up to ${a.dailyCap} deep reviews a day, ${a.gatherModel} gathers, ${a.verdictModel} decides`,
-    );
-  }
-
-  // Movies library sync (phase 3): built by the daemon, started here, closed on stop.
-  if (deps.movies === null) {
-    console.log('[notesd] movies off: NOTESD_MOVIES=off');
-  } else {
-    deps.movies.start();
-    const m = deps.config.movies;
-    console.log(
-      m.roots.length === 0
-        ? `[notesd] movies on as ${deps.movies.host}: NOTESD_MOVIES_ROOTS is empty, nothing is scanned`
-        : `[notesd] movies on as ${deps.movies.host}: scanning ${m.roots.join(', ')} every ${Math.round(m.scanMs / 1000)} s, ` +
-            `TMDB ${deps.movies.tmdb === null ? 'off (no TMDB_API_READ_ACCESS_TOKEN or TMDB_API_KEY)' : 'on'}`,
-    );
-  }
-
-  // The daily stream canary: built by the daemon, started here, closed on stop.
-  const canary = deps.streamCanary ?? null;
-  if (canary !== null) {
-    console.log(canary.startLine());
-    canary.start();
-  }
-
-  // The Stream side's daily trending list: built by the daemon (on by default), started here, closed on stop.
-  const trending = deps.trending ?? null;
-  if (trending !== null) {
-    console.log(trending.startLine());
-    trending.start();
-  }
-
-  // The public tracker lists (trackerLists.ts): built by the daemon (on with torrents and discovery), refreshed a minute
-  // after start and once a day, closed on stop. A disabled one only logs why.
-  const trackerLists = deps.trackerLists ?? null;
-  if (trackerLists !== null) {
-    console.log(trackerLists.startLine());
-    trackerLists.start();
-  }
-
-  // Stream cache (stream-cache phase 5): this host's unfinished downloads carry on; closed on stop.
-  const streamCache = deps.streamCache ?? null;
-  if (streamCache !== null) {
-    void streamCache.start().then(
-      (n) => {
-        if (n > 0) console.log(`[notesd] stream cache: carrying on ${n} unfinished download(s) on ${streamCache.host}`);
-      },
-      (err: unknown) => console.error(`[notesd] stream cache: could not carry on downloads: ${err instanceof Error ? err.message : String(err)}`),
-    );
-  }
-
-  // Seek previews: a sweep of the films on disk 30 s after start and every half hour; nothing joins a swarm or fetches.
-  const streamPreviews = deps.streamPreviews ?? null;
-  streamPreviews?.start();
-
-  // Torrents (torrent-stream-source phase 1): old downloads are cleared and the tick starts; nothing joins a swarm here.
-  const torrents = deps.torrents ?? null;
-  const torrentsStarted: Promise<unknown> =
-    torrents === null
-      ? Promise.resolve()
-      : torrents.start().then(
-          (cleared) =>
-            console.log(
-              `[notesd] torrents on as ${torrents.host}: downloads in ${torrents.root}, upload capped at ${torrents.uploadKbps} kB/s` +
-                (cleared > 0 ? `, ${cleared} download(s) not played for ${torrents.keepDays} days cleared` : ''),
-            ),
-          (err: unknown) => console.error(`[notesd] torrents: could not start: ${err instanceof Error ? err.message : String(err)}`),
-        );
-
-  // Downloads the owner asked for: what the last run left queued, running or paused carries on from what is on disk,
-  // after the torrents' own start (its prune leaves kept downloads alone).
-  const streamDownloads = deps.streamDownloads ?? null;
-  if (streamDownloads !== null) {
-    void torrentsStarted
-      .then(() => streamDownloads.start())
-      .then(
-        (n) => {
-          if (n > 0) console.log(`[notesd] downloads: carrying on ${n} download(s) on ${streamDownloads.host}`);
-        },
-        (err: unknown) => console.error(`[notesd] downloads: could not carry on downloads: ${err instanceof Error ? err.message : String(err)}`),
-      );
-  }
-
-  // The Cache page: a deletion whose undo window a restart cut short is carried out now.
-  const cacheShelf = deps.cacheShelf ?? null;
-  if (cacheShelf !== null) {
-    void cacheShelf.start().then(
-      (n) => {
-        if (n > 0) console.log(`[notesd] cache page: carried out ${n} deletion(s) left pending by the restart`);
-      },
-      (err: unknown) => console.error(`[notesd] cache page: could not carry out pending deletions: ${err instanceof Error ? err.message : String(err)}`),
-    );
-  }
-
-  // Hourly egress line: which query shapes pulled the most rows/bytes from the database.
-  const meter = dbInstruments(deps.db)?.meter;
-  const egressTimer = meter ? setInterval(() => console.log(meter.summaryLine()), 60 * 60_000) : null;
-  egressTimer?.unref();
+  const images = await startImagesBackground(deps);
+  const embeddings = startEmbeddingWorkers(deps);
+  const sessions = startSessionsBackground(deps, options.sessionSummarizer ?? null);
+  startAdversary(deps);
+  startMoviesSync(deps);
+  const stream = startStreamJobs(deps);
+  const stopEgress = startEgressLine(deps.db);
 
   return async () => {
-    if (egressTimer) clearInterval(egressTimer);
-    if (summaryDue !== null) clearTimeout(summaryDue);
-    delete deps.kickSummaries;
-    await inbox.close();
-    // The previews' ffmpeg reads the caches' and the torrents' files (and phase 2's loopback gate): it stops, keeping
-    // no part of its sheet, before anything it reads closes. Bounded: the running ffmpeg is killed at once.
-    await streamPreviews?.close();
-    // Before the torrents and the cache: the torrent a download holds is let go (its row stays running for the next start).
-    await streamDownloads?.close();
-    // In parallel: each close is bounded by its grace (5 s), well under main.ts's 10 s exit.
-    await Promise.all([
-      embeddings?.close(),
-      imageEmbeddings?.close(),
-      // The linker closes after the ingester, once no more batches can arrive.
-      (async () => {
-        await sessionIngest?.close();
-        await sessionLinks?.close();
-      })(),
-      replyEmbeddings?.close(),
-      sessionSummaries?.close(),
-      deps.adversary?.close(),
-      deps.movies?.close(),
-      canary?.close(),
-      trending?.close(),
-      trackerLists?.close(),
-      // Before the torrents: ffmpeg stops reading the file route first.
-      deps.torrentRemux?.close(),
-      streamCache?.close(),
-      deps.torrentWhisper?.close(),
-      deps.cloudWhisper?.close(),
-      deps.audioDetector?.stop(),
-      deps.torrentSync?.close(),
-      deps.subtitleCheck?.close(),
-      torrents?.close(),
-      cacheShelf?.close(),
-    ]);
+    stopEgress();
+    sessions.halt();
+    await images.close();
+    await stream.closeFirst();
+    await Promise.all([...embeddings.closers(), ...sessions.closers(), deps.adversary?.close(), deps.movies?.close(), ...stream.closers()]);
   };
 }
