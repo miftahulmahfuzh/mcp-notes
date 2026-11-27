@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { and, asc, desc, eq, isNull, lt, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import {
@@ -382,6 +382,22 @@ export class DirectStreamRepo {
         }
       }
     });
+  }
+
+  /**
+   * Ends the rest of the named providers on `host` (the owner's call): their failures in a row are set to 0, so the
+   * next resolve orders and asks them like any other. Every other column stays, so the view still says what they did.
+   * Returns the rows changed, by name; a name with no health row on `host` is left out.
+   */
+  async clearRests(host: string, names: readonly string[], now: Date = new Date()): Promise<StreamProviderHealthRow[]> {
+    if (names.length === 0) return [];
+    const h = streamProviderHealth;
+    const rows = await this.db
+      .update(h)
+      .set({ consecutiveFailures: 0, updatedAt: now })
+      .where(and(eq(h.host, host), inArray(h.name, [...names])))
+      .returning();
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**

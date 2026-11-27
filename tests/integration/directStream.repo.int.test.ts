@@ -134,6 +134,25 @@ describe('DirectStreamRepo.syncSeed', () => {
 });
 
 describe('DirectStreamRepo health', () => {
+  it('clearRests sets the named providers\' failures in a row to 0 on one host, keeps everything else, and returns the rows', async () => {
+    await repo.syncSeed(SEED);
+    const failed = new Date('2026-11-19T00:00:00Z');
+    for (let i = 0; i < 7; i++) {
+      await repo.recordAttempts('host-a', [
+        { provider: 'Alpha', outcome: 'no_stream', took_s: 35, detail: '', source: null },
+        { provider: 'Bravo', outcome: 'no_stream', took_s: 35, detail: '', source: null },
+      ], failed);
+    }
+    await repo.recordAttempts('host-b', [{ provider: 'Alpha', outcome: 'no_stream', took_s: 35, detail: '', source: null }], failed);
+    const cleared = await repo.clearRests('host-a', ['Alpha', 'Nobody'], new Date('2026-11-27T00:00:00Z'));
+    expect(cleared.map((r) => [r.name, r.consecutiveFailures, r.failures, r.lastOutcome, r.lastFailureAt])).toEqual([['Alpha', 0, 7, 'no_stream', failed]]);
+    const byName = Object.fromEntries((await repo.healthFor('host-a')).map((r) => [r.name, r]));
+    expect(byName.Alpha?.consecutiveFailures).toBe(0);
+    expect(byName.Bravo?.consecutiveFailures).toBe(7);
+    expect((await repo.healthFor('host-b'))[0]?.consecutiveFailures).toBe(1);
+    expect(await repo.clearRests('host-a', [])).toEqual([]);
+  });
+
   it('keeps health per host', async () => {
     await repo.syncSeed(SEED);
     await repo.recordAttempts('host-a', [{ provider: 'Bravo', outcome: 'resolved', took_s: 2.5, detail: '', source: SOURCE }]);
