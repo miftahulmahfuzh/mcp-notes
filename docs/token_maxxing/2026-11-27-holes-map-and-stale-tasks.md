@@ -17,7 +17,7 @@
   - Verify coverage gaps: `similar_images`, the connectors, the paste and spawn hooks, the one-time Neon import.
   - Liftable limitations: "Text needs the network / Neon" is stale; polling cadences were tuned for Neon egress; the quota breaker and meter can go after the import (~2026-12-01).
 - **Branch:** token-maxxing-2026-11-27-holes-map-and-stale-tasks
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit 342e513, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** ~1.5M 🔥 (estimate)
 
 ## Context & Motivation
