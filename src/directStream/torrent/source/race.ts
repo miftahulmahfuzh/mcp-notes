@@ -10,7 +10,7 @@ import type { SourceContext } from './context.js';
 import { chooseOrder, deliveryText, filmKbpsOf, remuxTimeoutOutcome, type Delivery } from './delivery.js';
 import { probeWhileDelivering } from './probeWhileDelivering.js';
 import { refusalOf, standIn } from './refusal.js';
-import { messageOf, pad, seconds, sleep } from './text.js';
+import { foundIn, messageOf, pad, seconds, sleep } from './text.js';
 import { trackersOf } from './trackers.js';
 import type { FindQuery, NoteFailure, OpenedTorrent, Passed, PlayFacts, Raced, Racer, Tried, TorrentProgress, TorrentResolve } from './types.js';
 
@@ -138,7 +138,8 @@ export function race(ctx: SourceContext, ref: StreamRef, query: FindQuery, c: To
     state.gone = true;
     hands.dropNow(c.infoHash, state.held);
   };
-  const attempt = (outcome: ResolveOutcome, detail: string): ResolveAttempt => ({ provider: torrentLabel(c.name), outcome, took_s: seconds(started, now()), detail });
+  // The index that listed it ends the detail: a release of another film comes from some index's listing, and only the attempt says which.
+  const attempt = (outcome: ResolveOutcome, detail: string): ResolveAttempt => ({ provider: torrentLabel(c.name), outcome, took_s: seconds(started, now()), detail: outcome === 'skipped' ? detail : `${detail}${foundIn(c)}` });
   const fail = (outcome: ResolveOutcome, detail: string, lasting = false): Raced => {
     drop();
     return { ok: false, attempt: attempt(outcome, detail), lasting };

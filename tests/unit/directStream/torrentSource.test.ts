@@ -395,7 +395,7 @@ describe('TorrentSource.resolve', () => {
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
     expect(out.ok && out.torrent.infoHash).toBe(h(2));
     expect(out.attempts.slice(1).map((a) => [a.outcome, a.detail])).toEqual([
-      ['dubbed', 'its audio is de, not the original en'],
+      ['dubbed', 'its audio is de, not the original en (from torrentio)'],
       ['resolved', 'mov h264 720p / aac, 40 seeds'],
     ]);
     expect(await t.settled()).toContain(`release ${h(1)}`);
@@ -417,7 +417,7 @@ describe('TorrentSource.resolve', () => {
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
     expect(out.ok && out.torrent.infoHash).toBe(h(3));
     expect(out.attempts.slice(1).map((a) => a.outcome)).toEqual(['unplayable', 'no_stream', 'resolved']);
-    expect(out.attempts[1]?.detail).toBe('matroska hevc 1080p / eac3: Chrome does not play it as is');
+    expect(out.attempts[1]?.detail).toBe('matroska hevc 1080p / eac3: Chrome does not play it as is (from torrentio)');
     const calls = await t.settled();
     expect(calls).toContain(`release ${h(1)}`);
     expect(calls).toContain(`release ${h(2)}`);

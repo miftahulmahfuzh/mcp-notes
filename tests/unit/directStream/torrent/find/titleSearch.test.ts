@@ -97,6 +97,22 @@ describe('the title-search fit', () => {
   });
 });
 
+describe('Miracle in Cell No. 7 (2019): the soak\'s 2013 Korean releases (note 2-IFP row 19)', () => {
+  const MIRACLE: TorrentQuery = { kind: 'movie', imdbId: 'tt10431500', title: 'Miracle in Cell No. 7', originalTitle: '7. Koğuştaki Mucize', year: 2019, originalLanguage: 'tr' };
+  const KOREAN = ['Miracle In Cell No. 7 2013 Blu-Ray 720p x264 AAC Dolby FLiCKSiCK', 'Miracle In Cell No. 7 (2013) [Blu-Ray 720p x264 AAC 2.0] [Subs: eng pt-br Legendado +Meta]'];
+
+  it('a title search listing them would have dropped both: the title, then a year six off', () => {
+    for (const name of KOREAN) expect(titleSearchExclusion(name, MIRACLE)).toBe('other_year');
+    const byTitle = titleSearchAnswer(KOREAN.map((name, i) => ({ infoHash: hash(20 + i), name, seeds: 23, sizeBytes: 1_390_000_000 })), 'knaben', MIRACLE).candidates;
+    expect(rankCandidates(byTitle, MIRACLE).excluded.map((e) => e.reason)).toEqual(['other_year', 'other_year']);
+  });
+
+  it('TorrentsDB lists them under the 2019 film\'s IMDb id, which vouches for the title: kept, as every IMDb-keyed listing is', () => {
+    const listed = KOREAN.map((name, i) => candidateFrom({ infoHash: hash(20 + i), name, seeds: 23, sizeBytes: 1_390_000_000 }, 'torrentsdb', MIRACLE));
+    expect(rankCandidates(listed, MIRACLE).kept.map((c) => c.index)).toEqual(['torrentsdb', 'torrentsdb']);
+  });
+});
+
 describe('the title-search indexes', () => {
   it('asks Knaben, Bitsearch and torrents-csv by title side by side with the IMDb-keyed indexes, one attempt each, joined by info hash', async () => {
     const { fetch, calls } = fakeFetch({

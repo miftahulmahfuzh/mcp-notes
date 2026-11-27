@@ -217,7 +217,7 @@ describe('playWithin: the caller is answered before it gives up', () => {
       '[notesd] direct stream: play of TMDB movie 818647 (torrent) started nothing after 0 s: no_source, 4 attempt(s)',
       '[notesd] direct stream:   attempt Index: torrentio: resolved after 0.3 s (53 listed)',
       '[notesd] direct stream:   attempt Index: yts: error after 6 s (timed out after 6 s)',
-      '[notesd] direct stream:   attempt Torrent: Through My Window 2022 1080p WEBRip: no_stream after 0 s (no file list from the swarm in time (no metadata within 20 s))',
+      '[notesd] direct stream:   attempt Torrent: Through My Window 2022 1080p WEBRip: no_stream after 0 s (no file list from the swarm in time (no metadata within 20 s) (from torrentio))',
       '[notesd] direct stream:   attempt Torrents: not tried yet: skipped (every torrent found was tried; asking again starts over with the ones whose swarm did not deliver)',
     ]);
     const again = t.svc.playWithin(FILM, { provider: 'torrent' }, 10);

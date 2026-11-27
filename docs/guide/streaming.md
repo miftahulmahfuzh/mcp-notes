@@ -2374,7 +2374,10 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   arrived too", "still opening when ... was chosen"), leave their swarms at once, and are first in line for the
   shuffle button. Every torrent that does not play gets a log line saying why, with what its swarm gave:
   `torrent: TMDB movie 693134: <release> (2770fe27) lost: no_stream after 21 s, the swarm stalled before the header
-  arrived: 0.1 MB in the last 15 s (3.2 MB received, 2 peers, 0.1 Mbps in 16 s)`, `lost: its header arrived too
+  arrived: 0.1 MB in the last 15 s (3.2 MB received, 2 peers, 0.1 Mbps in 16 s) (from torrentio)`: a torrent that
+  failed names the index that listed it, since an index asked by IMDb id can list another film under it (TorrentsDB
+  lists two 2013 Korean releases under the 2019 Turkish Miracle in Cell No. 7; the title-search fit would drop them,
+  but it applies only to what only a title search listed), `lost: its header arrived too
   (720p listed; 4 peers connected, ...); <release> was chosen`, `lost: still opening (8.1 MB received, 5 peers, 2.2 Mbps) when <release> was
   chosen`.
 - **An episode TMDB numbers on across seasons.** TMDB files One Piece episode 1000 as season 21, episode 1000;

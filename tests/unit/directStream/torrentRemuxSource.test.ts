@@ -101,7 +101,7 @@ describe('TorrentSource with the remux (torrent phase 5, R2.8)', () => {
     const t = setup({ candidates: [candidate(h(1), 'Film.2026.DVD.MPEG2-A'), candidate(h(2), 'Film.2026.720p.WEB-DL.x264.AAC-B')], probes: { [h(1)]: MPEG2, [h(2)]: MP4 } });
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
     expect(out.ok && out.torrent.manifestKind).toBe('mp4');
-    expect(out.attempts[1]).toMatchObject({ outcome: 'unplayable', detail: 'matroska mpeg2video 576p / ac3+ac3: Chrome does not play it as is, and a remux cannot make its video playable' });
+    expect(out.attempts[1]).toMatchObject({ outcome: 'unplayable', detail: 'matroska mpeg2video 576p / ac3+ac3: Chrome does not play it as is, and a remux cannot make its video playable (from torrentio)' });
     expect(t.ffmpeg.runs).toHaveLength(0);
   });
 
