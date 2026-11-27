@@ -6,6 +6,12 @@
   health, a site's row never); health per provider
   and host in `stream_provider_health`, written after every resolve. Proven by
   `npm run test:int -- tests/integration/directStream.repo.int.test.ts` and `journey.sh RUN seed`.
+- A provider's rest counts a `no_stream` from a page that loaded only for a title known to stream here (the same
+  resolve found a stream, a verified source or a cloud/torrent stream play of that film or episode, or a
+  known-titles.json title): on `$V up --direct-stream`, `mode` `no_source` for a stored title nobody streamed leaves
+  `stream_provider_health` unchanged; after a play of it resolves, the next `no_source` adds 1. Logic:
+  `npx vitest run tests/unit/directStream/restCount.test.ts tests/unit/scripts/directRest.test.ts`,
+  `npm run test:int -- tests/integration/movies.channels.int.test.ts`.
 - Episode addresses in the seed, and the whole-series fallback: an episode's stream that a nested
   frame given the series alone loaded (`seriesPlayerFrame` in `resolve.mjs`) is `no_stream`. Proven by
   `npx vitest run tests/unit/scripts/directResolve.test.ts -t "whole-series"`, and live (owner's
@@ -491,7 +497,9 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   session: `provider: "Torrent"`, `manifest_kind: "mp4"`, `manifest_url` `/api/stream/torrent/<hash>/f/<index>`,
   `session.torrent` `{info_hash, file_index, name, index, state, seeds}`. Attempts after the cloud's:
   `Index: <name>` per index, `Torrent: <release>` per torrent (`resolved`, `no_stream`, `dubbed`, `unplayable`,
-  `error`, `skipped` for one that lost the choice). The shuffle button moves to the next torrent; a `closed`/`ended` report, two idle minutes or the session's
+  `error`, `skipped` for one that lost the choice; its detail names the step that decided: `was chosen: it delivers`,
+  `for its height`, `: 4.1x the delivery of the next` (neither delivers, ratio at least 1.5x), `for its English
+  subtitle file`, `for more peers`, `in the finder's order`; logic in `tests/unit/directStream/torrent/source/pure.test.ts`). The shuffle button moves to the next torrent; a `closed`/`ended` report, two idle minutes or the session's
   end release the torrent; reading the session again takes it back. `NOTESD_TORRENT=off`: 503 `torrent_off` for a
   named torrent play, everything else as before.
 - Logic: `npx vitest run tests/unit/directStream/torrentProbe.test.ts tests/unit/directStream/torrentSource.test.ts tests/unit/directStream/torrentPlay.test.ts tests/unit/config.torrentFinder.test.ts tests/unit/mcp.directStreamTools.test.ts`.

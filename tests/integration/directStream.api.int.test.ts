@@ -184,7 +184,7 @@ describe('POST /api/stream/play', () => {
     expect((await service('host-b').providers()).every((p) => p.health === null)).toBe(true);
   });
 
-  it('answers no_source with every attempt, opens nothing, and records the failures', async () => {
+  it('answers no_source with every attempt, opens nothing, and leaves provider health alone for a title nobody streamed', async () => {
     const { svc, app } = await ready();
     await mode('no_source');
     const res = await play(app);
@@ -198,7 +198,8 @@ describe('POST /api/stream/play', () => {
     });
     expect((await calls()).map((a) => a[0])).toEqual(['resolve']);
     expect(records[0]?.result).toMatchObject({ ok: false, error: 'no_source' });
-    expect((await svc.providers()).filter((p) => p.health?.failures === 1).map((p) => p.name)).toEqual(['Alpha', 'Bravo']);
+    // A no_stream counts toward a provider's rest only for a title known to stream here (repo.ts countsTowardRest).
+    expect((await svc.providers()).every((p) => p.health === null)).toBe(true);
   });
 
   it('answers resolve_failed with the reason when the streaming Chrome cannot be reached', async () => {

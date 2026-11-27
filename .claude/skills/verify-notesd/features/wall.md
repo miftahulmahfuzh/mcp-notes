@@ -20,6 +20,9 @@
   last load is older than 60 s. Unit: `web/src/hooks/pollers.test.tsx`.
 - Static fallback: `/history`, `/projects?...`, `/movies/M-xxxx` answer the web app's `index.html`;
   an unbuilt web app answers 503. Unit: `tests/unit/static.test.ts`.
+- With no editor open, a drop or paste keeps only the types the image path takes (`ATTACHABLE_IMAGE_TYPES`): SVG and
+  BMP are never posted to `/api/images`. Proven by `npx vitest run web/src/components/DropOverlay.test.tsx
+  web/src/lib/files.test.tsx` and a `$V ui` drop of svg+bmp+png that makes exactly one POST.
 
 ## How to get to it (user POV)
 Open `URL` from `up`. Every control is an icon button with an aria-label.
