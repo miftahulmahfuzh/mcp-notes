@@ -8,7 +8,7 @@
   - Four real code bugs and seven stale strings are recorded with file:line, ready to fix; four owner decisions are listed.
   - Every user-facing feature now has a named proof, and the new journeys were driven on a verify-notesd throwaway daemon.
 - **Branch:** token-maxxing-2026-11-27-guides-vs-code-audit
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit 2889041, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** very high (12 Opus auditors, relaunched and resumed after two usage-limit interruptions) 🔥
 
 ## Context & Motivation
