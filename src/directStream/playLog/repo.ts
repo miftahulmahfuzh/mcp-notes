@@ -104,7 +104,8 @@ export class PlayLogRepo implements PlayLogWriter {
   /**
    * Every film and episode on this host, over all time, whose failed asks came after its last play that reached the
    * screen (outcome played or site), newest failure first. `cloud_failure` / `torrent_failure` are the words of its
-   * latest failed ask since that play that asked that channel (null: not asked there since).
+   * latest failed ask since that play that asked that channel, or `no_picture` when that channel's latest answer since
+   * then was a player that never showed the film (null: not asked there since).
    * A failed ask whose every asked channel ended `error` (an outage, not the title) is left out: it neither lists
    * the title nor counts in its asks.
    */
@@ -120,7 +121,9 @@ export class PlayLogRepo implements PlayLogWriter {
                (count(*) filter (where ok.at is null or l.asked_at > ok.at))::int as asks,
                max(l.asked_at) as last_asked_at,
                (array_agg(l.cloud_failure order by l.asked_at desc, l.id desc) filter (where l.cloud_failure is not null and (ok.at is null or l.asked_at > ok.at)))[1] as cloud_failure,
-               (array_agg(l.torrent_failure order by l.asked_at desc, l.id desc) filter (where l.torrent_failure is not null and (ok.at is null or l.asked_at > ok.at)))[1] as torrent_failure
+               (array_agg(l.torrent_failure order by l.asked_at desc, l.id desc) filter (where l.torrent_failure is not null and (ok.at is null or l.asked_at > ok.at)))[1] as torrent_failure,
+               max(l.asked_at) filter (where l.cloud_failure is not null and (ok.at is null or l.asked_at > ok.at)) as cloud_at,
+               max(l.asked_at) filter (where l.torrent_failure is not null and (ok.at is null or l.asked_at > ok.at)) as torrent_at
           from stream_play_log l
           left join ok on ok.kind = l.kind and ok.tmdb_id = l.tmdb_id
                       and ok.season is not distinct from l.season
@@ -131,10 +134,27 @@ export class PlayLogRepo implements PlayLogWriter {
                     and (l.cloud_failure is not null or l.torrent_failure is not null))
          group by l.kind, l.tmdb_id, l.season, l.episode
         having count(*) filter (where ok.at is null or l.asked_at > ok.at) > 0
+      ), blank as (
+        -- A player that never showed the film since the last play: that channel's latest answer when it is newer than
+        -- the channel's latest failed ask (it never lists a title on its own).
+        select l.kind, l.tmdb_id, l.season, l.episode, l.channel, max(l.asked_at) as at
+          from stream_play_log l
+          left join ok on ok.kind = l.kind and ok.tmdb_id = l.tmdb_id
+                      and ok.season is not distinct from l.season
+                      and ok.episode is not distinct from l.episode
+         where l.host = ${host} and l.outcome = 'no_picture' and l.channel in ('cloud', 'torrent')
+           and (ok.at is null or l.asked_at > ok.at)
+         group by l.kind, l.tmdb_id, l.season, l.episode, l.channel
       )
-      select f.kind, f.tmdb_id, f.season, f.episode, f.asks, f.last_asked_at, f.cloud_failure, f.torrent_failure,
+      select f.kind, f.tmdb_id, f.season, f.episode, f.asks, f.last_asked_at,
+             case when bc.at is not null and (f.cloud_at is null or bc.at > f.cloud_at) then 'no_picture' else f.cloud_failure end as cloud_failure,
+             case when bt.at is not null and (f.torrent_at is null or bt.at > f.torrent_at) then 'no_picture' else f.torrent_failure end as torrent_failure,
              t.title as title_name, mi.id as movie_id
         from failed f
+        left join blank bc on bc.channel = 'cloud' and bc.kind = f.kind and bc.tmdb_id = f.tmdb_id
+                          and bc.season is not distinct from f.season and bc.episode is not distinct from f.episode
+        left join blank bt on bt.channel = 'torrent' and bt.kind = f.kind and bt.tmdb_id = f.tmdb_id
+                          and bt.season is not distinct from f.season and bt.episode is not distinct from f.episode
         left join movie_titles t on t.id = f.kind || '-' || f.tmdb_id::text
         left join movie_ids mi on mi.title_id = t.id
                               and mi.season is not distinct from f.season

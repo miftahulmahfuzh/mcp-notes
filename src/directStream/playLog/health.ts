@@ -204,7 +204,9 @@ export function figures(rows: readonly HealthRow[]): Figures {
     median_first_frame_ms: median(played.filter((r) => r.first_frame_ms !== null).map((r) => r.first_frame_ms!)),
     played_hours: round(hours, 2),
     stalls_per_hour: playedMs === 0 ? null : round(stalls / hours, 2),
-    stalled_share: playedMs === 0 ? null : round(stalledMs / playedMs, 4),
+    // Share of the watching time (playing plus standing still) the film stood still: a play that stalled longer than
+    // it played is still at most all of it.
+    stalled_share: playedMs === 0 ? null : round(stalledMs / (playedMs + stalledMs), 4),
     hd_share: sized.length === 0 ? null : round(sized.filter((r) => r.height! >= 1080).length / sized.length, 3),
   };
 }

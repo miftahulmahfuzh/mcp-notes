@@ -858,7 +858,7 @@ export function detailIsFor(d: TitleDetail | null, segment: string | null): d is
 /** The Cache page's heading. */
 export const CACHE_HEADING = 'Cache.';
 /** The Stream health page's heading. */
-export const HEALTH_HEADING = 'Stream health.';
+export const HEALTH_HEADING = 'Health.';
 
 export function moviesHeading(s: MoviesView, route: MoviesRoute): string {
   if (route.unmatched) return UNMATCHED_HEADING;

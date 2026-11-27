@@ -87,6 +87,21 @@ describe('PlayLogRepo health reads', () => {
     expect(a).toMatchObject({ asks: 1, cloud_failure: null, torrent_failure: 'no_source' });
   });
 
+  it('a channel whose last answer was a player that never showed the film says no picture, not "not asked"', async () => {
+    // Live rows 17-18 (Far Away S1E1): a torrent miss, then a cloud ask whose player never showed a frame.
+    await log({ ...base, host: HERE, asked_at: ago(11), kind: 'tv', tmdb_id: 990006, season: 1, episode: 1, asked: 'torrent', outcome: 'failed', failure: 'no_source', torrent_failure: 'no_stream' });
+    await log({ ...base, host: HERE, asked_at: ago(10), kind: 'tv', tmdb_id: 990006, season: 1, episode: 1, asked: 'cloud', outcome: 'no_picture', session: 's-blank', channel: 'cloud', provider_first: 'HyperLink' });
+    // A torrent no-picture BEFORE a later torrent failure: the newer failure's word wins.
+    await log({ ...base, host: HERE, asked_at: ago(9), kind: 'tv', tmdb_id: 990007, season: 1, episode: 1, asked: 'torrent', outcome: 'no_picture', session: 's-blank-2', channel: 'torrent', torrent_index: 'apibay' });
+    await log({ ...base, host: HERE, asked_at: ago(8), kind: 'tv', tmdb_id: 990007, season: 1, episode: 1, asked: 'torrent', outcome: 'failed', failure: 'no_source', torrent_failure: 'no_stream' });
+    const un = await repo.unhandled(HERE, 200);
+    expect(un.find((u) => u.tmdb_id === 990006)).toMatchObject({ asks: 1, cloud_failure: 'no_picture', torrent_failure: 'no_stream' });
+    expect(un.find((u) => u.tmdb_id === 990007)).toMatchObject({ asks: 1, cloud_failure: null, torrent_failure: 'no_stream' });
+    // A no-picture ask alone, with no failed ask, lists nothing (990002 played at 60 min; a later blank is not a failure).
+    await log({ ...base, host: HERE, asked_at: ago(7), tmdb_id: 990002, asked: 'cloud', outcome: 'no_picture', session: 's-blank-3', channel: 'cloud', provider_first: 'VidRock' });
+    expect((await repo.unhandled(HERE, 200)).find((u) => u.tmdb_id === 990002)).toBeUndefined();
+  });
+
   it('an ask every asked channel of which only errored (the network was down) is no evidence a title cannot be played', async () => {
     // Film A played at 120 min; an outage after that does not put it back on the list.
     await log({ ...base, host: HERE, asked_at: ago(15), tmdb_id: 990001, outcome: 'failed', failure: 'no_source', cloud_failure: 'error', torrent_failure: 'error' });

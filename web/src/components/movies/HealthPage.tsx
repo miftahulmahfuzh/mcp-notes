@@ -42,6 +42,9 @@ export function failureText(word: string, channel: string | null): string {
       return channel === 'torrent' ? 'no torrent found' : channel === 'cloud' ? 'no cloud source' : 'no source';
     case 'resolved':
       return 'found, did not play';
+    case 'no_picture':
+      // A player opened and never showed the film (the could-not-be-played list's word for that channel).
+      return 'no picture';
     case 'bot_check':
       return 'bot check';
     case 'dubbed':
@@ -147,7 +150,7 @@ function FigureRow({ icon, name, f, sub = false }: { icon: ReactNode; name: stri
       <Stat label="to answer" value={seconds(f.median_resolve_ms)} tip="Median time from the ask to a player" />
       <Stat label="stalls / h" value={f.stalls_per_hour === null ? '—' : f.stalls_per_hour.toFixed(1)} tip="Stalls per hour played" />
       <Stat label="1080p" value={percent(f.hd_share)} tip="Share of the plays at 1080p or better" />
-      <Stat label="stood still" value={f.stalled_share === null ? '—' : `${(f.stalled_share * 100).toFixed(1)}%`} tip="Time the film stood still in a stall, per time played" />
+      <Stat label="stood still" value={f.stalled_share === null ? '—' : `${(f.stalled_share * 100).toFixed(1)}%`} tip="Share of the watching time the film stood still in a stall" />
       <Stat label="no picture" value={String(f.no_picture)} tip="Asks answered with a player whose page never showed the film" />
     </div>
   );

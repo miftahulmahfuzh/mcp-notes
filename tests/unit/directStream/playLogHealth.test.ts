@@ -55,6 +55,13 @@ describe('the Health answer', () => {
     expect(h.totals.site).toMatchObject({ asks: 1, played: 1, success_rate: 1 });
   });
 
+  it('gives the share of watching time the film stood still, never more than all of it', () => {
+    // Live row 29: a torrent play that stood still longer than it played (27.6 s stalled, 24.9 s played).
+    const h = build([row({ id: 29, channel: 'torrent', torrent_index: 'magnet', played_ms: 24_872, stalls: 2, stalled_ms: 27_625 })]);
+    expect(h.totals.torrent?.stalled_share).toBe(0.5262);
+    expect(h.totals.torrent?.stalled_share ?? 2).toBeLessThanOrEqual(1);
+  });
+
   it('takes the middle value', () => {
     expect(median([])).toBeNull();
     expect(median([5, 1, 3])).toBe(3);
