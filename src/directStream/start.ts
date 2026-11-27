@@ -78,6 +78,8 @@ export interface DirectStreamStartIo {
   service?: typeof buildDirectStreamService;
   cache?: typeof buildStreamCache;
   torrents?: typeof buildTorrentStreams;
+  /** Default: a PlayLog over PlayLogRepo on the database. */
+  playLog?: (db: Db, host: string) => PlayLog;
   log?: (line: string) => void;
   error?: (line: string) => void;
 }
@@ -95,7 +97,7 @@ export async function startDirectStreaming(input: DirectStreamStartInput, io: Di
   const directOn = movies !== null && config.directStream?.enabled === true;
   // The play log (src/directStream/playLog/): one row per stream play ask on this host, written behind the play and
   // never failing it. Sessions live in memory, so the rows the previous run left open are closed as `restart`.
-  const playLog = !directOn ? null : new PlayLog({ repo: new PlayLogRepo(db), host: movies.host });
+  const playLog = !directOn ? null : (io.playLog ?? ((d: Db, host: string) => new PlayLog({ repo: new PlayLogRepo(d), host })))(db, movies.host);
   if (playLog !== null) {
     const closed = await playLog.closeLeftOpen();
     if (closed > 0) log(`[notesd] play log: closed ${closed} play(s) left open by the previous run (restart)`);
