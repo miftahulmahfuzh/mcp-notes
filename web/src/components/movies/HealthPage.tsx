@@ -49,7 +49,8 @@ export function failureText(word: string, channel: string | null): string {
     case 'unplayable':
       return 'file Chrome cannot play';
     case 'error':
-      return 'error';
+      // Every index or provider asked timed out or could not be reached: most often this machine's network.
+      return 'unreachable';
     case 'skipped':
     case 'skipped_browser_only':
     case 'skipped_no_template':

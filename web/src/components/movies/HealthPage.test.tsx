@@ -158,6 +158,8 @@ describe('the Stream health page', () => {
     expect(failureText('resolved', 'cloud')).toBe('found, did not play');
     expect(failureText('skipped_browser_only', 'cloud')).toBe('not tried');
     expect(failureText('cache_language', null)).toBe('cache is a dub');
+    // Every index or provider asked errored: an outage, said as such (never a title we cannot stream).
+    expect(failureText('error', 'torrent')).toBe('unreachable');
     // Every word phase 1 can write has its own wording (none falls through to the underscore fallback).
     for (const w of ['no_source', 'resolve_failed', 'open_failed', 'unknown_session', 'no_episode', 'no_subtitle', 'torrent_off', 'bad_info_hash', 'not_on_this_machine', 'cache_failed', 'cache_language', 'error', 'resolved', 'no_stream', 'bot_check', 'dubbed', 'unplayable', 'skipped', 'skipped_browser_only', 'skipped_no_template']) {
       expect(failureText(w, 'cloud')).not.toContain('_');
