@@ -71,8 +71,40 @@ function joinListings(group: readonly TorrentCandidate[], query: TorrentQuery): 
 function namesTitle(c: TorrentCandidate, query: TorrentQuery): boolean {
   const wanted = [query.title, query.originalTitle].map((t) => normalizeName(t ?? '')).filter((t) => t.length > 0);
   if (wanted.length === 0) return true;
-  const text = normalizeName(`${c.name} ${c.fileName ?? ''}`);
-  return wanted.some((t) => text.includes(t));
+  const pieces = namePieces(`${c.name} ${c.fileName ?? ''}`);
+  return wanted.some((t) => holdsTitle(pieces, t));
+}
+
+/** A name's words, normalized one by one as normalizeName normalizes a whole name (`&` is the word `and`). */
+function namePieces(name: string): string[] {
+  return name
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 0);
+}
+
+/** A year glued to the end of the title's last word ("Sintel2010"). */
+const GLUED_YEAR = /^(?:19|20)\d\d$/;
+
+/**
+ * True when a run of whole words of the name joins to exactly the title (normalized, so "Spider.Man" and "SpiderMan"
+ * are both "Spider-Man", and "WALLE" is "WALL·E"), the last word perhaps carrying a glued year. Never a part of a
+ * longer word: "The Pitt" does not hold "The Pit" (live, 2026-11-27, an IMDb listing of another series).
+ */
+function holdsTitle(pieces: readonly string[], title: string): boolean {
+  for (let i = 0; i < pieces.length; i++) {
+    let joined = '';
+    for (let j = i; j < pieces.length; j++) {
+      joined += pieces[j];
+      if (joined === title) return true;
+      if (joined.startsWith(title) && GLUED_YEAR.test(joined.slice(title.length))) return true;
+      if (!title.startsWith(joined)) break;
+    }
+  }
+  return false;
 }
 
 /**

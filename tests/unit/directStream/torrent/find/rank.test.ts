@@ -104,6 +104,22 @@ describe('rankCandidates', () => {
     expect(rankCandidates([candidateFrom(row('Sintel.2010.Samplerip.1080p.WEB.x264', 40), 'apibay', FILM)], FILM).kept).toHaveLength(1);
   });
 
+  it('holds every release to the title as whole words, never as a part of a longer word', () => {
+    // Live, 2026-11-27: TorrentsDB's IMDb listing for The Pit (Çukur, 2017) held The Pitt (2025); "thepitt" holds "thepit".
+    const PIT: TorrentQuery = { kind: 'tv', imdbId: 'tt7472896', season: 1, episode: 1, title: 'The Pit', originalTitle: 'Çukur', originalLanguage: 'tr' };
+    const pitt = ['The Pitt S01E01 1080p AV1 10bit-MeGusta', 'The.Pitt.S01E01.1080p.AMZN.WEB-DL.DDP5.1.H.264-FLUX'];
+    for (const name of pitt) expect(rankCandidates([candidateFrom(row(name, 50), 'torrentsdb', PIT, true)], PIT).excluded.map((e) => e.reason)).toEqual(['other_title']);
+    for (const name of ['The.Pit.S01E01.1080p.WEB-DL', 'Cukur.S01E01.1080p.WEB-DL.Turkish']) expect(rankCandidates([candidateFrom(row(name, 50), 'torrentsdb', PIT, true)], PIT).kept).toHaveLength(1);
+    // What the old test rightly kept still passes: words joined or split differently, "&" as "and", a year glued on.
+    const keeps: [string, TorrentQuery][] = [
+      ['SpiderMan.No.Way.Home.2021.1080p.WEB', { kind: 'movie', imdbId: 'tt10872600', title: 'Spider-Man: No Way Home', originalLanguage: 'en' }],
+      ['WALLE.2008.1080p.BluRay', { kind: 'movie', imdbId: 'tt0910970', title: 'WALL·E', originalLanguage: 'en' }],
+      ['Love.and.Death.1975.1080p', { kind: 'movie', imdbId: 'tt0073312', title: 'Love & Death', originalLanguage: 'en' }],
+      ['Sintel2010.1080p.WEB', FILM],
+    ];
+    for (const [name, q] of keeps) expect(rankCandidates([candidateFrom(row(name, 50), 'apibay', q)], q).kept.map((c) => c.name)).toEqual([name]);
+  });
+
   it('leaves out a malformed or all-zero info hash and a release of another title', () => {
     const zero = candidateFrom(row('Sintel.2010.1080p.WEB', 50, { infoHash: '0'.repeat(40) }), 'apibay', FILM);
     const short = candidateFrom(row('Sintel.2010.720p.WEB', 50, { infoHash: 'abc123' }), 'apibay', FILM);
