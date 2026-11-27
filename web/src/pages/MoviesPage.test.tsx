@@ -28,6 +28,16 @@ vi.mock('../components/movies/HealthPage', () => ({
   ),
 }));
 
+/** Where a grid is scrolled back to (lib/scrollMemory has its own test): the page only says which position. */
+const restored = vi.hoisted(() => [] as number[]);
+vi.mock('../lib/scrollMemory', () => ({
+  restoreScroll: (top: number, done?: () => void) => {
+    restored.push(top);
+    done?.();
+    return () => {};
+  },
+}));
+
 let calls: { method: string; url: string; body: unknown }[];
 /** `METHOD url` → the error the fake daemon answers with. */
 let fails: Record<string, { status: number; error: string; message?: string }>;
@@ -35,6 +45,7 @@ let answers: Record<string, unknown>;
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {
+  restored.length = 0;
   calls = [];
   fails = {};
   answers = {};
@@ -431,6 +442,44 @@ describe('MoviesPage: Trending and streaming-site titles', () => {
     fails['DELETE /api/movies/site-titles/7'] = { status: 500, error: 'internal' };
     fireEvent.click(screen.getByRole('button', { name: 'Take Summer Vacation off this list' }));
     await waitFor(() => expect(note()?.textContent).toBe('Summer Vacation: could not take it off the list (internal)'));
+  });
+});
+
+describe('MoviesPage: Trending marks and the scroll', () => {
+  it("a Trending poster's crossed-eye icon takes it off at the click, and the undo puts it back", async () => {
+    show(streamStore(), STREAM_ROUTE);
+    expect(tiles('Trending posters')).toEqual(['Dune: Part Two']);
+    fireEvent.click(within(screen.getByRole('list', { name: 'Trending posters' })).getByRole('button', { name: /^Not interested in Dune: Part Two/ }));
+    expect(screen.queryByRole('list', { name: 'Trending posters' })).toBeNull();
+    await waitFor(() => expect(note()?.textContent).toBe('Dune: Part Two: not interested, off the Stream gridundo'));
+    fireEvent.click(screen.getByRole('button', { name: 'undo' }));
+    await waitFor(() => expect(posted('/api/movies/movie-693134/user')).toEqual([{ not_interested: true }, { not_interested: false }]));
+    expect(tiles('Trending posters')).toEqual(['Dune: Part Two']);
+  });
+
+  it("going back to a grid scrolls it to where it was left, each side its own; moving between grids does not", () => {
+    const store = streamStore({ detail: MOVIE });
+    const scrollTo = (y: number) => {
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: y });
+      fireEvent.scroll(window);
+    };
+    const { rerender } = show(store, NO_MOVIES_ROUTE);
+    scrollTo(1200);
+    rerender(store, STREAM_ROUTE);
+    scrollTo(300);
+    expect(restored).toEqual([]);
+    rerender(store, { title: 'movie-467905', unmatched: false, stream: true });
+    rerender(store, STREAM_ROUTE);
+    expect(restored).toEqual([300]);
+    rerender(store, { title: 'movie-467905', unmatched: false });
+    rerender(store, NO_MOVIES_ROUTE);
+    expect(restored).toEqual([300, 1200]);
+    // Left at the top, it is not scrolled.
+    scrollTo(0);
+    rerender(store, { title: null, unmatched: true });
+    rerender(store, NO_MOVIES_ROUTE);
+    expect(restored).toEqual([300, 1200]);
+    Reflect.deleteProperty(window, 'scrollY');
   });
 });
 
