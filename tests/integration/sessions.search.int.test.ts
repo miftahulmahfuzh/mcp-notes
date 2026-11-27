@@ -291,6 +291,22 @@ describe('searchSessions: no session vector of the embedder\'s model yet', () =>
     expect(after.sessions[0]?.session_id).toBe('s-literal');
   });
 
+  it('no session vector but a reply vector of the model: still hybrid, so meaning through replies is not lost', async () => {
+    await db.execute(sql`delete from cc_session_embeddings`);
+    const text = 'authentication failed again after suspend on the thinkpad';
+    await db.execute(sql`insert into cc_session_prompts (session_id, seq, at, text, truncated) values ('s-literal', 1, now(), 'prompt 1', false)`);
+    await db.execute(sql`insert into cc_session_replies (session_id, seq, at, text, truncated) values ('s-literal', 1, now(), ${text}, false)`);
+    await db.execute(sql`
+      insert into cc_session_reply_embeddings (session_id, seq, sha, model, embedding, embedded_at, updated_at)
+      values ('s-literal', 1, encode(sha256(convert_to(${text}, 'UTF8')), 'hex'), ${embedder.model}, ${toVectorLiteral(embedder.vectorFor(text))}::vector, now(), now())
+    `);
+    const page = await searchSessions({ db, embedder, host: HOST, queryVectors: new QueryVectorCache() }, 'auth failures after resume');
+    expect(page.mode).toBe('hybrid');
+    expect(page.fallback).toBeUndefined();
+    expect(page.sessions[0]?.session_id).toBe('s-literal');
+    expect(page.sessions[0]?.via_replies.map((r) => r.seq)).toEqual([1]);
+  });
+
   it('mode text and no embedder are unchanged by an empty vector table', async () => {
     await db.execute(sql`delete from cc_session_embeddings`);
     const text = await searchSessions({ db, embedder, host: HOST }, 'leaderboard', {}, { mode: 'text' });

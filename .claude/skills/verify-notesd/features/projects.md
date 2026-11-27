@@ -25,10 +25,11 @@
   is made from, so a word or meaning only a commit has finds that session, in text and hybrid
   mode. Vectors made before this (`cc_session_embeddings.text_version` 0) are rebuilt once by
   the owning host's summary worker after a restart, then never again.
-- Session search says when it has no vectors: with a key but no session vector of the embedder's
-  model (`cc_session_embeddings`, model match, `embedding is not null`), `sessions_search` and
+- Session search says when it has no vectors: with a key but no session, reply or note vector of the
+  embedder's model (`cc_session_embeddings`, `cc_session_reply_embeddings`, `note_embeddings`; model
+  match, `embedding is not null`), `sessions_search` and
   `GET /api/sessions/search` answer `mode: "text"` with the fallback "Session vectors are not built
-  yet ...", and no query embedding is made. One vector of the model is enough for `hybrid` again.
+  yet ...", and no query embedding is made. One vector of the model in any of the three is enough for `hybrid` again.
 - Link an existing note to a session (MCP `link_note` / `unlink_note`; Phase 1). Session notes =
   made ∪ linked, deduped (a note both made and linked is listed once as `made`), newest first, at most 50.
   Links live in `note_session_links`; purging a note from the bin (hard delete) drops its link rows
