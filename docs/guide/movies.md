@@ -782,7 +782,9 @@ play ask. Only this machine's rows are read. The three buttons at the top choose
 
 - **By channel.** One row for every ask, then Torrents, Cloud, and From disk or Streaming sites when they
   played. Each says how many asks reached the screen (`3/5` and `60%`), the median time to the first frame
-  and from the ask to a player, stalls per hour played and the share of plays at 1080p or better. A play
+  and from the ask to a player, stalls per hour played, the share of plays at 1080p or better, the share of
+  played time the film stood still, and how many asks got a player that never showed the film (a play
+  still loading says `no picture yet` in Latest plays). The last two are left out on a phone. A play
   that reached the screen is a success however short it was: a one-minute test of a torrent counts as a
   play, never as a failure. Under each channel, its torrent indexes or cloud providers with the same
   figures, and the failed asks by what they ended with (`no torrent found ×2`).

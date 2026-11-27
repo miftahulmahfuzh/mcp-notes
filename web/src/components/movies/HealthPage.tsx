@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowSquareOut, CalendarBlank, Cloud, Globe, HardDrives, Heartbeat, MagnetStraight, Warning } from '@phosphor-icons/react';
 import { relativeDate } from '../../lib/dates';
 import { errorCode, fetchStreamHealth, type HealthFailure, type HealthFigures, type HealthPlay, type HealthSource, type HealthUnhandled, type StreamHealth } from '../../moviesApi';
@@ -99,7 +99,8 @@ export function playLabel(p: { title: string; season: number | null; episode: nu
 /** How a play ended, in words. A short play that reached the screen is never called a failure. */
 export function endedText(p: HealthPlay): string {
   if (p.outcome === 'failed') return p.failure === null ? 'failed' : `failed · ${failureText(p.failure, p.channel)}`;
-  if (p.outcome === 'no_picture') return 'no picture';
+  // A session whose page has not reported yet may still be loading: it is not called a failure until it ended.
+  if (p.outcome === 'no_picture') return p.ended === null ? 'no picture yet' : 'no picture';
   if (p.outcome === 'site') return 'played on a site';
   switch (p.ended) {
     case null:
@@ -145,6 +146,8 @@ function FigureRow({ icon, name, f, sub = false }: { icon: ReactNode; name: stri
       <Stat label="to answer" value={seconds(f.median_resolve_ms)} tip="Median time from the ask to a player" />
       <Stat label="stalls / h" value={f.stalls_per_hour === null ? '—' : f.stalls_per_hour.toFixed(1)} tip="Stalls per hour played" />
       <Stat label="1080p" value={percent(f.hd_share)} tip="Share of the plays at 1080p or better" />
+      <Stat label="stood still" value={f.stalled_share === null ? '—' : `${(f.stalled_share * 100).toFixed(1)}%`} tip="Time the film stood still in a stall, per time played" />
+      <Stat label="no picture" value={String(f.no_picture)} tip="Asks answered with a player whose page never showed the film" />
     </div>
   );
 }
@@ -154,7 +157,7 @@ function FailureChips({ failures }: { failures: HealthFailure[] }) {
   return (
     <div className="hp-fails">
       {failures.map((f) => (
-        <span key={`${f.channel}:${f.failure}`} className="mv-chip hp-tag" data-tip={`${f.count} failed ${f.count === 1 ? 'ask' : 'asks'}: ${f.failure}`}>
+        <span key={`${f.channel}:${f.failure}`} className="mv-chip hp-tag" data-tip={`${f.count} failed ${f.count === 1 ? 'ask' : 'asks'}: ${failureText(f.failure, f.channel)}`}>
           {failureText(f.failure, f.channel)} ×{f.count}
         </span>
       ))}
@@ -229,22 +232,30 @@ export function HealthPage({ onOpen }: HealthPageProps) {
   const [health, setHealth] = useState<StreamHealth | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setHealth(await fetchStreamHealth(days));
-      setError(null);
-    } catch (e) {
-      setError(errorCode(e));
-    }
-  }, [days]);
-
   useEffect(() => {
+    // One period's reads: aborted when the period changes, so an older answer or error never lands on the new one.
+    const stop = new AbortController();
+    // An error of the previous period is not this one's.
+    setError(null);
+    const load = async (): Promise<void> => {
+      try {
+        const next = await fetchStreamHealth(days, stop.signal);
+        if (stop.signal.aborted) return;
+        setHealth(next);
+        setError(null);
+      } catch (e) {
+        if (!stop.signal.aborted) setError(errorCode(e));
+      }
+    };
     void load();
     const t = window.setInterval(() => {
       if (document.visibilityState === 'visible') void load();
     }, HEALTH_REFRESH_MS);
-    return () => window.clearInterval(t);
-  }, [load]);
+    return () => {
+      stop.abort();
+      window.clearInterval(t);
+    };
+  }, [days]);
 
   const now = new Date();
   let body: ReactNode;
