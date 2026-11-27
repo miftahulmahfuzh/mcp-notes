@@ -105,6 +105,25 @@ describe('AssignDialog', () => {
     expect((d.getByRole('textbox', { name: 'Episode' }) as HTMLInputElement).value).toBe('2');
   });
 
+  it('an absolute-numbered episode (One Piece - 405) searches series, with season and episode left for the owner', async () => {
+    const onePiece: UnmatchedFile = {
+      ...NEZHA_FILE,
+      id: 34,
+      path: '/lib/One Piece - 405 720p WEB-DL x264 2CH [Pahe.in].mkv',
+      name: 'One Piece - 405 720p WEB-DL x264 2CH [Pahe.in].mkv',
+      parsed: { title: 'One Piece', year: null, season: null, episode: null, absolute_episode: 405, kind_hint: 'tv' },
+    };
+    results = { movie: [], tv: [hit({ kind: 'tv', tmdb_id: 37854, title_id: 'tv-37854', title: 'One Piece', year: 1999 })] };
+    const { d, onAssigned } = show(onePiece);
+    await waitFor(() => expect(gets).toEqual(['/api/movies/search-tmdb?q=One%20Piece&kind=tv']));
+    fireEvent.click(await d.findByRole('option', { name: /One Piece/ }));
+    expect((d.getByRole('textbox', { name: 'Season' }) as HTMLInputElement).value).toBe('');
+    expect((d.getByRole('textbox', { name: 'Episode' }) as HTMLInputElement).value).toBe('');
+    fireEvent.click(assignButton());
+    await waitFor(() => expect(onAssigned).toHaveBeenCalledWith('tv-37854', 'One Piece'));
+    expect(posts.map((p) => p.body)).toEqual([{ kind: 'tv', tmdb_id: 37854 }]);
+  });
+
   it('assigns a picked film, and hands the page the title it went to and its name', async () => {
     const { d, onAssigned } = show(NEZHA_FILE);
     expect(assignButton().disabled).toBe(true);
