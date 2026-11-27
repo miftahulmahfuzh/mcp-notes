@@ -30,6 +30,7 @@ import type { TrackerListsHandle } from './directStream/torrent/trackerLists.js'
 import type { StreamEvidence } from './directStream/evidence.js';
 import type { StreamReporter } from './directStream/report.js';
 import type { StreamPreviews } from './directStream/previews/service.js';
+import type { PlayLog } from './directStream/playLog/log.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 import type { SessionEvents } from './sessions/events.js';
@@ -146,6 +147,11 @@ export interface AppDeps {
    * startBackground starts its sweep and closes it before every other closer (the stream cache and the torrents included).
    */
   streamPreviews?: StreamPreviews | null;
+  /**
+   * This host's play log (src/directStream/playLog/): one stream_play_log row per stream play ask whose title is
+   * known, the page's counters and how each play ended. Built with direct streaming; null or absent, nothing is logged.
+   */
+  playLog?: PlayLog | null;
   /**
    * The daily stream canary (src/directStream/canary.ts): every cloud provider asked for one known film, for
    * its health. The daemon always sets it (a DisabledCanary with NOTESD_STREAM_CANARY=off or direct streaming

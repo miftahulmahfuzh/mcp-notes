@@ -19,6 +19,9 @@ import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
+import { askedOf } from './playLog/derive.js';
+import type { PlayLogSink } from './playLog/log.js';
+import type { PlayAsk } from './playLog/types.js';
 import { readMagnet } from './torrent/origins.js';
 import { namesCloud, namesTorrent, PREFERRED_TORRENT_HEIGHT, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource, type TorrentResolve, type TorrentResolveOptions, type MagnetReport } from './torrent/source.js';
 import type { TorrentCandidateList } from './torrent/candidates.js';
@@ -355,6 +358,12 @@ export interface DirectStreamServiceOptions {
    * provider and every torrent found nothing. Unset or null: such a play fails as it always did.
    */
   siteFallback?: SiteFallback | null;
+  /**
+   * This host's play log (playLog/log.ts): one stream_play_log row per play ask whose title is known, the session's
+   * source switches and its end. Every call is caught inside the log: it never fails, delays or changes a play. Null
+   * or unset: nothing is logged.
+   */
+  playLog?: PlayLogSink | null;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -525,6 +534,8 @@ export class DirectStreamService {
     this.evidence = opts.evidence ?? null;
     // A session the store drops (expired, or past MAX_SESSIONS) lets go of its torrent.
     this.sessions.onEnd((session) => this.letGoTorrent(session));
+    // A session the store drops closes its play log row (`expired`), unless its page closed it first.
+    this.sessions.onEnd((session) => this.opts.playLog?.ended(session, 'expired'));
     this.ahead = opts.ahead === true ? this.buildAhead() : null;
   }
 
@@ -768,6 +779,8 @@ export class DirectStreamService {
       failed: false,
       naming: false,
     };
+    // The play log's row of this ask (playLog/): written behind the answer, never part of it.
+    const ask: PlayAsk = { at: entry.since, via: 'play', ref, asked: askedOf(provider, options.magnet ?? null) };
     this.nameIt(entry);
     entry.promise = this.playNow(ref, options, entry).then(
       (result) => {
@@ -776,9 +789,12 @@ export class DirectStreamService {
           entry.opened = { sessionId: '', at: this.now().getTime() };
           entry.stage = `playing on ${result.site}`;
           if (this.inFlight.get(key) === entry) this.inFlight.delete(key);
+          this.opts.playLog?.site(ask, result.site);
         } else {
           entry.opened = { sessionId: result.session.session_id, at: this.now().getTime() };
           entry.stage = 'opened: waiting for the player page';
+          const session = this.sessions.peek(result.session.session_id);
+          if (session !== null) this.opts.playLog?.answered(ask, session);
         }
         if (entry.waited) this.keepOutcome(key, result, null);
         return result;
@@ -787,6 +803,7 @@ export class DirectStreamService {
         entry.failed = true;
         if (this.inFlight.get(key) === entry) this.inFlight.delete(key);
         this.logFailedPlay(entry, err);
+        this.opts.playLog?.failed(ask, err);
         if (entry.waited) this.keepOutcome(key, null, err);
         throw err;
       },
@@ -1319,16 +1336,27 @@ export class DirectStreamService {
   /**
    * POST /api/stream/cache/:id/play: plays one cache by its id, with no resolve. Throws
    * CachePlayError `unknown_cache`, `not_on_this_machine` (with the host that holds it),
-   * `cache_failed` or `cache_language`; then `open_failed` as `play` does.
+   * `cache_failed` or `cache_language`; then `open_failed` as `play` does. Once the cache (and so the title) is
+   * known, the ask goes to the play log; an unknown cache names no title and is not logged.
    */
   async playCache(cacheId: string, options: { resumeS?: number | null } = {}): Promise<PlayResult> {
+    const at = this.now();
     const caches = this.opts.caches?.() ?? null;
     const view = caches === null || !CACHE_ID_PATTERN.test(cacheId) ? null : await caches.get(cacheId);
     if (view === null) throw new CachePlayError('unknown_cache', 'There is no stream cache with that id.');
-    const audioLang = await this.audioLang(view.ref);
-    const check = playable(view, this.host, audioLang);
-    if (!check.ok) throw cacheRefusalError(view, check.refusal, audioLang);
-    return this.openPage(await this.sessionFromCache(view, check.cache, options.resumeS ?? null, audioLang));
+    const ask: PlayAsk = { at, via: 'cache', ref: view.ref, asked: null };
+    try {
+      const audioLang = await this.audioLang(view.ref);
+      const check = playable(view, this.host, audioLang);
+      if (!check.ok) throw cacheRefusalError(view, check.refusal, audioLang);
+      const session = await this.sessionFromCache(view, check.cache, options.resumeS ?? null, audioLang);
+      const result = await this.openPage(session);
+      this.opts.playLog?.answered(ask, session);
+      return result;
+    } catch (err) {
+      this.opts.playLog?.failed(ask, err);
+      throw err;
+    }
   }
 
   /** Opens the session's player page full screen in the streaming Chrome (one at a time, like every resolve). */
@@ -1553,6 +1581,7 @@ export class DirectStreamService {
     session.avoid.push(from);
     this.sessions.replaceSource(session, out.source, out.attempts);
     safeRecord(this.evidence, sessionRecord(session, 'switched', null));
+    this.opts.playLog?.switched(session, 'owner');
     this.log(`[notesd] direct stream: ${refLabel(session.ref)} moved from ${from} to ${out.source.provider} (the stream stalled)`);
     return { switched: true, reason: null, from, session: await this.sessionInfo(session) };
   }
@@ -1630,6 +1659,7 @@ export class DirectStreamService {
       session.autoSwitches += 1;
       session.sourceRev += 1;
       session.sourceNote = why;
+      this.opts.playLog?.switched(session, 'auto');
       safeRecord(this.evidence, sessionRecord(session, 'switched', null));
       this.log(`[notesd] direct stream: ${refLabel(session.ref)} switched by itself from ${from} to ${this.sourceName(session)} (${why}; ${session.autoSwitches} of ${MAX_AUTO_SWITCHES})`);
       return { switched: true, reason: null, from, session: await this.sessionInfo(session) };
@@ -1731,6 +1761,7 @@ export class DirectStreamService {
     this.followTorrent(session);
     this.watchTorrents();
     safeRecord(this.evidence, sessionRecord(session, 'switched', null));
+    this.opts.playLog?.switched(session, 'owner');
     this.log(`[notesd] direct stream: ${refLabel(session.ref)} moved from the torrent ${torrent.name} to ${out.torrent.name}`);
     return { switched: true, reason: null, from, session: await this.sessionInfo(session) };
   }
@@ -1739,9 +1770,10 @@ export class DirectStreamService {
    * The player's previous / next button: a new session for the neighbouring episode of the session's
    * (the old one is left to expire; the page reports it closed), from that episode's cache on this
    * host when it can be played, else resolved. Throws `unknown_session`, `no_episode` (a film, or no
-   * episode on that side), or what `resolve` throws.
+   * episode on that side), or what `resolve` throws. Once the episode is known the ask goes to the play log (`episode`).
    */
   async switchEpisode(id: string, to: 'prev' | 'next'): Promise<SessionInfo> {
+    const at = this.now();
     const session = this.sessions.get(id);
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
     const target = (await this.neighborsOf(session.ref))[to];
@@ -1749,7 +1781,15 @@ export class DirectStreamService {
       throw new DirectStreamError('no_episode', to === 'next' ? 'There is no next episode to stream.' : 'There is no previous episode.');
     }
     const ref: StreamRef = { kind: 'tv', tmdbId: session.ref.tmdbId, season: target.season, episode: target.episode };
-    const next = await this.sessionFor(ref, null);
+    const ask: PlayAsk = { at, via: 'episode', ref, asked: null };
+    let next: StreamSession;
+    try {
+      next = await this.sessionFor(ref, null);
+    } catch (err) {
+      this.opts.playLog?.failed(ask, err);
+      throw err;
+    }
+    this.opts.playLog?.answered(ask, next);
     this.log(
       `[notesd] direct stream: ${refLabel(session.ref)} -> ${refLabel(next.ref)} (${to} episode) ${
         next.torrent !== null ? `from the torrent ${next.torrent.name}` : next.cache === null ? `from ${next.source.provider}` : `from the cache ${next.cache.id}`
@@ -1802,10 +1842,22 @@ export class DirectStreamService {
       };
       this.nameIt(entry);
       this.inFlight.set(flightKey, entry);
-      run = this.sessionAgain(ref, from).finally(() => {
-        this.continuing.delete(key);
-        if (this.inFlight.get(flightKey) === entry) this.inFlight.delete(flightKey);
-      });
+      const ask: PlayAsk = { at: entry.since, via: 'continue', ref, asked: null };
+      run = this.sessionAgain(ref, from)
+        .then(
+          (made) => {
+            this.opts.playLog?.answered(ask, made);
+            return made;
+          },
+          (err: unknown) => {
+            this.opts.playLog?.failed(ask, err);
+            throw err;
+          },
+        )
+        .finally(() => {
+          this.continuing.delete(key);
+          if (this.inFlight.get(flightKey) === entry) this.inFlight.delete(flightKey);
+        });
       this.continuing.set(key, run);
     }
     const session = await run;
@@ -1881,6 +1933,7 @@ export class DirectStreamService {
     if (!out.ok) return { switched: false, reason: 'no_other_source', from: CACHE_SOURCE, session: await this.sessionInfo(session) };
     this.sessions.replaceSource(session, out.source, out.attempts);
     safeRecord(this.evidence, sessionRecord(session, 'switched', null));
+    this.opts.playLog?.switched(session, 'auto');
     this.log(`[notesd] direct stream: ${refLabel(session.ref)} left the cache ${cache.id} for the stream of ${out.source.provider} (the cached play stalled)`);
     return { switched: true, reason: null, from: CACHE_SOURCE, session: await this.sessionInfo(session) };
   }
@@ -2526,6 +2579,8 @@ export interface DirectStreamWiring {
   siteFallback?: SiteFallback | null;
   /** Cloudflare WARP's switch (src/streaming/warp.ts), for a torrent play on the office network; used only with NOTESD_STREAM_WARP on. */
   warp?: WarpSwitch | null;
+  /** This host's play log (playLog/log.ts); null or unset logs nothing. */
+  playLog?: PlayLogSink | null;
 }
 
 /** Test seams. */
@@ -2565,6 +2620,7 @@ export function buildDirectStreamService(
     torrent: wiring.torrent,
     outside: wiring.outside,
     siteFallback: wiring.siteFallback ?? null,
+    playLog: wiring.playLog ?? null,
     ahead: ds.ahead === true,
     firstProvider: ds.firstProvider ?? null,
     warp: ds.warp === true && wiring.warp != null ? { switch: wiring.warp, auto: TORRENT_WARP_AUTO } : null,

@@ -67,6 +67,8 @@ import { DisabledCanary, StreamCanary } from './directStream/canary.js';
 import { loadKnownTitles } from './directStream/updateSource.js';
 import { buildTrending } from './directStream/trending/job.js';
 import { StreamReporter } from './directStream/report.js';
+import { PlayLog } from './directStream/playLog/log.js';
+import { PlayLogRepo } from './directStream/playLog/repo.js';
 import { defaultClaudeWindowDeps } from './sessions/resume.js';
 import { siteFallback } from './streaming/fallback.js';
 import { scriptRunner } from './streaming/service.js';
@@ -227,6 +229,13 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     } catch (err) {
       console.error(`[notesd] direct stream: could not close stale stream plays: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+  // The play log (src/directStream/playLog/): one row per stream play ask on this host, written behind the play and
+  // never failing it. Sessions live in memory, so the rows the previous run left open are closed as `restart`.
+  const playLog = movies === null || config.directStream?.enabled !== true ? null : new PlayLog({ repo: new PlayLogRepo(db), host: movies.host });
+  if (playLog !== null) {
+    const closed = await playLog.closeLeftOpen();
+    if (closed > 0) console.log(`[notesd] play log: closed ${closed} play(s) left open by the previous run (restart)`);
   }
   // The bound port, known only after listen() (config.port may be 0). The chat agent reaches notes
   // through this daemon's own /mcp, a direct-stream play opens this daemon's player page, and the
@@ -429,6 +438,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         ? null
         : siteFallback({ runner: streaming, remembered: (ref) => movieStreams.channel(ref), title: (ref) => movieStreams.titleNames(ref), streams: movieStreams }),
     warp,
+    playLog,
     hooks:
       movieStreams === null
         ? undefined
@@ -562,6 +572,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     genreGuides,
     streamLive,
     streamEvidence,
+    playLog,
   };
   // The Cache page (src/directStream/cacheShelf.ts): this host's torrents and cloud caches on disk, deleted after an undo
   // window, and what downloads now and why. Null with neither torrents nor the stream cache. startBackground carries out

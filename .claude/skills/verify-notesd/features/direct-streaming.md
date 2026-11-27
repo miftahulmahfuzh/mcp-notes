@@ -818,6 +818,19 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   it as a torrent, post position reports and read the previews every few seconds: `partial` cues only inside the
   map's `ranges`, and after a `closed` report the swarm empties while the previews route is still read.
 
+## The play log (`stream_play_log`)
+- One row per play ask whose title is known: answered (session, channel, provider, ask-to-answer time, a
+  torrent's info hash, index, seeds and height), failed (`failure`, redacted `failure_detail`,
+  `cloud_failure`, `torrent_failure`) or taken by a streaming site. The page's `stats` key on its position
+  reports is summed over page loads; the row is written on the first report, every 30 s at most while it
+  plays, and at the end; a paused beat for the stream on screen writes nothing. Closed as `finished`,
+  `closed`, `replaced`, `expired` or `restart`. See `docs/guide/streaming.md` ("The play log").
+- Rules: `npx vitest run tests/unit/directStream/playLog tests/unit/directStream/playLogService.test.ts tests/unit/directStream/positionRoute.test.ts`;
+  the table and its writer: `npm run test:int -- tests/integration/directStream.playLog.int.test.ts`.
+- On a `verify.sh up --direct-stream` run (no `--torrent`; about two minutes, `beat` waits 40 s and `restart`
+  restarts the daemon): `.claude/skills/verify-notesd/scripts/direct-stream/playlog.sh RUN [ask|stats|failed|beat|replaced|restart ...]`.
+  Each stage prints `PASS <stage>`; the run ends with `playlog: PASS`.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it.
