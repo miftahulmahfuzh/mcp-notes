@@ -12,7 +12,7 @@
   - Proven on the real page build: verify-notesd journeys play-stats, torrent-player, player, recovery, preview-caption, source-switch, report-button, pause-cache and restart all PASS on throwaway daemons built from this worktree.
   - Found that the direct-stream journeys leak state into each other when run on one throwaway daemon (see Decisions).
 - **Branch:** token-maxxing-2026-11-27-split-player-controller
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit 3a13962, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** several million tokens (refactor, 11 test files, full unit + integration suites, four verify-notesd runs) 🔥
 
 ## Context & Motivation
