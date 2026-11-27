@@ -117,6 +117,7 @@ All fixed on 2026-11-27; the last column names the commit.
    (`src/mcp/dwordVocabTools.ts:367`, before the collision handling at `:381-394`). Past the limit,
    a `dword_vocab_add` meant only to attach an origin sentence to a word already held is refused
    too. Nothing says whether that should be exempt.
+   **Decided 2026-11-27: exempt.** Past the limit, a word already held goes on to the collision path.
 4. **Dropped SVG and BMP files with no editor open** are sent to `POST /api/images` and refused
    with 415, logged only to the console (`DropOverlay.tsx`). The guide's "files that are not images
    are ignored" (`docs/guide/wall.md:158`) is right in effect; the editor's `routeFiles` filters them

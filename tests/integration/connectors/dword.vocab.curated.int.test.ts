@@ -62,6 +62,13 @@ async function seed(): Promise<void> {
       );
     }
 
+    // A word the limit user added days ago: outside the 24 hours, so the limit still counts 50.
+    await db.query(
+      `INSERT INTO vocab_entries (id, user_id, term, source, status, part_of_speech, pronunciation, definition, examples, enrichment_status, created_at)
+       VALUES ($1, $2, 'Gallant', 'manual', 'active', 'adjective', 'x', 'x', '["x","x","x"]'::jsonb, 'ready', now() - interval '3 days')`,
+      [randomUUID(), LIMIT_USER_ID],
+    );
+
     for (let i = 0; i < 50; i++) {
       await db.query(
         `INSERT INTO vocab_entries (id, user_id, term, source, status, part_of_speech, pronunciation, definition, examples, enrichment_status, created_at)
@@ -242,6 +249,19 @@ describeWithRepo('dword', 'dword vocab curated tools', () => {
     const lookup = await limitClient.callTool({ name: 'dword_vocab_lookup', arguments: { term: 'one-too-many' } });
     const parsed = JSON.parse(textOf(lookup as CallToolResult)) as { found: boolean };
     expect(parsed.found).toBe(false);
+  });
+
+  it('dword_vocab_add: past the 50/24h limit, attaching a sentence to a word already held is not refused', async () => {
+    const result = (await limitClient.callTool({
+      name: 'dword_vocab_add',
+      arguments: { term: 'GALLANT', part_of_speech: 'adjective', pronunciation: 'x', definition: 'x', examples: ['x', 'x', 'x'], context: 'as in a gallant knight' },
+    })) as CallToolResult;
+    expect(result.isError, textOf(result)).toBeFalsy();
+    const out = JSON.parse(textOf(result)) as { created: boolean; origin_attached: boolean; entry: { term: string; origin_context: string | null } };
+    expect([out.created, out.origin_attached, out.entry.term, out.entry.origin_context]).toEqual([false, true, 'Gallant', 'as in a gallant knight']);
+    // Still no new word.
+    const n = await withAdmin(systemDbUrl('dword'), async (db) => (await db.query('SELECT count(*)::int AS n FROM vocab_entries WHERE user_id = $1', [LIMIT_USER_ID])).rows[0].n);
+    expect(n).toBe(51);
   });
 
   it('dword_vocab_add: rejects origin and context together', async () => {

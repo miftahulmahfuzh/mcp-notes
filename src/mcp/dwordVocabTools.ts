@@ -365,6 +365,9 @@ async function vocabAdd(connector: Connector, writer: DwordWriter, email: string
   ]);
   const recent = Number(limitRow.rows[0]?.[0] ?? 0);
   if (recent >= DAILY_ADD_LIMIT) {
+    // The limit is on new words. A word already held adds none: it only gets its origin sentence (D4), so it goes on.
+    const held = (await fetchVocabRows(connector, userId)).find((r) => r.term.toLowerCase() === term.toLowerCase());
+    if (held !== undefined) return finishCollision(connector, writer, held, originTerm, originLanguage, originContext);
     throw new ConnectorError(`That's ${DAILY_ADD_LIMIT} words in a day. Come back tomorrow.`);
   }
 
@@ -439,7 +442,7 @@ const ADD_DESCRIPTION =
   "and the existing entry is returned instead (created: false). Pass origin only for a non-English term you already resolved to English (origin.term is " +
   'the original word, origin.language its language, origin.context an optional "as in ..." sentence). Pass context (not origin) for a plain English term ' +
   'with a "> sentence" from /v — it is stored as the entry\'s own origin (origin_language "English") so the sentence is not lost; if the term already exists ' +
-  'with no origin, the context is attached to it instead of failing. Refuses past 50 adds in a rolling 24 hours.';
+  'with no origin, the context is attached to it instead of failing. Refuses a new word past 50 adds in a rolling 24 hours; a word already held is not refused.';
 
 export function registerDwordVocabCurated(server: McpServer, connector: Connector, options: DwordVocabOptions = {}): void {
   const emailOf = options.userEmail ?? ((): string | null => loadConfig().dword.userEmail);
