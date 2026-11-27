@@ -1842,18 +1842,13 @@ export class DirectStreamService {
       };
       this.nameIt(entry);
       this.inFlight.set(flightKey, entry);
-      const ask: PlayAsk = { at: entry.since, via: 'continue', ref, asked: null };
+      // No new ask for the play log: the row its play was closed on as `restart` is open again under the new session
+      // (or nothing is written). A carry-on that finds nothing writes nothing either: that row already says `restart`.
       run = this.sessionAgain(ref, from)
-        .then(
-          (made) => {
-            this.opts.playLog?.answered(ask, made);
-            return made;
-          },
-          (err: unknown) => {
-            this.opts.playLog?.failed(ask, err);
-            throw err;
-          },
-        )
+        .then((made) => {
+          this.opts.playLog?.carriedOn(ref, was, made);
+          return made;
+        })
         .finally(() => {
           this.continuing.delete(key);
           if (this.inFlight.get(flightKey) === entry) this.inFlight.delete(flightKey);

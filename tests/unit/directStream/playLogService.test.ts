@@ -23,8 +23,8 @@ const candidate = (infoHash: string, name: string): TorrentCandidate => ({
   infoHash, name, fileName: null, fileIdx: null, seeds: 16, sizeBytes: 2_244_598_101, index: 'torrentio', listedBy: ['torrentio'], site: null, trackers: [], scoped: false, release: parseRelease(name),
 });
 
-function setup(o: { resolve?: unknown; failOpen?: boolean; hooks?: DirectStreamHooks; failWrites?: boolean } = {}) {
-  let now = Date.parse('2026-11-27T10:00:00.000Z');
+function setup(o: { resolve?: unknown; failOpen?: boolean; hooks?: DirectStreamHooks; failWrites?: boolean; repo?: MemoryPlayLog; at?: number } = {}) {
+  let now = o.at ?? Date.parse('2026-11-27T10:00:00.000Z');
   const clock = (): Date => new Date(now);
   const logged: string[] = [];
   const swarm: TorrentSwarm = {
@@ -46,7 +46,7 @@ function setup(o: { resolve?: unknown; failOpen?: boolean; hooks?: DirectStreamH
     lastResort: [],
   };
   const torrent = new TorrentSource({ swarm, find: async () => answer, probe: async () => MP4, tiers: [], subtitleHeadMs: 5, localBase: () => 'http://127.0.0.1:4321', log: () => undefined });
-  const repo = new MemoryPlayLog();
+  const repo = o.repo ?? new MemoryPlayLog();
   if (o.failWrites === true) repo.failWith = new Error('connect ECONNREFUSED 127.0.0.1:55437');
   const playLog = new PlayLog({ repo, host: 'host-a', now: clock, log: (line) => void logged.push(line) });
   const svc = new DirectStreamService({
@@ -62,7 +62,7 @@ function setup(o: { resolve?: unknown; failOpen?: boolean; hooks?: DirectStreamH
     now: clock,
     log: (line) => void logged.push(line),
   });
-  return { svc, repo, playLog, logged, advance: (ms: number) => void (now += ms) };
+  return { svc, repo, playLog, logged, advance: (ms: number) => void (now += ms), now: () => now };
 }
 
 describe('the service writes the play log', () => {
@@ -98,14 +98,63 @@ describe('the service writes the play log', () => {
     expect(row?.torrentFailure ?? null).not.toBeNull();
   });
 
-  it('a page carrying on after a restart is a continue row; the next episode is an episode row', async () => {
+  it('the next episode is an episode row', async () => {
     const t = setup({ hooks: { neighbors: async () => ({ prev: null, next: { season: 1, episode: 2 } }) } });
-    const going = await t.svc.continueSession(FILM, { was: 'lost-session', provider: 'Alpha', positionS: 600 });
     const episode = (await t.svc.play(EPISODE, { provider: 'cloud' })) as PlayResult;
     const next = await t.svc.switchEpisode(episode.session.session_id, 'next');
     await t.playLog.settled();
-    expect(t.repo.bySession(going.session.session_id)).toMatchObject({ via: 'continue', asked: null, providerFirst: 'Alpha' });
     expect(t.repo.bySession(next.session_id)).toMatchObject({ via: 'episode', kind: 'tv', season: 1, episode: 2 });
+  });
+
+  describe('a page carrying on after a restart', () => {
+    /** The daemon restarts: a new service, session store and play log on the same database, whose start closes the open rows. */
+    async function restart(before: ReturnType<typeof setup>, o: Parameters<typeof setup>[0] = {}) {
+      await before.playLog.settled();
+      const after = setup({ ...o, repo: before.repo, at: before.now() + 30_000 });
+      await after.playLog.closeLeftOpen();
+      return after;
+    }
+
+    it('is no new ask: the row of the play it carries on is open again under the new session', async () => {
+      const t = setup();
+      const played = (await t.svc.play(FILM, { provider: 'cloud' })) as PlayResult;
+      const was = played.session.session_id;
+      const after = await restart(t);
+      const going = await after.svc.continueSession(FILM, { was, provider: 'Alpha', positionS: 600 });
+      await after.playLog.settled();
+      expect(going.continued).toBe(true);
+      expect(after.repo.rows).toEqual([
+        expect.objectContaining({ via: 'play', asked: 'cloud', session: going.session.session_id, providerFirst: 'Alpha', providerLast: 'Alpha', refreshes: 1, ended: null, endedAt: null }),
+      ]);
+    });
+
+    it('a torrent carried on keeps the index that listed it; it is never a pasted magnet', async () => {
+      const t = setup();
+      const played = (await t.svc.play(FILM, { provider: 'torrent' })) as PlayResult;
+      const after = await restart(t);
+      const going = await after.svc.continueSession(FILM, { was: played.session.session_id, infoHash: h(1), positionS: 600 });
+      await after.playLog.settled();
+      expect(after.repo.rows).toEqual([
+        expect.objectContaining({ via: 'play', asked: 'torrent', session: going.session.session_id, channel: 'torrent', infoHash: h(1), torrentIndex: 'torrentio', ended: null }),
+      ]);
+    });
+
+    it('with no row closed as restart for its play (an older daemon played it), writes nothing', async () => {
+      const t = setup();
+      await t.playLog.closeLeftOpen();
+      await t.svc.continueSession(FILM, { was: 'lost-session', provider: 'Alpha', positionS: 600 });
+      await t.playLog.settled();
+      expect(t.repo.rows).toEqual([]);
+    });
+
+    it('that finds nothing to play is no failed ask: the row stays closed as restart', async () => {
+      const t = setup();
+      const played = (await t.svc.play(FILM, { provider: 'cloud' })) as PlayResult;
+      const after = await restart(t, { resolve: NO_SOURCE, failOpen: true });
+      await expect(after.svc.continueSession(FILM, { was: played.session.session_id, provider: 'Alpha', positionS: 600 })).rejects.toBeInstanceOf(DirectStreamError);
+      await after.playLog.settled();
+      expect(after.repo.rows).toEqual([expect.objectContaining({ session: played.session.session_id, ended: 'restart' })]);
+    });
   });
 
   it('the owner asking for another source counts as an owner switch', async () => {
