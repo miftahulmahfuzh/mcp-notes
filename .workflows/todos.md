@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 7
-- Completed: 125
+- Completed: 126
 
 ---
 
@@ -42,6 +42,29 @@
     - Step 3 task creation → only phase 2's task (P1-NOTES-PL02) was created, because peer phase sessions run Step 3 concurrently in their own worktrees (tie-break: narrower blast radius)
     - The plan's first R1.6 controller test expected 11 500 ms played but the plan's code gave 12 500 (no time update follows a pause in the test, so the gap across the pause was counted, capped at 1 s) → onPause also feeds the counters a non-advancing tick, so play stops counting at the pause itself (rung 3: the plan's test code block, and its note that the cause is the code, not the test)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching this repo's swarm precedent, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. Phase 2 ticked in the coordinator's plan index (not committed from here). No successor to unblock: phases 3 and 5 depend on phase 1 and mint their own tasks.
+- [x] **P1-NOTES-L001** Phase 1: Play log: table, writer, daemon wiring
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `stream_play_log` in `src/db/schema.ts` and migration `0044`; `src/directStream/playLog/*` (repo, the in-memory tally per session, types); the calls from `DirectStreamService` (asks, sessions made by play/cache/continue/episode, source switches, session end), from the position route (`positionBody.stats`, the tally, the first report turning `no_picture` into `played`, `ended`/`closed`) and from daemon start (rows left open → `restart`); `AppDeps` wiring; CLAUDE.md's single-writers line; `docs/guide/streaming.md` ("The play log", including what the page counts); `docs/guide/architecture.md` (the `stream_play_log` writer row and data-model entry); the verify feature map (`direct-streaming.md` section before Gotchas, the README's Direct streaming row) and `playlog.sh`; `tests/integration/setup.ts` `truncateAll`; unit and integration tests. Exit: an ask through the service with fakes writes the rows the criteria name; a position report with `stats` updates the row; typecheck, `npm test`, `npm run test:int`, `docs:check` green; `playlog.sh RUN` on a fresh `verify.sh up --direct-stream` run ends `playlog: PASS (ask stats failed beat replaced restart)`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 1 of 5)
+  - **Satisfies**: R1 — "them" → proposal item 1: "**A per-play record**, written once when the session ends: time to first frame, stall count and stalled seconds, source switches and their reason, subtitle outcome, and how it ended (closed by you, failed, switched, finished)." Narrowed by: "mostly i just play it for testing only ... i want to see the capabilities of torrent, mostly. because torrent is the source that provides the best 1080p quality based on my observation" · criteria: R1.1, R1.2, R1.3, R1.4, R1.5
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-L001.md`
+  - **Completed**: 2026-11-27 09:00
+  - **Method**: /implement
+  - **Files**: src/db/schema.ts, drizzle/0044_stream_play_log.sql, drizzle/meta/0044_snapshot.json, drizzle/meta/_journal.json, tests/integration/setup.ts, src/directStream/playLog/types.ts, src/directStream/playLog/derive.ts, src/directStream/playLog/tally.ts, src/directStream/playLog/repo.ts, src/directStream/playLog/log.ts, src/directStream/service.ts, src/http/directStreamApi.ts, src/deps.ts, src/daemon.ts, tests/helpers/memoryPlayLog.ts, tests/unit/directStream/playLog/derive.test.ts, tests/unit/directStream/playLog/tally.test.ts, tests/unit/directStream/playLog/log.test.ts, tests/unit/directStream/playLogService.test.ts, tests/unit/directStream/positionRoute.test.ts, tests/integration/directStream.playLog.int.test.ts, CLAUDE.md, docs/guide/architecture.md, docs/guide/streaming.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/features/README.md, .claude/skills/verify-notesd/scripts/direct-stream/playlog.sh, .workflows/todos.md, .workflows/plan/P1-NOTES-L001.md
+  - **Proof**: verified-after-fix — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1127-085834-2787641/evidence
+  - **Drift**:
+    - No code drift: every line anchor the plan quotes matched the tree.
+    - The plan's playlog.sh played TMDB film 550, which the harness's fake TMDB does not serve; the driver now plays film 467905 (scripts/movies/tmdb.json). J1's expected row therefore reads play|movie|467905|... instead of play|movie|550|....
+    - `npm run db:generate` needs a Postgres URL in the environment although generate never connects; this worktree has no .env.local, so it was run with a placeholder loopback URL. The generated 0044 holds exactly the one table (39 columns, 10 checks) and its two indexes.
+    - origin/feature/stream-play-log moved to ede3b8b (phase 4, src/sessions) while this phase ran; this branch was not rebased, the coordinator integrates it.
+  - **Decided**:
+    - Plan index names worktree .../stream-play-log on feature/stream-play-log; this session runs in .../stream-play-log-p1 on phase-1-stream-play-log → proceeded here (swarm ledger and the coordinator's note name this isolated worktree for phase 1)
+    - Step 3 creates every phase's task; three wave-0 sessions run isolated → created phase 1's task only, id P1-NOTES-L001 (narrower blast radius: avoids three copies of five tasks colliding at integration). Note: todos.py's minter does not parse the 5-letter NOTES code, so peers minting with the same letter would get the same id.
+    - playlog.sh plays film 467905 instead of 550 → rung 2 (exit criterion: all six stages pass on a --direct-stream run); an unknown title's position report answers 404 unknown_title so its page never becomes the stream on screen, which the beat and replaced stages need. Every check of the script is unchanged.
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent; the coordinator's integrator reconciles them. No successor to unblock: phases 2-5 mint their own tasks in their own worktrees.
 
 - [x] **P1-NOTES-SD01** Phase 1: Schema and single writers: the download queue, the kept mark, the story store
   - **Difficulty**: NORMAL

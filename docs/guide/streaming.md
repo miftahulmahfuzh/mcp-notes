@@ -982,6 +982,54 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
   -d '{}' http://127.0.0.1:7317/api/stream/evidence/snapshot
 ```
 
+### The play log
+
+Each play this machine is asked for leaves one row in `stream_play_log`, when the title is known
+(`several_matches` and a play with no title name nothing, so they leave none). The row is written
+behind the play by `PlayLog` (`src/directStream/playLog/`), through `PlayLogRepo`, the table's only
+writer. A write that fails is one line in the daemon's log, `[notesd] play log: ...`, and is dropped:
+the log never fails, delays or changes a play.
+
+What makes a row: a play (`via: play`: the tools, the play menu, `POST /api/stream/play`), a cache
+played from the Cache page (`cache`), a page carrying its play on after a restart (`continue`), and
+the player's previous and next buttons (`episode`).
+
+- **Answered.** The row holds when the ask began, the title, how the source was named (`asked`:
+  `provider`, `cloud`, `torrent`, or none), the session, the channel (`cloud`, `torrent`, `cache`),
+  the provider, the milliseconds from ask to answer and the height that plays. A torrent adds its
+  info hash, the index that listed it, the seeds it listed and the film's bitrate. The outcome is
+  `no_picture` until the page first reports, then `played`. A `played` row is a play that worked,
+  however short: most plays here are tests.
+- **Failed.** No session was made: `failure` is the outcome word (`no_source`, `resolve_failed`,
+  `open_failed`, `torrent_off`, ...), `failure_detail` its message with every query and magnet cut
+  off, and `cloud_failure` and `torrent_failure` the word each channel ended with (`no_stream`,
+  `bot_check`, `dubbed`, `no_source` when the indexes listed no torrent worth trying, `error`, ...;
+  empty when that channel was not asked). Over time these say which titles no torrent, or no cloud
+  source, can play.
+- **A streaming site took it.** Outcome `site`, the site as the provider.
+
+The player page adds its counters to every position report (`stats`: first-frame time, playing time,
+stalls and stalled time, torrent waits and waited time, player errors, each since the page loaded,
+with a random id of the load). The page measures them with `performance.now()`, never the wall
+clock. A stall is one freeze the page's stall timer confirms (`STALL_MIN_MS`), however long it lasts,
+timed from the moment the film stood still until it moves again; a pause, a seek's own wait within
+the grace and the first load are not stalls, and a torrent's wait for a missing part (`waiting for
+the torrent`) is a wait, never a stall. Playing time is only the time the film advanced. Errors are
+the network errors the player rode out (one per episode of restarts) and the streams it declared
+broken. A page load gets a new id when the page loads, and again when the same page moves to
+another session (the episode buttons, a carry-on after a restart), so one id never spans two
+sessions. The daemon keeps the latest of each page load and sums the loads, so a
+reload adds to the play instead of starting it over. The row is written on the first report, then
+at most every 30 s while the film plays, on a source switch and at the end. A paused page's `beat`
+for the stream on screen writes nothing: its counters wait in memory for the next write.
+
+A row is closed with how the play ended: `finished` (the film ended), `closed` (the page closed),
+`replaced` (another play's page took the screen), `expired` (the session ended in memory), or
+`restart` (the daemon started and found it open). A closed row whose page reports again is open
+again. It also keeps the provider it ended on, the automatic and owner-asked source switches, the
+refreshes, why the daemon last moved it, and where the English subtitle came from (the stream, the
+cache, a subtitle from outside the stream, a torrent's subtitle tier, or none).
+
 ### Direct streaming answers
 
 | Answer | Meaning |
@@ -3113,6 +3161,7 @@ rule it states; the few that must never change are also in the repository's `CLA
 | `src/directStream/torrent/source.ts` | `TorrentSource`: a torrent play from the finder's candidates to a session, a kept download (`fetchKept`), a season pack (`fetchPack`) |
 | `src/directStream/torrent/find/` | The torrent finder: one module per index, the indexes asked side by side and their health (`find.ts`), release names (`release.ts`), the ranking and its exclusions (`rank.ts`, `titleSearch.ts`, `dubGroups.ts`), a pasted magnet as a candidate (`candidate.ts`) |
 | `src/directStream/canary.ts` | The daily canary |
+| `src/directStream/playLog/` | The play log: `PlayLog` (the counters per session in memory, the writes behind the play), `PlayLogRepo` (the only writer of `stream_play_log`), the failure words per channel (`derive.ts`) |
 | `src/directStream/trending/` | The Trending list (see [movies.md](movies.md#trending-on-torrents)) |
 | `src/directStream/updateSource.ts`, `claude/streaming/direct/known-titles.json`, `claude/skills/update-cloud-source/` | `/update-cloud-source`: the probe of each new provider against known titles, and the skill |
 | `src/movies/streams.ts`, `src/movies/streamLive.ts` | `MovieStreams`: stream plays from the position reports, verified and stale sources, how a title last played; the stream on screen, in memory |
