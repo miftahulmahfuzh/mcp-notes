@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { Config } from '../config.js';
 import type { Db } from '../db/client.js';
+import type { AppDeps } from '../deps.js';
 import type { DirectStreamService } from '../directStream/service.js';
 import { loadDialogue } from '../directStream/dialogueStore.js';
 import { createGuideWriter, GenreGuides } from './guides.js';
@@ -113,4 +114,20 @@ export function buildMovieWriters(
     writer: storyModel === null ? null : createGuideWriter({ claudeBin, model: storyModel, cwd: join(config.dataDir, 'movies-guide') }),
   });
   return { movieStories, genreGuides };
+}
+
+/** The library's poll loop over NOTESD_MOVIES_ROOTS: started here, closed with the background. One line says what it scans. */
+export function startMoviesSync(deps: Pick<AppDeps, 'movies' | 'config'>, log: (line: string) => void = (line) => console.log(line)): void {
+  if (deps.movies === null) {
+    log('[notesd] movies off: NOTESD_MOVIES=off');
+    return;
+  }
+  deps.movies.start();
+  const m = deps.config.movies;
+  log(
+    m.roots.length === 0
+      ? `[notesd] movies on as ${deps.movies.host}: NOTESD_MOVIES_ROOTS is empty, nothing is scanned`
+      : `[notesd] movies on as ${deps.movies.host}: scanning ${m.roots.join(', ')} every ${Math.round(m.scanMs / 1000)} s, ` +
+          `TMDB ${deps.movies.tmdb === null ? 'off (no TMDB_API_READ_ACCESS_TOKEN or TMDB_API_KEY)' : 'on'}`,
+  );
 }
