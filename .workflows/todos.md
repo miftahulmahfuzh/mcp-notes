@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-27
-**Total Active Tasks**: 21
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 21
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 7
-- Completed: 128
+- Blocked: 0
+- Completed: 158
 
 ---
 
@@ -22,6 +22,15 @@
 
 ### [P1] High
 
+### [P2] Medium
+
+### [P3] Low
+
+### [P4] Backlog
+
+---
+
+## Completed Tasks
 - [x] **P1-NOTES-SH03** Phase 3: Stream health: route, MCP tool, page
   - **Difficulty**: NORMAL
   - **Type**: Feature
@@ -722,61 +731,43 @@
   - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
-- [ ] **P1-NOTES-A073** Phase 7: Go live: land Seer, config, install/restart, first review
+  - **Completed**: 2026-11-02 10:28
+- [x] **P1-NOTES-A073** Phase 7: Go live: land Seer, config, install/restart, first review
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns merging Seer `feature/seer-adversarial` into `~/seer` main and pushing (after full suite), applying migration 027 to Neon, README configuration rows for phase 4's seven keys, one CLAUDE.md Architecture bullet for `src/adversary/*`, `.env.local` keys only if a default forces one, `npm run db:migrate` (drizzle 0011) before build and restart of notesd, one "Review now" and a go-live note. Does not touch feature code (fixes become follow-up tasks). Exit: Seer main has migration applied on Neon; next paper night created the twins (or the phase records when it will); notesd restarted with the reviewer on; at least one verdict or a recorded reason for none.
-  - **Status**: open
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 7 of 7)
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
-- [ ] **P1-NOTES-A086** Phase 2: Fingerprint 304s for notes and graph
-  - **Difficulty**: HARD
-  - **Type**: Refactor
-  - **Context**: Owns: `src/notes/fingerprint.ts`, `src/sessions/graphCache.ts`, the `/api/notes` and `/api/tags` handlers in `src/http/api.ts`, `graphForRepo`/`repoFingerprint` in `src/sessions/readModel.ts`, and the `updatedAt` audit of `cc_sessions` writers (set clauses only). Exit criteria: an unchanged poll of the three endpoints issues one aggregate query; every write invalidates; payloads unchanged; all suites green.
-  - **Status**: pending
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 2 of 5)
-  - **Satisfies**: R2 — Lighter "changed since" checks instead of full re-reads (graph, notes list)
-  - **Depends on**: none
-  - **Plan**: `.workflows/plan/P1-NOTES-A086.md`
-- [ ] **P1-NOTES-A087** Phase 3: Ingest write path: one row read per append
+  - **Completed**: 2026-11-05 12:14
+  - **Method**: /implement (swarm phase 7; entry never flipped)
+  - **Closed**: 2026-11-27 todos audit (docs/plans/2026-11-27-holes-map.md, "Bookkeeping closed"): the phase landed on 2026-11-05 but this entry stayed open. Evidence: `.workflows/orchestration/seer-adversarial/ledger.json` phase 7 `done` with `landed` mcp-notes `d197bc1`, seer `917f04e`; commits `a08ee55` (configuration rows, architecture note), `d197bc1` (merge to main), `439765d` (set landed); `~/seer` main contains `917f04e` and `db/migrations/027_adversary.sql`; the ledger records 027 applied on Neon 2026-11-05 05:13 UTC, drizzle 0011 applied, notesd rebuilt and restarted, toggle on, go-live note 5-7EW. Exit criterion "at least one verdict or a recorded reason for none": the reason was recorded (no `strategy_candidates` before the 2026-11-06 paper night), and on 2026-11-27 the live `GET /api/adversary/overview` lists twins (`COSK-FR-GT-CX`, `RAW35-FR-GT-CX`).
+- [x] **P1-NOTES-A087** Phase 3: Ingest write path: one row read per append
   - **Difficulty**: HARD
   - **Type**: Refactor
   - **Context**: Owns: `ensureSessionRow`, `SessionRef`/`REF_COLUMNS` and the narrow `RETURNING`, the narrow parent select in `upsertFromSubagentTranscript`, optionally `LINK_COLUMNS` in `links.ts`. Exit criteria: one full-row read per main-transcript append; stored data identical; all suites green.
-  - **Status**: pending
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 3 of 5)
   - **Satisfies**: R3 — Verify finding 4 and the ingest path; fix what re-reads bodies/rows
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A087.md`
-- [ ] **P1-NOTES-A088** Phase 4: Summary worker scan gating and settled-row exclusion
-  - **Difficulty**: NORMAL
-  - **Type**: Update
-  - **Context**: Owns: scan gating, `fingerprint`/`changedSince`/`excludeIds` on `SummaryStore`, settled-row exclusion, tests. Exit criteria: idle scan at most every 5 min unless the host's sessions changed, a retry is due or a kick arrived; summaries and embeddings produced as before.
-  - **Status**: pending
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 4 of 5)
-  - **Satisfies**: R4 — Backoff for perpetually-pending rows (summary worker scan)
-  - **Depends on**: none
-  - **Plan**: `.workflows/plan/P1-NOTES-A088.md`
-- [ ] **P1-NOTES-A089** Phase 5: Egress meter and quota circuit breaker
+  - **Completed**: 2026-11-08 09:35
+  - **Method**: /implement (swarm phase 3; no entry was written)
+  - **Closed**: 2026-11-27 todos audit (docs/plans/2026-11-27-holes-map.md, "Bookkeeping closed"): done, not moot. Evidence: commit `127ebd4` "perf(sessions): ingest append reads the full row once, not three times", merged by `36ddcbb` (2026-11-08); ledger phase 3 `done`, 18 files / 178 session integration tests green; `ensureSessionRow` and `REF_COLUMNS` are in `src/sessions/repo.ts` (:271, :102). The phase session recorded no TaskID in the ledger (`task_id: null`), which is why this entry never flipped.
+- [x] **P1-NOTES-A089** Phase 5: Egress meter and quota circuit breaker
   - **Difficulty**: NORMAL
   - **Type**: Update
   - **Context**: Owns: `src/db/meter.ts`, `src/db/quota.ts`, `src/db/client.ts` instrumentation, `src/http/debugApi.ts` and its mount, hourly log line in `src/background.ts`, README rows. Exit criteria: `/api/debug/egress` shows rows/bytes per query shape; a 53000 answer pauses queries for 30 min; env switch restores old behaviour.
-  - **Status**: pending
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 5 of 5)
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-
-### [P2] Medium
-
-### [P3] Low
-
-### [P4] Backlog
-
----
-
-## Completed Tasks
+  - **Completed**: 2026-11-08 09:31
+  - **Method**: /implement (swarm phase 5; no entry was written)
+  - **Closed**: 2026-11-27 todos audit (docs/plans/2026-11-27-holes-map.md, "Bookkeeping closed"): done, not moot. Evidence: commit `23247b0` "feat(db): egress meter, /api/debug/egress and Neon quota circuit breaker", integration fix `488d3eb`, feature map `d4b253c`, merged by `36ddcbb` (2026-11-08); `src/db/meter.ts`, `src/db/quota.ts`, `src/http/debugApi.ts` exist. The ledger carries the non-canonical id `P5-egress-meter` for this phase, which is why this entry never flipped. Since 2026-11-18 the daemon runs on the local Postgres, so the Neon quota breaker now guards only the one-time import: see the holes map.
 - [x] **P1-NOTES-SV04** Phase 4: Sessions search says when it has no vectors
   - **Difficulty**: EASY
   - **Type**: Bug
@@ -901,7 +892,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: TMDB list calls in `src/movies/tmdb.ts`, candidates, `src/directStream/{prober,idle,candidates}.ts`, `ProbeRepo` in `src/directStream/repo.ts` (freshness through phase 5's `freshStreamSourceSql`), migration `0022`, the prober settings (in phase 3's `DirectStreamConfig`), `GET /api/stream/prober`, `src/background.ts`, `verify.sh --prober` on top of `--direct-stream`, the fake TMDB's lists, "The prober" subsection, configuration rows. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the new integration file pass. A `--direct-stream` throwaway daemon with the prober setting unset reports `off_reason: "setting_off"` and writes no probe row; with `--direct-stream --prober` it lists the fake TMDB's titles as ranked candidates and holds every pass at `not_idle` with zero probes. Unit tests prove off, not-idle, budget (probes, seconds and each resolve's deadline), catalog size and re-check order.
-  - **Status**: complete
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 10 of 10)
   - **Satisfies**: R6 — "background prober after" with "D5 and D6 are proposed and not yet confirmed by the owner: plan them as late phases behind a setting, and list them as the owner's to confirm" · criteria: R6.1, R6.2, R6.3
   - **Depends on**: P1-NOTES-A112, P1-NOTES-A115, P1-NOTES-A118, P1-NOTES-A119
@@ -919,7 +910,7 @@
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `claude/streaming/direct/templates.mjs` + the `templates <site url>` CLI command (a `parseArgs` case and a `main` branch quoted against phase 1), `src/directStream/updateSource.ts` (reads phase 2's `known-titles.json`), `DirectStreamRepo.insertProviders`, `DirectStreamService.updateSource(site)`, `direct_stream_sources` and `direct_stream_update_source` (through `DirectStreamToolDeps.providers` / `updateSource`), `CLAUDE_CODE_ONLY_TOOL_NAMES`, `claude/skills/update-cloud-source/SKILL.md`, `update-cloud-source` in `SKILL_NAMES`, the `/update-cloud-source` subsection and the chat.md row edits. Exit criteria: the reader prints the 24 fmovies providers from the real chunk and the live site; with a fake runner against real Postgres, new providers are inserted once with `origin_site`, existing rows read back unchanged, each new one is probed against the known titles, and every unreadable-site case leaves the table identical; the two tools are registered and the chat bar's allow list has `direct_stream_sources` and not `direct_stream_update_source`; `npm test`, `npm run typecheck` and `npm run docs:check` pass.
-  - **Status**: complete
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 8 of 10)
   - **Satisfies**: R4 — "and /update-cloud-source skills first" · criteria: R4.1, R4.2
   - **Depends on**: P1-NOTES-A112, P1-NOTES-A117
@@ -936,7 +927,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `claude/streaming/direct/{playcheck.mjs,playgate.mjs}` (the wrapper runs under `verify.sh up --web --direct-stream` with `NOTESD_DIRECT_STREAM_CLI`; pages open as `/stream/<id>?muted=1` in a normal window, never full screen), the findings file's "Playback" section, `browser_only` in the seed, and fixes in `web/src/stream/*` that a finding demands. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; the findings Playback section says, with measured numbers, whether DASH (VidLink), VidNest and an English subtitle play in our page, and records the forced-expiry refresh-and-continue result; `playcheck.mjs audit` passes, so every provider that cannot play outside its own page is `browser_only`.
-  - **Status**: complete
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 6 of 10)
   - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.3
   - **Depends on**: P1-NOTES-A112, P1-NOTES-A114
@@ -959,7 +950,7 @@
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: title lookup from words (`src/directStream/{match,lookup}.ts`; `StreamTarget` is phase 3's `StreamRef`), `direct_stream_find` and `direct_stream_play` in `src/mcp/directStreamTools.ts` (with `DirectStreamToolDeps`, `playFailure` reading `DirectStreamError`), `DIRECT_STREAM_TOOL_NAMES` and captions in `src/chat/status.ts`, `src/chat/prompt.ts`, `src/mcp/instructions.ts`, `scope: 'all'` and the stream play source in `src/mcp/movieTools.ts`, `claude/skills/direct-stream/SKILL.md`, `SKILL_NAMES` in `scripts/install.sh`, the caption, allow-list and behaviour lines in `docs/guide/chat.md`, `npm run docs:gen`, the `/direct-stream` lines of `docs/guide/streaming.md`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the integration file pass; J1 to J5 and the neighbor check pass; `scripts/install.sh` links `~/.claude/skills/direct-stream`. The full-screen play with sound is the owner's to run (Follow-ups).
-  - **Status**: complete
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 7 of 10)
   - **Satisfies**: R3 — "the /direct-stream [...] skills first" · criteria: R3.1, R3.2, R3.3
   - **Depends on**: P1-NOTES-A114, P1-NOTES-A115
@@ -1232,7 +1223,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/movies/parse.ts`, `tmdb.ts`, `match.ts`, `fallback.ts`, their unit tests, `tests/helpers/tmdbFixtures.ts` and TMDB JSON fixtures under `tests/fixtures/movies/`. `tmdb.ts` declares a field-for-field mirror of phase 1's `types.ts` types (same wave); phase 3 replaces it with a re-export. Does not touch the database, config (takes a plain `{ token, apiKey, apiBase }`), scanning, routes, web; no network in tests. Exit criteria: every filename listed in the request parses to the expected title/year/season/episode (table-driven test with the real names); `tvDetails` returns episodes for every season; a low-confidence search goes to the fallback; an unreachable TMDB raises `TmdbError`.
-  - **Status**: complete
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 2 of 9)
   - **Satisfies**: R1, R2 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ... · criteria: R1.3, R2.1, R2.2
   - **Plan**: `.workflows/plan/P1-NOTES-A103.md`
@@ -1427,6 +1418,7 @@
   - **Satisfies**: R2 — Lighter "changed since" checks instead of full re-reads (graph, notes list)
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-E202.md`
+  - **Alias**: 2026-11-27 todos audit (docs/plans/2026-11-27-holes-map.md, "Bookkeeping closed"): the plan index minted `P1-NOTES-A086` for this phase; its never-flipped open entry was removed as a duplicate of this one. Plan files: `.workflows/plan/P1-NOTES-E202.md` (executed), `.workflows/plan/P1-NOTES-A086.md` (the minted stub). Commit `7672011`.
   - **Completed**: 2026-11-08 09:33
   - **Method**: /do
   - **Files**: src/notes/fingerprint.ts, src/sessions/graphCache.ts, src/sessions/readModel.ts, src/http/api.ts, tests/unit/notes.fingerprint.test.ts, tests/unit/sessions.graphCache.test.ts, tests/integration/egress.fingerprint.int.test.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.unfinished.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-E202.md
@@ -1434,7 +1426,7 @@
   - **Decided**: fingerprint timestamps cast to text so sub-ms writes still move it (rung 3, exit criteria: every write invalidates)
     added GraphCache.clear() and exported GRAPH_CACHE_MAX_ENTRIES beyond the plan code, for resetGraphCache() (rung 3)
 
-- [x] **P1-NOTES-A085** Phase 4: Summary worker scan gating and settled-row exclusion
+- [x] **P1-NOTES-A088** Phase 4: Summary worker scan gating and settled-row exclusion
   - **Difficulty**: NORMAL
   - **Type**: Update
   - **Context**: Owns scan gating, fingerprint/changedSince/excludeIds on SummaryStore, settled-row exclusion, tests in src/sessions/summaryWorker.ts. Exit: idle scan at most every 5 min unless host sessions changed, a retry is due or a kick arrived; summaries/embeddings produced as before.
@@ -1443,6 +1435,7 @@
   - **Satisfies**: R4 — Backoff for perpetually-pending rows (summary worker scan)
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A085-p4.md`
+  - **Renamed**: 2026-11-27 todos audit (docs/plans/2026-11-27-holes-map.md, "Bookkeeping closed"): this entry was written as a second `P1-NOTES-A085` (phase 1 holds that id); it now carries `P1-NOTES-A088`, the id the plan index minted for phase 4, and the never-flipped open `P1-NOTES-A088` entry was removed. Plan files: `.workflows/plan/P1-NOTES-A085-p4.md` (executed), `.workflows/plan/P1-NOTES-A088.md` (the minted stub). Commit `bac2c2f`.
   - **Completed**: 2026-11-08 09:28
   - **Method**: /do
   - **Files**: src/sessions/summaryWorker.ts, tests/unit/sessions/summaryWorker.test.ts, tests/integration/sessions.summaries.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A085-p4.md, .workflows/orchestration/neon-egress-reduction/PLAN.md
