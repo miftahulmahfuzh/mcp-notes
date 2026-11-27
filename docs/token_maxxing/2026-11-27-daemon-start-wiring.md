@@ -13,7 +13,7 @@
   - Start wiring that had no direct test (closures, late-bound `deps.*` references, the movies/stream hooks, the shared-import restart loop) now has 92 unit tests driving it with injected deps.
   - Proven equivalent: start/stop logs of a throwaway daemon match the pre-refactor baseline, and the restart, direct-stream, torrent and subtitle journeys pass.
 - **Branch:** token-maxxing-2026-11-27-daemon-start-wiring
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit d35c3ea, landed by coordinator orch-stream-play-log; the merge needed one fix, 68506f7)
 - **Approx token burn:** several million (two full-file refactors, 92 tests, repeated full-suite, integration and throwaway-daemon runs) 🔥
 
 ## Context & Motivation
