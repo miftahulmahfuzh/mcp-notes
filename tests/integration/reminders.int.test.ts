@@ -128,11 +128,11 @@ describe('POST /api/sessions/hook/start reminders', () => {
   let repoKey: () => Promise<string | null> = async () => 'mcp-notes';
   const app = () => new Hono().route('/', sessionHookRoutes(h.deps, { now: () => clock.getTime(), repoOf: () => repoKey(), repoBudgetMs: 200, hostname: () => 'test-host' }));
 
-  async function start(session: string, source: string, cwd = '/home/u/mcp-notes'): Promise<SessionHookStartReply> {
+  async function start(session: string, source: string, cwd = '/home/u/mcp-notes', parent: string | null = null): Promise<SessionHookStartReply> {
     const res = await app().request(`http://127.0.0.1${SESSION_HOOK_START_PATH}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-notes-capture': '1' },
-      body: JSON.stringify({ session, cwd, source, host: 'test-host' }),
+      body: JSON.stringify({ session, cwd, source, host: 'test-host', ...(parent === null ? {} : { parent }) }),
     });
     expect(res.status).toBe(200);
     return (await res.json()) as SessionHookStartReply;
@@ -159,6 +159,14 @@ describe('POST /api/sessions/hook/start reminders', () => {
     expect((await start(S3, 'startup')).reminders.map((r) => r.body)).toEqual(['mine']);
     clock = at(7 * DAY_MS + REMINDER_REPEAT_MS);
     expect((await start(S1, 'startup')).reminders.map((r) => r.body)).toEqual(['mine', expect.stringContaining('proposal item 3')]);
+  });
+
+  it('a session another session spawned answers none and leaves the reminder for the owner\'s next start', async () => {
+    const repo = repoAt(() => T0);
+    const mine = await repo.add({ body: 'mine', dueAt: at(-HOUR), repo: 'mcp-notes' });
+    expect((await start(S2, 'startup', '/home/u/mcp-notes', S1)).reminders).toEqual([]);
+    expect((await start(S2, 'clear')).reminders).toEqual([]);
+    expect((await start(S3, 'startup')).reminders.map((r) => r.id)).toEqual([mine.id]);
   });
 
   it('a done reminder is never answered again', async () => {

@@ -194,9 +194,14 @@ export function remindersOf(reply) {
     const body = typeof r.body === 'string' ? r.body.replace(/\s+/g, ' ').trim().slice(0, MAX_REMINDER_BODY) : '';
     if (body === '') continue;
     if (typeof r.due_at !== 'string' || Number.isNaN(Date.parse(r.due_at))) continue;
-    out.push({ id: r.id, body, due: new Date(r.due_at).toISOString().slice(0, 10) });
+    out.push({ id: r.id, body, due: localDate(new Date(r.due_at)) });
   }
   return out;
+}
+
+/** A day as this machine counts it (YYYY-MM-DD): `due: "2026-12-04"` is stored as local midnight, which is 12-03 in UTC east of Greenwich. */
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** The reminder block of the context, or null when there is none. */

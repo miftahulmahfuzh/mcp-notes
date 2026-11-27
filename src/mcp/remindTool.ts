@@ -9,7 +9,7 @@ export const REMIND_TOOL_NAME = 'remind';
 export const MAX_IN_DAYS = 3650;
 
 const DUE_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const DUE_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const DUE_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 const REMINDER_ID = /^#?([1-9]\d{0,14})$/;
 
 const DESCRIPTION =
@@ -52,7 +52,14 @@ export function dueFrom(text: string): Date {
     if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== date) throw invalid(`due ${text} is not a date`);
     return at;
   }
-  if (DUE_INSTANT.test(text) && !Number.isNaN(Date.parse(text))) return new Date(text);
+  const instant = DUE_INSTANT.exec(text);
+  if (instant !== null && !Number.isNaN(Date.parse(text))) {
+    // Date.parse rolls an impossible day or hour over (02-30 is 03-02, 24:00 the next day): refused, as a date is.
+    const [year, month, date, hour, minute, second] = instant.slice(1, 7).map((n) => (n === undefined ? 0 : Number(n))) as [number, number, number, number, number, number];
+    const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    if (month < 1 || month > 12 || date < 1 || date > days || hour > 23 || minute > 59 || second > 59) throw invalid(`due ${text} is not a date`);
+    return new Date(text);
+  }
   throw invalid('due must be an ISO date (2026-12-04) or a datetime with its offset (2026-12-04T09:00:00+07:00)');
 }
 
@@ -75,6 +82,8 @@ export function parseRemindArgs(args: RemindArgs, now: Date): RemindRequest {
   let dueAt: Date;
   if (hasDue) {
     dueAt = dueFrom(due);
+    // A due time more than a day ago is a typo (a wrong year): it would only show at once.
+    if (dueAt.getTime() < now.getTime() - DAY_MS) throw invalid(`due ${due} is in the past`);
   } else {
     const days = args.in_days as number;
     if (!Number.isFinite(days) || days < 0 || days > MAX_IN_DAYS) throw invalid(`in_days must be between 0 and ${MAX_IN_DAYS}`);

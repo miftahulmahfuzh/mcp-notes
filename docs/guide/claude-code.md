@@ -347,9 +347,12 @@ without one, and the reminder is due and not done, notes-session puts it at the 
 session's context with its number, and Claude tells you about it in its first reply. A shown
 reminder is not shown again for 20 hours, so a burst of new sessions mentions it once; it comes
 back the next day until it is marked done. At most five are shown at one start, soonest first.
+A session another session started (a swarm phase, a spawned worker: one with a parent) is shown
+none, so it never uses up your showing.
 
 The `remind` tool manages them: "remind me in two weeks to look at the Seer twins" is `add` with
-`in_days: 14` (or `due: "2026-12-11"`, midnight on this machine), `list` shows the open ones,
+`in_days: 14` (or `due: "2026-12-11"`, midnight on this machine, and said as that day; a due
+time more than a day ago or a date that does not exist is refused), `list` shows the open ones,
 and "that's handled" is `done` with the number. A reminder's repository is the same key the
 Projects page uses (`mcp-notes`), worked out from the session's working directory the way the
 session graph does it.
