@@ -1,9 +1,9 @@
 # mcp-notes
 
 A personal notes system for someone who has Claude Code open all day. One local daemon, `notesd`,
-keeps notes in Postgres and photos and files on disk, and serves them three ways: to every Claude Code session
-as an MCP server (`/n <anything>` from any repo), to a JSON API, and to a dark web wall at
-`http://localhost:7317` with its own chat bar. The same daemon maps your Claude Code sessions,
+keeps notes in Postgres and photos and files on disk, and serves them three ways: to every Claude
+Code session as an MCP server (`/n <anything>` from any repo), to a JSON API, and to a dark web
+wall at `http://localhost:7317` with its own chat bar. The same daemon maps your Claude Code sessions,
 reads your other apps, reviews Seer's stock picks and keeps your film library.
 
 ![The wall: text notes and photo notes mixed](docs/guide/img/wall/everything.png)
@@ -85,7 +85,7 @@ npm run dev          # daemon with reload
 npm run typecheck && npm test
 npm run test:int     # integration tests against Postgres in Docker
 npm run docs:gen     # regenerate the MCP and HTTP reference after adding a tool or route
-npm run docs:shots -- wall   # retake a guide's pictures from a throwaway daemon
+npm run docs:shots -- wall movies   # retake a guide's pictures from a throwaway daemon
 ```
 
 The docs are checked against the code: `npm test` fails when the generated reference is stale, a

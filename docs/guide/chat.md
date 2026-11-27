@@ -57,13 +57,15 @@ The status is a short caption for the tool call in progress. It clears when text
 | saving the pasted photo as a note, attaching the pasted photo | using a picture pasted into the chat |
 | attaching a photo, removing a photo, restoring a photo, moving a photo to its own note | changing a note's pictures |
 | reading expenses, reading runs, reading seer, reading daily-words | reading a connector |
-| looking up a word, saving a word, checking for a similar saying, saving a saying | using daily-words |
+| looking up a word, saving a word, checking for a similar saying, saving a saying, noting where a saying is from | using daily-words |
 | searching sessions, reading a session, reading a session transcript, counting session tokens, opening a session in tmux | using the session tools |
 | reading Seer Adversarial, reading Claude's verdicts, reading Claude's record | reading the adversary tools |
-| searching movies, reading a title, reading watch history, reading a filmography, marking a title, looking at a title's pictures, opening VLC | using the movie tools |
+| searching movies, reading a title, reading watch history, reading a filmography, marking a title, looking at a title's pictures, refreshing a title from TMDB, opening VLC | using the movie tools |
 | searching the streaming sites, starting a film | using the streaming tools |
-| looking for a stream, starting a stream, looking for titles to stream, reading the stream providers, reading the stream cache on disk, deleting stream cache, undoing a cache deletion | using the direct-streaming tools |
+| looking for a stream, starting a stream, looking for titles to stream, reading the stream providers, reading how streams played, reading the stream cache on disk, deleting stream cache, undoing a cache deletion | using the direct-streaming tools |
 | searching the web, reading a web page | calling WebSearch or WebFetch |
+
+`direct_stream_torrents` and `warp` have no caption: the status line stays as it was while they run.
 
 ### Ids in an answer are links
 
@@ -85,7 +87,8 @@ The rules that keep this from misfiring:
   longer word.
 - A note id is linked when it is written in canonical upper case, or in any case when the page
   already holds that note. A note the wall has not loaded is fetched on click. A deleted one says
-  "A-B32 is deleted. Restore it from the bin." and an unknown one says "no note A-B32".
+  "A-B32 is deleted. Restore it from the bin.", an id that names a note picture opens that picture
+  large, and an unknown one says "no note A-B32".
 - A node id is linked only when the server knows that session. `CI-CD` and `UI-UX` have the same
   shape and stay text.
 - A movie id is linked by shape alone. The pop-up says so when the id names nothing. A movie id
@@ -141,7 +144,8 @@ one run per message.
   built per run, so "today" is current: relative dates ("last week", "30 oct") are resolved in the
   daemon's time zone, weeks start on Monday. The notes MCP server's own instructions come on top.
 - **The login, never a key.** `src/chat/env.ts` strips `ANTHROPIC_API_KEY`, base-URL and model
-  overrides and every `CLAUDE_CODE_*` variable from the child's environment, so a daemon started
+  overrides, every `CLAUDE_CODE_*` variable and `CLAUDECODE`, `CLAUDE_PID` and `CLAUDE_EFFORT`
+  from the child's environment, so a daemon started
   from inside a Claude Code terminal does not hand its session markers to the run.
 - **Limits.** `CHAT_MAX_TURNS` (default 24) caps the agent's turns per message and
   `CHAT_TIMEOUT_MS` (default 180000) caps the wall-clock time. `NOTESD_CLAUDE_BIN` names the
@@ -159,13 +163,13 @@ The allow list, by group. Arguments are in the [MCP tool reference](reference/mc
 | Connectors | every `expenses_*`, `runs_*`, `seer_*` tool | No, read-only |
 | daily-words | every `dword_*` tool | Yes: words and sayings |
 | Seer Adversarial | `adversary_overview`, `adversary_verdicts`, `adversary_scorecard` | No |
-| Movies | `movies_list`, `movies_get`, `movies_history`, `movies_person`, `movies_mark`, `movies_pictures`, `movies_continue` | `movies_mark` stores a mark; `movies_continue` starts VLC |
+| Movies | `movies_list`, `movies_get`, `movies_history`, `movies_person`, `movies_mark`, `movies_pictures`, `movies_refresh`, `movies_continue` | `movies_mark` stores a mark; `movies_refresh` re-reads a title from TMDB and replaces its stored metadata and episodes; `movies_continue` starts VLC |
 | Streaming sites | `streaming_find`, `streaming_play` | `streaming_play` opens Chrome and starts a film |
-| Direct streaming | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_sources`, `direct_stream_torrents`, `stream_disk`, `warp` | `direct_stream_discover` only reads TMDB and the library; `direct_stream_play` opens the player page full screen in the streaming Chrome; `stream_disk` reads and deletes what this machine keeps on disk for streaming; `warp` switches Cloudflare WARP for the whole machine; `direct_stream_update_source` is Claude Code's `/update-cloud-source` only, and `direct_stream_cache` and `direct_stream_sync_subtitle` are Claude Code's only too |
+| Direct streaming | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_sources`, `direct_stream_torrents`, `direct_stream_health`, `stream_disk`, `warp` | `direct_stream_discover` only reads TMDB and the library; `direct_stream_health` only reads the play log; `direct_stream_play` opens the player page full screen in the streaming Chrome; `stream_disk` reads and deletes what this machine keeps on disk for streaming; `warp` switches Cloudflare WARP for the whole machine; `direct_stream_update_source` is Claude Code's `/update-cloud-source` only, and `direct_stream_cache` and `direct_stream_sync_subtitle` are Claude Code's only too |
 | Web | `WebSearch`, `WebFetch` | No |
 
-Not on the list: `link_note` and `unlink_note` (linking a note to a session is `/n` only) and the
-adversary redo tools.
+Not on the list: `link_note` and `unlink_note` (linking a note to a session is `/n` only),
+`remind`, and the adversary redo tools.
 
 ### How it is told to behave
 

@@ -3,8 +3,10 @@
 ## Sub-features
 - Stream side (direct-streaming phase 9). Two icons at the top of `/movies` (group "Library or
   Stream") switch to `/movies?side=stream`: the same grid, fed by `GET /api/movies/stream`, which
-  lists only titles with a `movie_stream_sources` row for this host, not stale, verified inside
-  `NOTESD_STREAM_FRESH_DAYS`. No rail or sidebar entry. A title opened from it
+  lists titles with a `movie_stream_sources` row for this host, not stale, verified inside
+  `NOTESD_STREAM_FRESH_DAYS`, and also a title last played from a torrent (which verifies no source)
+  and an interested title with no verified source (`interested_only`, shown under that filter
+  alone). No rail or sidebar entry. A title opened from it
   (`/movies/<id>?side=stream`) shows a stream line (provider, quality, English subtitle); its Play
   posts `POST /api/stream/play` once; `no_source` says so and the title leaves the grid on the
   refresh. A file here stays the default Play, the stream a second icon (R5.5). Series list every
@@ -186,8 +188,13 @@
   Proof: journey stages 1 and 12, `tests/unit/movies/tmdb.test.ts` (`pickTrailer`, `trailers`),
   `tests/integration/movies.sync.int.test.ts` ("looks up the trailers"),
   `web/src/App.movies.test.tsx` ("the trailer icon").
-- MCP: `movies_list`, `movies_get`, `movies_history`, `movies_continue`, `movies_person`, `movies_mark`
-  (also in the chat bar). SSE `changed` on `/api/movies/events`.
+- MCP: `movies_list`, `movies_get`, `movies_history`, `movies_continue`, `movies_person`, `movies_mark`,
+  `movies_pictures`, `movies_refresh` (also in the chat bar; `movies_refresh` re-reads one title from
+  TMDB, replacing its stored details and episodes). SSE `changed` on `/api/movies/events`. Proof:
+  `tests/unit/mcp.movieTools.test.ts` (the eight names, which ones write),
+  `tests/integration/movies.mcp.int.test.ts`.
+- `/trace-vlc-bug` reads the VLC health log. It needs Windows VLC, so it is proven by hand on WSL with
+  the skill's `trace.sh --wall` pointed at a throwaway run, never by `verify.sh`.
 - `movies_mark` beyond watched, rating and review: `season` with `watched` marks one season's
   episodes finished or takes the marks back (the page's season button), `not_interested` and `interested` set or
   clear those marks (one clears the other), and a title key the library does not hold (`tv-94997`) is stored from TMDB

@@ -22,10 +22,21 @@
   off, automatic passes write one `paused` mark per due decision (Seer `adversary_marks`) and review
   nothing; "review now" (`AdversaryService.reviewNow`, phase 5's API) still reviews.
 - Before Seer migration 027 exists the job logs "Seer's database has no adversary tables yet" and idles.
+- The toggle is per machine: each laptop's own notes database holds its `adversary.auto`.
+- `/redo <method> <TICKER>` (`adversary_redo_context`, `adversary_redo_submit`): Claude Code
+  redoes one verdict with real web search, only while the pick's session has not opened. The new
+  verdict supersedes the old one (`superseded_by`); a closed session answers `can_redo: false`
+  (`state: closed`) and a late submit `too_late`, writing nothing. No headless model is billed: the
+  session is the caller. Unit: `tests/unit/adversary/redo.test.ts`,
+  `tests/unit/adversary/redoService.test.ts`.
+- The nightly dispatch (`src/adversary/dispatch.ts`, `NOTESD_SEER_DISPATCH`, `NOTESD_GH_BIN`):
+  starts Seer's GitHub nightly from this machine once its data can be fetched. Unit:
+  `tests/unit/adversary/dispatch.test.ts`.
+- `/check-seer-adversarial-nightly`: a read-only skill with no notesd code; proven by hand only.
 
 ## How to get to it (user POV)
-- Nothing on the wall yet (phase 6). The owner sees it in Seer: verdict rows for tonight's picks,
-  and twins that skip objected stocks. The daemon log says `adversary reviewer on as <host>`.
+- The wall's `/adversary` page (phase 6, below). In Seer: verdict rows for tonight's picks, and
+  twins that skip objected stocks. The daemon log says `adversary reviewer on as <host>`.
 
 ## Driving it with verify.sh
 - `SEER_DIR=<seer checkout with migration 027> $V up --adversary` builds a throwaway Seer DB and
@@ -38,12 +49,23 @@
 - Paid journey: leave the toggle absent, seed one twinned bracket original with two real symbols
   for a session a few days ahead, start with `ADVERSARY_DAILY_CAP=1`; expect one verdict row and one
   `skipped_budget` row. Costs one Sonnet gathering run plus one Opus verdict.
+- `/redo`, free: seed one twinned bracket original whose candidate session is days ahead, then
+  `$V mcp RUN adversary_redo_context '{"strategy":"A","symbol":"SLB"}'` (expect `can_redo: true`) and
+  `adversary_redo_submit` with one source; read Seer's `adversary_verdicts` (the old row's
+  `superseded_by` set) and `adversary_reviews` (zero tokens). Seed a past session to see
+  `can_redo: false`, `state: closed`.
 
 ## Gotchas
 - A plain `$V up` pins `NOTESD_ADVERSARY=off`; only `--adversary` turns it on, and only against the
   throwaway Seer DB.
 - Seed the toggle before the roster: the first poll runs within `ADVERSARY_POLL_MS` of `up`.
 - `strategy_candidates` rows for a session whose open has passed are never reviewed (cutoff).
+- `verify.sh up --adversary` does not pin `NOTESD_SEER_DISPATCH=off` (the docs shots script does).
+  Set it yourself: `NOTESD_SEER_DISPATCH=off $V up --adversary`, so a run with the toggle on can never
+  try `gh workflow run` against Seer.
+- A redo row counts toward `ADVERSARY_DAILY_CAP` today (see
+  `docs/plans/2026-11-27-guide-audit-findings.md`); on a capped run, a redo can push a later pick to
+  `skipped_budget`.
 - The integration tests (`tests/integration/adversary`) need `SEER_DIR` pointing at a Seer checkout
   with migration 027, else they skip with that reason.
 
@@ -107,7 +129,8 @@
   "Review this method now" (starts one pass even while off; the 202 answers at once and the page shows
   "review started", the verdicts arrive later over SSE), Focus ("Focus (Alt+Z)"). Alt+Z toggles focus mode (`?focus=1`: no rail, sidebar or header) and Esc
   leaves it, exactly as on Projects (shared `useFocusShortcut`).
-- Live: SSE `adversary` events and a 60 s poll re-fetch the page.
+- Live: SSE `adversary` events and a 120 s poll (`ADVERSARY_POLL_MS` in `useAdversary.ts`; 60 s
+  stale on becoming visible) re-fetch the page.
 - Chat pill "Ask about Seer Adversarial": sends through the wall chat with `[Seer Adversarial · <id|overview>]`
   on the first line; the answer opens in the answer panel over the page.
 - Empty states: Seer unreachable (`seer_unavailable`), no twins yet, no verdicts yet, no objections yet.

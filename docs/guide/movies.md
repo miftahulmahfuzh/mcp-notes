@@ -68,7 +68,7 @@ change behaviour:
 | `NOTESD_MOVIES_SCAN_MS` | Pause between passes, default two minutes. |
 | `NOTESD_MOVIES_MIN_SECONDS` | Videos shorter than this (default 900, 15 minutes) never reach TMDB. |
 | `NOTESD_MOVIES_FALLBACK_MODEL` | The Claude model asked to name a file TMDB could not match (default `haiku`); `off` disables it. |
-| `NOTESD_MOVIES_STORY_MODEL` | The Claude model that writes an episode's story and a genre's guide (default `sonnet`); `off` disables both. |
+| `NOTESD_MOVIES_STORY_MODEL` | The Claude model that writes a story (an episode's or a season's) and a genre's guide (default `sonnet`); `off` disables them. |
 | `TMDB_API_READ_ACCESS_TOKEN` / `TMDB_API_KEY` | The token is preferred; the key is used only without one. With neither, files are still registered, all unmatched as `no_tmdb_credentials`. |
 | `NOTESD_VLC_INI` | VLC's `vlc-qt-interface.ini`. Unset: films opened from Explorer are not seen, only plays started by notesd. |
 | `NOTESD_VLC_BIN`, `NOTESD_CURL_EXE` | The Windows `vlc.exe` and `curl.exe`. Play needs both, WSL interop and `wslpath`. |
@@ -780,8 +780,8 @@ The heartbeat icon beside the Cache drive icon on the Stream side opens `/movies
 plays went on this machine, read from the [play log](streaming.md#the-play-log) the daemon keeps of every
 play ask. Only this machine's rows are read. The three buttons at the top choose the period: 7, 30 or 90 days.
 
-- **By channel.** One row for every ask, then Torrents, Cloud, and From disk or Streaming sites when they
-  played. Each says how many asks reached the screen (`3/5` and `60%`), the median time to the first frame
+- **By channel.** One row for every ask, then Torrents, Cloud, and From disk, Streaming sites or No source
+  named when they have asks. Each says how many asks reached the screen (`3/5` and `60%`), the median time to the first frame
   and from the ask to a player, stalls per hour played and the share of plays at 1080p or better. A play
   that reached the screen is a success however short it was: a one-minute test of a torrent counts as a
   play, never as a failure. Under each channel, its torrent indexes or cloud providers with the same
@@ -926,8 +926,8 @@ freezes after the fact.
   one `hang` start line is written and the play stays open at its last position, however long the
   silence lasts. An end line follows when it answers again, exits, or tracking ends. When the
   process is gone the play closes at once. When the monitor cannot tell whether the process is
-  alive (the health log is off, or there is no `powershell.exe`), six silent polls in a row end
-  the tracking at the last position.
+  alive (the health log is off, or there is no `powershell.exe`), a refused connection ends the
+  play at once and six unanswered polls in a row (timeouts) end the tracking at the last position.
 - **Driver resets.** While any `vlc.exe` exists, every sample also reads the Windows System log
   for `Display` events and writes one `gpu_reset` line per new one, with the VLC pids and the
   followed play at that moment. Event 4101 ("display driver stopped responding and has successfully
@@ -1274,15 +1274,15 @@ at all.
 - **Filters the tool does not have:** genre, year, rating, runtime, sort order. `movies_list`
   returns year and rating, so Claude can filter a list itself; genres are only in `movies_get`.
 - **History filters:** by machine, or by one file.
-- **Edits:** delete a title, a file row or a play; change a title's metadata or refresh it from
-  TMDB; rate or review one episode.
+- **Edits:** delete a title, a file row or a play; change a title's metadata by hand (a refresh
+  from TMDB is `movies_refresh`); rate or review one episode.
 - **What a title is about:** `movies_get` has TMDB's synopsis of a title and of each episode.
   An episode's whole story is the wall's book icon
   ([streaming.md](streaming.md#what-a-title-says-its-story)); a season's is its row's book icon.
 - **Titles you do not have:** the watch list is the "interested" mark (`movies_mark` with
   `interested: true`, by title key for a title not stored yet), shown under the Stream side's
   `interested` filter; no tool lists it on its own. `movies_person` lists a person's films
-  outside the library,
+  outside the library, `direct_stream_discover` finds titles by year, language, person, studio or
   streaming service ([streaming.md](streaming.md#finding-something-to-stream)), and "films like
   this" is a web search checked against `movies_list`. Finding such a film on pahe.ink, or finding
   and playing it on idlix, lk21, flicksy or dramacool, is in [streaming.md](streaming.md).
@@ -1294,7 +1294,7 @@ at all.
 | `NOTESD_MOVIES=off` | Every `/api/movies*` route: 503 `movies_off` (`GET /api/movies/player` answers `{available: false, reason: "movies_off"}`). Every tool: `movies_off: the movie library is not running on this server ...`. The page says how to turn it on. |
 | `NOTESD_DIRECT_STREAM=off` | `GET /api/movies/stream` answers `{enabled: false, reason: "direct_stream_off", titles: []}`; the Stream side says how to turn it on and its stream buttons are disabled; `POST /api/stream/play` answers 503 `direct_stream_off`. |
 | `NOTESD_STREAM_DOWNLOADS=off` | `POST /api/stream/downloads` answers 503 `downloads_off`; the Download buttons still show, and a click says downloads are off on this daemon. |
-| `NOTESD_TRENDING=off`, or torrents, direct streaming, movies or TMDB off | `GET /api/movies/trending` answers `{enabled: false, reason, titles: []}` and the section says so; no index, TMDB or swarm is asked. |
+| `NOTESD_TRENDING=off`, or torrents, direct streaming or TMDB off | `GET /api/movies/trending` answers `{enabled: false, reason, titles: []}` and the section says so; no index, TMDB or swarm is asked. |
 | No cloud provider, torrent or streaming site can play a title when Play is pressed | `POST /api/stream/play` answers 502 `no_source` with each attempt's outcome (the sites are asked last, and only when no source was named); the source is marked stale and the title leaves the Stream grid, unless it is on the `interested` list or was last played here from a torrent or a site. |
 | No `NOTESD_MOVIES_ROOTS` | Nothing is scanned and the health log is off. The page, tools and playback of known files still work. An empty library says which setting to add. |
 | No TMDB credentials | Files are registered, all unmatched `no_tmdb_credentials`. Assign answers 503 `tmdb_off` for a title not stored yet. `movies_person` answers `tmdb_unavailable`. |
@@ -1324,7 +1324,7 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 - **Unmatched files are not retried.** `no_match`, `low_confidence` and `too_short` stay until you
   assign a title by hand. Renaming the file makes it a new file, which is matched again.
 - **Metadata is fetched once.** New episodes of a running series, or corrections on TMDB, do not
-  arrive on their own. A file whose episode TMDB did not list still gets a row and an id from its
+  arrive on their own: `movies_refresh` re-reads a title. A file whose episode TMDB did not list still gets a row and an id from its
   file name.
 - **A trailer can refuse to play in the pop-up.** Some owners do not allow their videos on other
   sites, and YouTube then shows "Video unavailable" inside the player. The link in the pop-up's
@@ -1411,7 +1411,8 @@ $V down RUN
   [streaming.md](streaming.md#proving-a-change)). The real-library pictures never show a download:
   no live run starts one for a picture.
 - Integration tests: `tests/integration/movies.*.int.test.ts` (schema, repo, sync, API, stream,
-  streams, channels, guides, marks, play, continue, recents, MCP, health, health crash) and
+  streams, channels, guides, marks, stories, forget torrent, play, continue, recents, MCP, health,
+  health crash) and
   `tests/integration/trending.int.test.ts`.
 - The pictures on this page come from two places (`scripts/docs/shots/movies.mjs`):
   - `npm run docs:shots -- --live movies` takes the real-library pictures from the running daemon:

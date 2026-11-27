@@ -274,7 +274,7 @@ final verdict at no cost.
 | The Power toggle | This machine. `app_settings` key `adversary.auto` in this machine's notes database; absent means on. | Automatic passes review nothing and write `paused` marks instead. "Review now" still reviews. The nightly dispatch stops too. |
 
 Turning the toggle back on starts a pass at once. The toggle records which host changed it and
-when; the page shows that in focus mode.
+when; in focus mode the page shows since when auto-runs have been off.
 
 The difference shows in the coverage bar. A decision missed while the toggle was off is `paused`.
 A decision missed because no machine with a running reviewer was up is `absent`.
@@ -300,7 +300,7 @@ count. So each automatic pass looks at whether to start the nightly itself
   from the `origin` remote of the Seer checkout.
 - After a dispatch it waits 90 minutes before asking again, 15 minutes after a failed attempt, and
   stops after 3 dispatches per New York date. The state is `app_settings` key
-  `adversary.nightly_dispatch`, shared so two laptops do not both keep asking.
+  `adversary.nightly_dispatch` in this machine's notes database, so each laptop keeps its own count.
 - A duplicate is harmless: the workflow queues runs, and a run for a session that already
   succeeded does nothing.
 

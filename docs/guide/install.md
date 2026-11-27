@@ -52,7 +52,7 @@ and restarted. Each run:
 | Build | `npm ci` when `node_modules` is missing or older than `package-lock.json`, then `npm run build` (the server with `tsc`, the web app with Vite). |
 | Data dir | Creates `~/mcp-notes-data`, or `NOTES_DATA_DIR`. |
 | Whisper | Unless `.env.local` turns torrents or Whisper off: a virtual environment in `~/mcp-notes-data/whisper/venv` (`NOTESD_TORRENT_WHISPER_DIR`), `pip install faster-whisper==1.2.1`, and the model (`NOTESD_TORRENT_WHISPER_MODEL`, `small`: about 460 MB) loaded once so it is on disk before the first play. The first run takes about a minute; later runs only check. A failure warns and the install goes on; torrent sessions then have no Whisper subtitles. |
-| Local database | Creates or starts the `mcp-notes-pg` container (`pgvector/pgvector:pg16` on `127.0.0.1:55437`, a named volume, `--restart unless-stopped`) with the database `mcp_notes`, taking over `mcp-notes-pg-movies` / `mcp_notes_movies` from an earlier version. When `.env.local` names Neon or no database, it copies the file to `~/mcp-notes-data/env.local.backup-<time>`, then writes `DATABASE_URL` for the container and keeps the old address as `IMPORT_DATABASE_URL`. A `DATABASE_URL` that names another Postgres is left alone. Without a usable Docker, or on any failure, it warns and `.env.local` stays as it was. |
+| Local database | Creates or starts the `mcp-notes-pg` container (`pgvector/pgvector:pg16` on `127.0.0.1:55437`, a named volume, `--restart unless-stopped`) with the database `mcp_notes`, taking over `mcp-notes-pg-movies` / `mcp_notes_movies` from an earlier version. When `.env.local` names Neon or no database, it copies the file to `env.local.backup-<time>` in the data dir, then writes `DATABASE_URL` for the container and keeps the old address as `IMPORT_DATABASE_URL`. A `DATABASE_URL` that names another Postgres is left alone. Without a usable Docker, or on any failure, it warns and `.env.local` stays as it was. |
 | systemd user unit | Renders `deploy/notesd.service` with absolute paths (node, this checkout, the data dir, `HOME`, and the real path of `claude` as `NOTESD_CLAUDE_BIN`) into `~/.config/systemd/user/notesd.service`, then `daemon-reload`, `enable` and `restart`. The absolute paths matter: the user manager's `PATH` has no `~/tools/...`. |
 | Linger | `loginctl enable-linger $USER`, so the unit starts when the distro boots, not when you first open a shell. When that needs a password the script says so: run `sudo loginctl enable-linger $USER` once. |
 | Health | Waits up to 30 s for `GET http://127.0.0.1:7317/health`, and prints the journal when it does not answer. |
@@ -72,8 +72,8 @@ A restart ends every stream session and every play that is being started. So bef
 again right before the restart, the installer asks the running daemon (`GET /api/movies/player`)
 and reads `busy`: true while notesd follows a VLC play, while a stream is on screen, or while a
 stream play is still being started (`starting`: a cloud resolve, a torrent's indexes and swarms, a
-streaming site tried as the fallback, or a page opened less than 30 s ago). A play in that last state shows no `stream` yet; reading
-`stream` alone restarted the daemon under one on 2026-11-17.
+streaming site tried as the fallback, or a page opened less than 30 s ago). A play in that last
+state shows no `stream` yet; reading `stream` alone restarted the daemon under one on 2026-11-17.
 
 | Run | When the daemon is busy |
 | --- | --- |
