@@ -544,6 +544,7 @@ export class AdversaryService {
       used: recent.usedToday,
       cap: this.opts.config.dailyCap,
       rereview: options.rereview === true,
+      retryFailed: trigger === 'manual',
       only: { strategyId: options.strategyId, sessionDate: options.sessionDate },
     });
     const byId = new Map(originals.map((r) => [r.id, r] as const));

@@ -929,6 +929,21 @@ export class MoviesRepo {
     });
   }
 
+  /**
+   * A cloud provider or a torrent streamed this film or episode on `host`: its source row was verified, or a stream
+   * play of it (not one of `sites`, a streaming site's) was recorded. The provider rests read it (countsTowardRest):
+   * a provider's `no_stream` counts only for a title known to stream.
+   */
+  async streamedOnHost(titleIdValue: string, slot: { source: { season: number; episode: number }; play: { season: number | null; episode: number | null } }, host: string, sites: readonly string[]): Promise<boolean> {
+    const res = await this.db.execute<{ streamed: boolean }>(sql`select
+      exists (select 1 from movie_stream_sources s where s.title_id = ${titleIdValue} and s.season = ${slot.source.season} and s.episode = ${slot.source.episode} and s.host = ${host} and s.verified_at is not null)
+      or exists (select 1 from movie_plays p where p.source = 'stream' and p.title_id = ${titleIdValue} and p.host = ${host}
+        and p.season is not distinct from ${slot.play.season}::integer and p.episode is not distinct from ${slot.play.episode}::integer
+        and p.provider is not null ${sites.length === 0 ? sql`` : sql`and p.provider not in (${sql.join(sites.map((site) => sql`${site}`), sql`, `)})`})
+      as streamed`);
+    return res.rows[0]?.streamed === true;
+  }
+
   /** Titles with a fresh source on `host` (`freshCondition`), by id. */
   async freshStreamTitleIds(host: string, since: Date): Promise<string[]> {
     const res = await this.db.execute<{ title_id: string }>(

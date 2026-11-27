@@ -4,6 +4,7 @@ A log of deliberately high-token-consumption sessions and the real value each de
 
 | Date | Title | Achievement | Doc |
 |------|-------|-------------|-----|
+| 2026-11-27 | Owner Decisions | Carried out the owner's seven decisions: fairer provider rests, ratio-first torrent pick, dword, wall and review fixes | [link](./2026-11-27-owner-decisions.md) |
 | 2026-11-27 | Play Log Restart Carry-On | A restart carry-on reopens its play-log row instead of logging a new ask or an invented magnet play | [link](./2026-11-27-playlog-restart-carry-on.md) |
 | 2026-11-27 | Torrent Soak Findings | Fixed torrent soak failures: header of big-piece packs fetched first, stuck racers give way, failures name their cause | [link](./2026-11-27-torrent-soak-findings.md) |
 | 2026-11-27 | Split Torrent Source | Split the torrent source and stream service into small tested modules, behaviour unchanged | [link](./2026-11-27-split-torrent-source.md) |

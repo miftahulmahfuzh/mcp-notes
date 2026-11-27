@@ -7,7 +7,7 @@ import { hasEnglishSubtitleFile } from '../subtitles/files.js';
 import type { TorrentHandle } from '../types.js';
 import { HEIGHT_SETTLE_MS, MAX_TORRENT_TRIES, NO_FILE_LIST, PROBE_MIN_MS, TORRENT_OPEN_TIMEOUT_MS, TORRENT_RACE_WIDTH, TORRENT_SETTLE_MS, torrentLabel } from './constants.js';
 import type { SourceContext } from './context.js';
-import { chooseOrder, deliveryText, filmKbpsOf, remuxTimeoutOutcome, type Delivery } from './delivery.js';
+import { chooseOrder, chosenText, deliveryText, filmKbpsOf, remuxTimeoutOutcome, type Delivery } from './delivery.js';
 import { probeWhileDelivering } from './probeWhileDelivering.js';
 import { refusalOf, standIn } from './refusal.js';
 import { foundIn, messageOf, pad, seconds, sleep } from './text.js';
@@ -91,7 +91,10 @@ export async function tryCandidates(
         timer.clear();
       }
     }
-    const best = chooseOrder(passed, (p) => hands.deliveryOf(p))[0]!;
+    const order = chooseOrder(passed, (p) => hands.deliveryOf(p));
+    const best = order[0]!;
+    // Which step decided, named in every "was chosen" line and detail below.
+    const chosen = chosenText(best, order[1] ?? null, (p) => hands.deliveryOf(p));
     passed.splice(passed.indexOf(best), 1);
     const delivery = hands.deliveryOf(best);
     const won = await finish(ctx, ref, query, best, play, delivery, Math.max(PROBE_MIN_MS, deadline - now()));
@@ -103,21 +106,21 @@ export async function tryCandidates(
     }
     const later: TorrentCandidate[] = [];
     for (const p of chooseOrder(passed, (x) => hands.deliveryOf(x))) {
-      log(`[notesd] torrent: ${refLabel(ref)}: ${p.c.name} (${p.c.infoHash.slice(0, 8)}) lost: its header arrived too (${p.height ?? '?'}p${deliveryText(hands.deliveryOf(p))}); ${best.c.name} was chosen`);
+      log(`[notesd] torrent: ${refLabel(ref)}: ${p.c.name} (${p.c.infoHash.slice(0, 8)}) lost: its header arrived too (${p.height ?? '?'}p${deliveryText(hands.deliveryOf(p))}); ${best.c.name} was ${chosen}`);
       results.set(p.position, {
         provider: torrentLabel(p.c.name),
         outcome: 'skipped',
         took_s: p.tookS,
-        detail: `its header arrived too (${p.c.seeds} seeds${deliveryText(hands.deliveryOf(p))}); ${best.c.name} was chosen`,
+        detail: `its header arrived too (${p.c.seeds} seeds${deliveryText(hands.deliveryOf(p))}); ${best.c.name} was ${chosen}`,
       });
       p.drop();
       later.push(p.c);
     }
     for (const [position, r] of [...running.entries()].sort((a, b) => a[0] - b[0])) {
       running.delete(position);
-      log(`[notesd] torrent: ${refLabel(ref)}: ${r.c.name} (${r.c.infoHash.slice(0, 8)}) lost: still opening (${hands.receivedText(r.c.infoHash)}) when ${best.c.name} was chosen`);
+      log(`[notesd] torrent: ${refLabel(ref)}: ${r.c.name} (${r.c.infoHash.slice(0, 8)}) lost: still opening (${hands.receivedText(r.c.infoHash)}) when ${best.c.name} was ${chosen}`);
       r.racer.cancel();
-      results.set(position, { provider: torrentLabel(r.c.name), outcome: 'skipped', took_s: null, detail: `still opening when ${best.c.name} was chosen` });
+      results.set(position, { provider: torrentLabel(r.c.name), outcome: 'skipped', took_s: null, detail: `still opening when ${best.c.name} was ${chosen}` });
       later.push(r.c);
     }
     // The same object, not a copy: the sync and a late subtitle chain write into it.

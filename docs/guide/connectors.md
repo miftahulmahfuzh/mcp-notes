@@ -154,7 +154,9 @@ What `dword_vocab_add` guarantees, whoever calls it:
 - A term already held is returned with `created: false`. Nothing is inserted twice.
 - A sentence is stored as the entry's origin only when the entry has no origin yet
   (`origin_attached: true`). An existing origin is never overwritten.
-- At most 50 adds in a rolling 24 hours, the app's own cap. Past it the tool refuses.
+- At most 50 adds in a rolling 24 hours, the app's own cap. Past it the tool refuses a new word; a word
+  already held is not refused, since it adds none: its origin sentence is attached as below (or it is
+  returned unchanged when it has one).
 - The limits are the app's: a term of at most 80 characters and 6 words, a pronunciation of at
   most 60, a definition of at most 80, three examples of at most 120 each, a sentence of at most
   200.

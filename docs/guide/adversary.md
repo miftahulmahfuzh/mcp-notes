@@ -259,7 +259,8 @@ Work is ordered so the cap is spent where it matters first:
 3. Early looks at a book's next rebalance, only with budget left over.
 
 A pick over the cap gets one `skipped_budget` row a day and no verdict, so the twin copies the
-original for it. A pick whose review failed twice within a week is not retried automatically.
+original for it. A pick whose review failed twice within a week is not retried by an automatic pass;
+"Review now" (a manual pass) tries it again, and a further failure is counted the same way.
 
 **Early looks.** Seer's `book_previews` says what a book would buy if it rebalanced today. When the
 next rebalance is within 7 days and its real targets do not exist yet, the reviewer drafts verdicts

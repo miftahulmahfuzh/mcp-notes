@@ -49,8 +49,8 @@ describe('the stream canary', () => {
     const { c, calls, lines } = canary();
     const pass = await c.pass();
     expect(calls).toEqual([
-      { ref: { kind: 'movie', tmdbId: 550 }, only: 'VidFast', deadlineS: CANARY_DEADLINE_S },
-      { ref: { kind: 'movie', tmdbId: 550 }, only: 'VidRock', deadlineS: CANARY_DEADLINE_S },
+      { ref: { kind: 'movie', tmdbId: 550 }, only: 'VidFast', deadlineS: CANARY_DEADLINE_S, known: true },
+      { ref: { kind: 'movie', tmdbId: 550 }, only: 'VidRock', deadlineS: CANARY_DEADLINE_S, known: true },
     ]);
     expect(pass).toMatchObject({ asked: 2, resolved: 1, stopped: 'done', left: 0 });
     expect(lines).toEqual(['[notesd] stream canary: 1 of 2 providers resolved; done']);

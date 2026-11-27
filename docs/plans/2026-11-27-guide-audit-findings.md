@@ -111,14 +111,19 @@ All fixed on 2026-11-27; the last column names the commit.
    `rereview` (`src/http/adversaryApi.ts`), so the option is unreachable. The guide's "not retried
    automatically" (`docs/guide/adversary.md:261`) understates it. Either expose `rereview`, or the
    guide should say "not retried, even by Review now".
+   **Decided 2026-11-27: "Review now" retries it; automatic passes keep skipping it** (`PlanInput.retryFailed`,
+   set for a manual pass).
 3. **The 50-a-day vocabulary limit is checked before the "already held" path**
    (`src/mcp/dwordVocabTools.ts:367`, before the collision handling at `:381-394`). Past the limit,
    a `dword_vocab_add` meant only to attach an origin sentence to a word already held is refused
    too. Nothing says whether that should be exempt.
+   **Decided 2026-11-27: exempt.** Past the limit, a word already held goes on to the collision path.
 4. **Dropped SVG and BMP files with no editor open** are sent to `POST /api/images` and refused
    with 415, logged only to the console (`DropOverlay.tsx`). The guide's "files that are not images
    are ignored" (`docs/guide/wall.md:158`) is right in effect; the editor's `routeFiles` filters them
    on the client, the drop overlay does not.
+   **Decided 2026-11-27: filtered on the client.** With no editor open, a drop or a paste keeps only the
+   types `routeFiles` sends to the image path (`ATTACHABLE_IMAGE_TYPES`); nothing else is posted.
 
 ## What was fixed in the docs
 

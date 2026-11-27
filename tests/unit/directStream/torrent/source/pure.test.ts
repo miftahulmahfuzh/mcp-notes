@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MediaProbe } from '../../../../../src/directStream/torrent/probe.js';
 import type { TorrentRemux } from '../../../../../src/directStream/torrent/remux.js';
-import { deliveryText, filmKbpsOf } from '../../../../../src/directStream/torrent/source/delivery.js';
+import { chooseOrder, chosenText, deliveryText, filmKbpsOf, RATIO_MARGIN } from '../../../../../src/directStream/torrent/source/delivery.js';
 import { keptFailure } from '../../../../../src/directStream/torrent/source.js';
 import { indexAttempt, queryOf, refKey } from '../../../../../src/directStream/torrent/source/query.js';
 import { playsOriginalDirect, refusalOf } from '../../../../../src/directStream/torrent/source/refusal.js';
@@ -93,5 +93,57 @@ describe('delivery words and the kept answer', () => {
     expect(seconds(1000, 3460)).toBe(2.5);
     expect(foundIn(null)).toBe('');
     expect(foundIn({ index: 'knaben', listedBy: ['knaben', 'apibay'] })).toBe(' (from knaben, also listed by apibay)');
+  });
+});
+
+// The two live cases of docs/plans/2026-11-27-torrent-ranking-evidence.md (decided 2026-11-27: option 2, a 1.5x margin).
+describe('chooseOrder: the delivery ratio before the English subtitle file when no racer delivers', () => {
+  type Racer = { name: string; position: number; english: boolean; height: 1080 | 720; d: { peers: number; downKbps: number; filmKbps: number | null } | null };
+  const of = (r: Racer) => r.d;
+  const NOMA: Racer = { name: 'NOMA', position: 1, english: false, height: 1080, d: { peers: 3, downKbps: 2900, filmKbps: 3100 } };
+  const RUS: Racer = { name: 'Чудо в камере №7', position: 0, english: true, height: 1080, d: { peers: 1, downKbps: 1500, filmKbps: 6600 } };
+  const ARTYMKO: Racer = { name: 'ArtymKo', position: 0, english: true, height: 1080, d: { peers: 4, downKbps: 1900, filmKbps: 6000 } };
+  const YTS: Racer = { name: 'YTS', position: 1, english: false, height: 1080, d: { peers: 5, downKbps: 1000, filmKbps: 2600 } };
+  const SARTRE: Racer = { name: 'SARTRE', position: 2, english: false, height: 1080, d: { peers: 2, downKbps: 500, filmKbps: 4700 } };
+
+  it('the margin is 1.5x', () => {
+    expect(RATIO_MARGIN).toBe(1.5);
+  });
+
+  it('Miracle in Cell No. 7: NOMA (2.9 of 3.1 Mbps) beats the Russian release (1.5 of 6.6) with English subtitles, and says why', () => {
+    const order = chooseOrder([RUS, NOMA], of);
+    expect(order.map((r) => r.name)).toEqual(['NOMA', 'Чудо в камере №7']);
+    expect(chosenText(order[0]!, order[1] ?? null, of)).toBe('chosen: 4.1x the delivery of the next');
+  });
+
+  it('Confessions: ArtymKo (1.9 of 6.0) against YTS (1.0 of 2.6) is within 1.5x, so its English subtitle file still decides', () => {
+    const order = chooseOrder([ARTYMKO, YTS, SARTRE], of);
+    expect(order.map((r) => r.name)).toEqual(['ArtymKo', 'YTS', 'SARTRE']);
+    expect(chosenText(order[0]!, order[1] ?? null, of)).toBe('chosen for its English subtitle file');
+  });
+
+  it('a racer that delivers and the preferred height still come first, whatever the ratios', () => {
+    const delivering: Racer = { name: 'D', position: 3, english: false, height: 1080, d: { peers: 2, downKbps: 3200, filmKbps: 3100 } };
+    expect(chooseOrder([NOMA, delivering], of).map((r) => r.name)).toEqual(['D', 'NOMA']);
+    expect(chosenText(delivering, NOMA, of)).toBe('chosen: it delivers');
+    const r720: Racer = { name: '720', position: 0, english: false, height: 720, d: { peers: 3, downKbps: 2900, filmKbps: 3000 } };
+    expect(chooseOrder([r720, RUS], of).map((r) => r.name)).toEqual(['Чудо в камере №7', '720']);
+    expect(chosenText(RUS, r720, of)).toBe('chosen for its height');
+  });
+
+  it('within the margin: then more peers, then the finder\'s order; an unknown ratio is never compared', () => {
+    const a: Racer = { name: 'A', position: 0, english: false, height: 1080, d: { peers: 2, downKbps: 1000, filmKbps: 2000 } };
+    const b: Racer = { name: 'B', position: 1, english: false, height: 1080, d: { peers: 4, downKbps: 1200, filmKbps: 2000 } };
+    expect(chooseOrder([a, b], of).map((r) => r.name)).toEqual(['B', 'A']);
+    expect(chosenText(b, a, of)).toBe('chosen for more peers');
+    const c: Racer = { ...a, name: 'C', position: 1 };
+    expect(chosenText(a, c, of)).toBe("chosen in the finder's order");
+    const unknown: Racer = { name: 'U', position: 0, english: true, height: 1080, d: { peers: 1, downKbps: 100, filmKbps: null } };
+    expect(chooseOrder([unknown, NOMA], of).map((r) => r.name)).toEqual(['U', 'NOMA']);
+    // Nothing moving at all is no ratio to win with.
+    const still: Racer = { name: 'S', position: 0, english: true, height: 1080, d: { peers: 1, downKbps: 0, filmKbps: 3000 } };
+    const still2: Racer = { ...still, name: 'S2', position: 1, english: false };
+    expect(chooseOrder([still2, still], of).map((r) => r.name)).toEqual(['S', 'S2']);
+    expect(chosenText(NOMA, null, of)).toBe('chosen');
   });
 });

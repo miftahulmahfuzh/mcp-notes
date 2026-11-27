@@ -18,6 +18,12 @@
   (`ADVERSARY_DAILY_CAP`, default 15 per WIB day, per database) reviews bracket picks first, then
   books by earliest open, previews last; picks over the cap get one `skipped_budget` row a day and
   stay absent. A draft from a preview is reused, at no cost, when the real targets appear.
+- A pick whose review failed twice is skipped by automatic passes and retried by "Review now"
+  (`PlanInput.retryFailed`). Driven without billing: `ADVERSARY_GATHER_MODEL=verify-no-such-model
+  ADVERSARY_VERDICT_MODEL=verify-no-such-model $V up --adversary`, seed a future bracket pick plus two `failed`
+  `adversary_reviews` rows before the first pass (30 s), see the auto pass write nothing, then
+  `POST /api/adversary/review-now` writes a third (failed) row. `$V restart` drops those env keys: never press
+  Review now after a restart. Logic: `npx vitest run tests/unit/adversary/plan.test.ts`.
 - ON/OFF toggle: `app_settings` key `adversary.auto` `{on, changed_at, host}`, absent = on. While
   off, automatic passes write one `paused` mark per due decision (Seer `adversary_marks`) and review
   nothing; "review now" (`AdversaryService.reviewNow`, phase 5's API) still reviews.
