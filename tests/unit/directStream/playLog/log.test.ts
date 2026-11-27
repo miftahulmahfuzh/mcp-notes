@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PlayLog } from '../../../../src/directStream/playLog/log.js';
 import type { PageStats, PlayAsk } from '../../../../src/directStream/playLog/types.js';
-import { SessionStore, type StreamSession } from '../../../../src/directStream/sessions.js';
+import { SESSION_IDLE_MS, SessionStore, type StreamSession } from '../../../../src/directStream/sessions.js';
 import { DirectStreamError, type ResolvedSource } from '../../../../src/directStream/types.js';
 import { MemoryPlayLog } from '../../../helpers/memoryPlayLog.js';
 
@@ -181,5 +181,41 @@ describe('the play log', () => {
     await t.log.settled();
     expect(await new PlayLog({ repo: t.repo, host: 'host-a', now: t.clock }).closeLeftOpen()).toBe(1);
     expect(t.repo.bySession(session.id)).toMatchObject({ ended: 'restart' });
+  });
+  it('closes a session that expired while nothing swept the store, as expired at the time it expired (not later as restart)', async () => {
+    const t = setup();
+    const session = t.play();
+    const usedAt = session.lastUsedAt.getTime();
+    t.log.report(session.id, { stats: stats('loadAAAA', 10_000), over: null, quiet: false });
+    // Nothing touches the store for a day: no new play, no torrent sweep. The row must not wait for a restart.
+    t.advance(SESSION_IDLE_MS + 24 * 60 * 60 * 1000);
+    t.log.expire();
+    await t.log.settled();
+    expect(t.repo.bySession(session.id)).toMatchObject({ ended: 'expired', endedAt: new Date(usedAt + SESSION_IDLE_MS), playedMs: 10_000 });
+    // The store's own drop later changes nothing.
+    t.log.ended(session, 'expired');
+    await t.log.settled();
+    expect(t.repo.bySession(session.id)).toMatchObject({ endedAt: new Date(usedAt + SESSION_IDLE_MS) });
+  });
+
+  it('a session the store drops long after it expired ends at the time it expired', async () => {
+    const t = setup();
+    const session = t.play();
+    const usedAt = session.lastUsedAt.getTime();
+    t.advance(SESSION_IDLE_MS + 3 * 60 * 60 * 1000);
+    t.log.ended(session, 'expired');
+    await t.log.settled();
+    expect(t.repo.bySession(session.id)).toMatchObject({ ended: 'expired', endedAt: new Date(usedAt + SESSION_IDLE_MS) });
+  });
+
+  it('a session still in use is not expired', async () => {
+    const t = setup();
+    const session = t.play();
+    t.advance(SESSION_IDLE_MS - 1_000);
+    t.store.get(session.id);
+    t.advance(2_000);
+    t.log.expire();
+    await t.log.settled();
+    expect(t.repo.bySession(session.id)?.ended ?? null).toBeNull();
   });
 });

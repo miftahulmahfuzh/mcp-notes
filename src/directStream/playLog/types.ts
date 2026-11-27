@@ -3,10 +3,14 @@ import type { StreamRef } from '../types.js';
 
 /** An open play's row is written at most this often while its page reports; the first report and the end are written at once. */
 export const PLAY_LOG_WRITE_EVERY_MS = 30_000;
+/** How often the open plays are checked for a session the store counts ended (PlayLog.expire). */
+export const PLAY_LOG_SWEEP_EVERY_MS = 60_000;
 /** Characters of a failure's detail kept on the row (as stream_downloads keeps). */
 export const PLAY_LOG_DETAIL_MAX = 500;
-/** Page loads kept apart per session; older ones are folded into one total (a load never reports after the page that replaced it). */
+/** Page loads kept apart per session; older ones are folded into one total. */
 export const PLAY_LOG_MAX_LOADS = 16;
+/** Folded loads whose counted figures are remembered (a page that reports again after it was folded is not counted twice). */
+export const PLAY_LOG_MAX_FOLDED = 256;
 
 /** One play ask whose title is known: when it began, which service entry made it, the title, how the source was named. */
 export interface PlayAsk {
