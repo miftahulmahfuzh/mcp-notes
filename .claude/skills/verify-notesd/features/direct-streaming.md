@@ -53,6 +53,19 @@
   `npm run test:int -- tests/integration/movies.streams.int.test.ts`; on a run, seed a stream play
   with `verify.sh exec` and read `GET /api/movies/<id>` and `GET /api/movies` (journey J2 of
   `.workflows/plan/direct-streaming/phase-5.md`).
+- The player page's counters (stream-play-log phase 2): every position report (the 5 s one, pause,
+  `beat`, `ended`, `closed`) carries `stats`: a random `load` id of this page load of this session
+  (a new one when the page plays another session without reloading) and, since then,
+  `first_frame_ms`, `played_ms`, `stalls` and `stalled_ms` (one per freeze the page's stall timer
+  confirms, timed from the moment the film stood still until it moved; a pause, a seek's own wait in
+  the grace and the first load are not stalls), `waits` and `waited_ms` (the torrent's "waiting for
+  the torrent"; never a stall), `errors`. Measured with `performance.now()`. Logic:
+  `npx vitest run web/src/stream/playStats.test.tsx web/src/stream/controller.test.tsx -t "R1.6|PlayStats|newLoadId"`;
+  in the real page build: `$V up --web`, then
+  `STREAM_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/play-stats.steps.mjs`
+  (about 90 s; `FIX` from `make-hls-fixture.sh` as for `player.steps.mjs`). The transcript has
+  `FIRST FRAME PASS`, `STALL PASS`, `GRACE PASS`, `BEAT PASS`, `NEW LOAD PASS` and `TORRENT WAIT PASS`.
+  What the daemon keeps of them is the play log's (phase 1).
 - `/update-cloud-source <site url>` (`direct_stream_update_source`) and `direct_stream_sources`:
   read an aggregator site's provider templates, add the ones the registry lacks (matched by
   template host and path), probe each new one against the known titles, report per provider; a
@@ -817,6 +830,19 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - A torrent still downloading: `NOTESD_STREAM_PREVIEWS=on TORRENT_FIXTURE_FILE=<a 25-minute MP4> $V up --torrent`, play
   it as a torrent, post position reports and read the previews every few seconds: `partial` cues only inside the
   map's `ranges`, and after a `closed` report the swarm empties while the previews route is still read.
+
+## The play log (`stream_play_log`)
+- One row per play ask whose title is known: answered (session, channel, provider, ask-to-answer time, a
+  torrent's info hash, index, seeds and height), failed (`failure`, redacted `failure_detail`,
+  `cloud_failure`, `torrent_failure`) or taken by a streaming site. The page's `stats` key on its position
+  reports is summed over page loads; the row is written on the first report, every 30 s at most while it
+  plays, and at the end; a paused beat for the stream on screen writes nothing. Closed as `finished`,
+  `closed`, `replaced`, `expired` or `restart`. See `docs/guide/streaming.md` ("The play log").
+- Rules: `npx vitest run tests/unit/directStream/playLog tests/unit/directStream/playLogService.test.ts tests/unit/directStream/positionRoute.test.ts`;
+  the table and its writer: `npm run test:int -- tests/integration/directStream.playLog.int.test.ts`.
+- On a `verify.sh up --direct-stream` run (no `--torrent`; about two minutes, `beat` waits 40 s and `restart`
+  restarts the daemon): `.claude/skills/verify-notesd/scripts/direct-stream/playlog.sh RUN [ask|stats|failed|beat|replaced|restart ...]`.
+  Each stage prints `PASS <stage>`; the run ends with `playlog: PASS`.
 
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.

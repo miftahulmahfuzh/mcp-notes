@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-20
+**Last Updated**: 2026-11-27
 **Total Active Tasks**: 21
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 7
-- Completed: 123
+- Completed: 128
 
 ---
 
@@ -21,6 +21,97 @@
 ### [P0] Critical
 
 ### [P1] High
+
+- [x] **P1-NOTES-SH03** Phase 3: Stream health: route, MCP tool, page
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns read functions on `PlayLogRepo` (`healthRows`, `firstAskedAt`, `unhandled`) and the pure builder `src/directStream/playLog/health.ts`; `GET /api/stream/health` (`src/http/streamHealthApi.ts`); the MCP tool `direct_stream_health`, its chat allow-list entry and caption, one sentence in `instructions.ts` and `chat/prompt.ts`; the `/movies/health` page (`HealthPage.tsx`/`.css`, `route.ts`, `lib/movies.ts`, `moviesApi.ts`) and its heartbeat icon beside the Cache drive icon in `MoviesPage.tsx`; the `Stream health` group in `scripts/docs/httpRoutes.ts`, generated references, `docs/guide/movies.md` and `streaming.md`; `features/movies.md` and the README's Movies row. Exit: the route, the tool and the page show seeded rows in a throwaway daemon (J1-J5); empty period handled; all gates green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 3 of 5)
+  - **Satisfies**: R2 — "them" → proposal item 2: "**A small health view** on the Stream side and one MCP tool, so "how did torrents do this week?" is a query instead of a soak." Extended by: "successful short plays ARE "successful streaming attempt" ... over time, i still want to findout which the movies / series that we can't handle. maybe because there is no torrent / no cloud sources for it" · criteria: R2.1, R2.2, R2.3, R2.4, R2.5
+  - **Depends on**: P1-NOTES-L001
+  - **Plan**: `.workflows/plan/P1-NOTES-SH03.md`
+  - **Completed**: 2026-11-27 09:16
+  - **Method**: /implement
+  - **Files**: src/directStream/playLog/health.ts, src/directStream/playLog/repo.ts, src/http/streamHealthApi.ts, src/http/app.ts, src/mcp/streamHealthTool.ts, src/mcp/tools.ts, src/mcp/server.ts, src/chat/status.ts, src/chat/prompt.ts, src/mcp/instructions.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, docs/guide/movies.md, docs/guide/streaming.md, web/src/moviesApi.ts, web/src/lib/route.ts, web/src/lib/route.test.tsx, web/src/lib/movies.ts, web/src/pages/MoviesPage.tsx, web/src/components/movies/HealthPage.tsx, web/src/components/movies/HealthPage.css, web/src/components/movies/HealthPage.test.tsx, tests/helpers/playLogRows.ts, tests/unit/directStream/playLogHealth.test.ts, tests/unit/mcp.streamHealthTool.test.ts, tests/unit/chat-status.test.ts, tests/integration/streamPlayLog.health.int.test.ts, .claude/skills/verify-notesd/features/movies.md, .claude/skills/verify-notesd/features/README.md, .workflows/todos.md, .workflows/plan/P1-NOTES-SH03.md, .workflows/plan/STREAM_PLAY_LOG_PLAN.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1127-091520-2849753/evidence
+  - **Drift**:
+    - No code drift: every anchor the plan quotes matched the tree (allowedChatTools' stream_disk line is at :187, not :176).
+    - tests/unit/mcp.streamHealthTool.test.ts: the plan's code read `await res.json()` untyped, which tsc rejects (TS18046, unknown); a small `body(res): Promise<any>` helper was added. No assertion changed.
+    - HealthPage.css: `.hp-wide` 96px -> 132px, `.hp-num` and `.hp-when` nowrap (`.hp-when` min-width 110px): the stalls and when columns wrapped onto two lines in the first run's screenshot.
+    - First Proof run (1127-091404-2843756): J4 failed because the plan's seed id 990002 is the verify harness's fake TMDB film 'The Dog Stars' (scripts/movies/tmdb.json), so `on conflict do nothing` kept that name. All journeys were re-run on a fresh daemon with Film B seeded as 990012; J1-J5 and the Cache neighbor check passed. features/movies.md says not to seed 990002.
+    - origin/feature/stream-play-log had not moved past f9eb9ef when this phase finished; no catch-up was needed.
+  - **Decided**:
+    - Index names worktree stream-play-log / feature/stream-play-log; this session runs in stream-play-log-p3 / phase-3-stream-play-log → proceeded here (rung 6: the swarm's per-phase worktree; the coordinator's note assigns it)
+    - Step 3 creates every phase's task → created only phase 3's, id P1-NOTES-SH03, inline (coordinator's note; narrower blast radius)
+    - Proof seed's Film B id 990002 collides with a harness fixture → seeded as 990012, every check unchanged (rung 2: exit criteria; same as phase 1's 550 → 467905)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching this repo's swarm precedent, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. P1-NOTES-SH03 written into phase 3's TaskID cell of the worktree's `.workflows/plan/STREAM_PLAY_LOG_PLAN.md`; the coordinator's index was not edited. No successor to unblock: phase 5 mints its own task in its own worktree.
+- [x] **P1-NOTES-PL02** Phase 2: Player page counters
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/stream/controller.ts`, `web/src/stream/session.ts`, the new `web/src/stream/playStats.ts` and their tests: the counters and the `stats` key of the position report (a 16-character `load`, a new one when the page moves to another session); `play-stats.steps.mjs`; one bullet in `features/direct-streaming.md`. Exit: controller tests show the counters for a stall that recovers, a torrent wait, a pause (not counted), a seek within the grace (not counted), and a report body carrying `stats`; the real page build's posted bodies carry `stats` (`play-stats.steps.mjs`).
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R1 — the per-play record (proposal item 1): time to first frame, stall count and stalled seconds, source switches, subtitle outcome, how it ended · criteria: R1.6
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-PL02.md`
+  - **Completed**: 2026-11-27 09:10
+  - **Method**: /implement
+  - **Files**: web/src/stream/session.ts, web/src/stream/playStats.ts, web/src/stream/playStats.test.tsx, web/src/stream/controller.ts, web/src/stream/controller.test.tsx, .claude/skills/verify-notesd/scripts/stream/play-stats.steps.mjs, .claude/skills/verify-notesd/features/direct-streaming.md, .workflows/todos.md, .workflows/plan/P1-NOTES-PL02.md
+  - **Proof**: verified-first-pass — 2 journeys, evidence /home/miftah/.local/state/notesd-verify/1127-085404-2773003/evidence
+  - **Drift**:
+    - controller.ts: the subtitles import is at line 45 and a pageActive import follows it; the PlayStats import went after the last import. Every other quoted block matched.
+  - **Decided**:
+    - Worktree differs from the index's (stream-play-log vs stream-play-log-p2) → implemented in the phase's own worktree and branch (the swarm ledger and the coordinator's note assign it)
+    - Step 3 task creation → only phase 2's task (P1-NOTES-PL02) was created, because peer phase sessions run Step 3 concurrently in their own worktrees (tie-break: narrower blast radius)
+    - The plan's first R1.6 controller test expected 11 500 ms played but the plan's code gave 12 500 (no time update follows a pause in the test, so the gap across the pause was counted, capped at 1 s) → onPause also feeds the counters a non-advancing tick, so play stops counting at the pause itself (rung 3: the plan's test code block, and its note that the cause is the code, not the test)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching this repo's swarm precedent, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. Phase 2 ticked in the coordinator's plan index (not committed from here). No successor to unblock: phases 3 and 5 depend on phase 1 and mint their own tasks.
+- [x] **P1-NOTES-L001** Phase 1: Play log: table, writer, daemon wiring
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `stream_play_log` in `src/db/schema.ts` and migration `0044`; `src/directStream/playLog/*` (repo, the in-memory tally per session, types); the calls from `DirectStreamService` (asks, sessions made by play/cache/continue/episode, source switches, session end), from the position route (`positionBody.stats`, the tally, the first report turning `no_picture` into `played`, `ended`/`closed`) and from daemon start (rows left open → `restart`); `AppDeps` wiring; CLAUDE.md's single-writers line; `docs/guide/streaming.md` ("The play log", including what the page counts); `docs/guide/architecture.md` (the `stream_play_log` writer row and data-model entry); the verify feature map (`direct-streaming.md` section before Gotchas, the README's Direct streaming row) and `playlog.sh`; `tests/integration/setup.ts` `truncateAll`; unit and integration tests. Exit: an ask through the service with fakes writes the rows the criteria name; a position report with `stats` updates the row; typecheck, `npm test`, `npm run test:int`, `docs:check` green; `playlog.sh RUN` on a fresh `verify.sh up --direct-stream` run ends `playlog: PASS (ask stats failed beat replaced restart)`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 1 of 5)
+  - **Satisfies**: R1 — "them" → proposal item 1: "**A per-play record**, written once when the session ends: time to first frame, stall count and stalled seconds, source switches and their reason, subtitle outcome, and how it ended (closed by you, failed, switched, finished)." Narrowed by: "mostly i just play it for testing only ... i want to see the capabilities of torrent, mostly. because torrent is the source that provides the best 1080p quality based on my observation" · criteria: R1.1, R1.2, R1.3, R1.4, R1.5
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-L001.md`
+  - **Completed**: 2026-11-27 09:00
+  - **Method**: /implement
+  - **Files**: src/db/schema.ts, drizzle/0044_stream_play_log.sql, drizzle/meta/0044_snapshot.json, drizzle/meta/_journal.json, tests/integration/setup.ts, src/directStream/playLog/types.ts, src/directStream/playLog/derive.ts, src/directStream/playLog/tally.ts, src/directStream/playLog/repo.ts, src/directStream/playLog/log.ts, src/directStream/service.ts, src/http/directStreamApi.ts, src/deps.ts, src/daemon.ts, tests/helpers/memoryPlayLog.ts, tests/unit/directStream/playLog/derive.test.ts, tests/unit/directStream/playLog/tally.test.ts, tests/unit/directStream/playLog/log.test.ts, tests/unit/directStream/playLogService.test.ts, tests/unit/directStream/positionRoute.test.ts, tests/integration/directStream.playLog.int.test.ts, CLAUDE.md, docs/guide/architecture.md, docs/guide/streaming.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/features/README.md, .claude/skills/verify-notesd/scripts/direct-stream/playlog.sh, .workflows/todos.md, .workflows/plan/P1-NOTES-L001.md
+  - **Proof**: verified-after-fix — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1127-085834-2787641/evidence
+  - **Drift**:
+    - No code drift: every line anchor the plan quotes matched the tree.
+    - The plan's playlog.sh played TMDB film 550, which the harness's fake TMDB does not serve; the driver now plays film 467905 (scripts/movies/tmdb.json). J1's expected row therefore reads play|movie|467905|... instead of play|movie|550|....
+    - `npm run db:generate` needs a Postgres URL in the environment although generate never connects; this worktree has no .env.local, so it was run with a placeholder loopback URL. The generated 0044 holds exactly the one table (39 columns, 10 checks) and its two indexes.
+    - origin/feature/stream-play-log moved to ede3b8b (phase 4, src/sessions) while this phase ran; this branch was not rebased, the coordinator integrates it.
+  - **Decided**:
+    - Plan index names worktree .../stream-play-log on feature/stream-play-log; this session runs in .../stream-play-log-p1 on phase-1-stream-play-log → proceeded here (swarm ledger and the coordinator's note name this isolated worktree for phase 1)
+    - Step 3 creates every phase's task; three wave-0 sessions run isolated → created phase 1's task only, id P1-NOTES-L001 (narrower blast radius: avoids three copies of five tasks colliding at integration). Note: todos.py's minter does not parse the 5-letter NOTES code, so peers minting with the same letter would get the same id.
+    - playlog.sh plays film 467905 instead of 550 → rung 2 (exit criterion: all six stages pass on a --direct-stream run); an unknown title's position report answers 404 unknown_title so its page never becomes the stream on screen, which the beat and replaced stages need. Every check of the script is unchanged.
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent; the coordinator's integrator reconciles them. No successor to unblock: phases 2-5 mint their own tasks in their own worktrees.
+
+- [x] **P1-NOTES-RM05** Phase 5: Reminders: table, tool, hook, the one-week seed
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `reminders` in `src/db/schema.ts` and migration `0045`; `src/reminders/*` (repo, seeds); the start-hook reply's `reminders` array (`src/http/sessionHooks.ts`) and `claude/hooks/notes-session.mjs` printing them; the MCP tool `remind` (not on the chat allow-list); the seed at daemon start (`src/daemon.ts`); docs, generated references, feature map (`reminders.md`), `truncateAll`, tests. Exit criteria: R4.1-R4.4 shown with an injected clock; a fresh database's seed is not due, so no existing hook test changes its expected output.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R4 — "for no 3, make sure we add a hook reminder or something. after one week, you will automatically remind me about this feature" · criteria: R4.1, R4.2, R4.3, R4.4
+  - **Depends on**: phase 1 (landed on feature/stream-play-log @ f9eb9ef)
+  - **Plan**: `.workflows/plan/P1-NOTES-RM05.md`
+  - **Completed**: 2026-11-27 09:30
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/README.md, .claude/skills/verify-notesd/features/reminders.md, .workflows/todos.md, .workflows/plan/P1-NOTES-RM05.md, CLAUDE.md, claude/hooks/notes-session.d.mts, claude/hooks/notes-session.mjs, docs/guide/architecture.md, docs/guide/claude-code.md, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, drizzle/0045_reminders.sql, drizzle/meta/0045_snapshot.json, drizzle/meta/_journal.json, scripts/docs/httpRoutes.ts, src/daemon.ts, src/db/schema.ts, src/http/sessionHooks.ts, src/mcp/remindTool.ts, src/mcp/server.ts, src/reminders/repo.ts, src/reminders/seeds.ts, tests/integration/daemon.int.test.ts, tests/integration/reminders.int.test.ts, tests/integration/setup.ts, tests/unit/hooks/notesSession.test.ts, tests/unit/mcp.remindTool.test.ts, tests/unit/reminders.seeds.test.ts
+  - **Proof**: verified-first-pass — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/1127-091708-2857326/evidence
+  - **Drift**:
+    - src/daemon.ts line numbers moved by phase 1's imports; anchored by text as the plan says.
+    - origin/feature/stream-play-log still at f9eb9ef at report time; nothing to catch up to.
+    - The reminders id sequence skips a number at each daemon start after the first (insert ... on conflict do nothing consumes one); harmless.
+  - **Decided**:
+    - Index names worktree stream-play-log / feature/stream-play-log; session runs in stream-play-log-p5 / phase-5-stream-play-log → proceeded here (rung 6: the swarm's per-phase worktree; the coordinator integrates)
+    - Step 3 task creation → only phase 5's task (P1-NOTES-RM05) (tie-break: narrower blast radius; peers create their own)
+    - Plan's integration test 'dueFor shows a due, open reminder...' made `future` due at T0+1h yet expected it absent at T0+20h-1ms → code kept (a due, open, never-shown reminder is shown), fixture's due time moved to T0+20h, every assertion unchanged (rung 1/2: R4.1, R4.2 outrank a fixture value)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent, to avoid conflicts with phase 3 in its own worktree; the coordinator's integrator reconciles them. readme-updater skipped: no package_readme.md, subsystems documented in docs/guide/* (updated by this phase). Last phase of the set: no successor to unblock; the swarm coordinator lands the set.
 
 - [x] **P1-NOTES-SD01** Phase 1: Schema and single writers: the download queue, the kept mark, the story store
   - **Difficulty**: NORMAL
@@ -686,6 +777,23 @@
 ---
 
 ## Completed Tasks
+- [x] **P1-NOTES-SV04** Phase 4: Sessions search says when it has no vectors
+  - **Difficulty**: EASY
+  - **Type**: Bug
+  - **Context**: Owns `src/sessions/search.ts` (`SESSIONS_NO_VECTORS_FALLBACK`, `hasSessionVectors`, the early return), `tests/integration/sessions.search.int.test.ts`, `docs/guide/sessions.md`, `.claude/skills/verify-notesd/features/projects.md`. `src/mcp/sessionTools.ts` is unchanged, so no `docs:gen`. Exit: R3.1 and R3.2 shown by integration tests against Postgres with the fake embedder.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R3 — `sessions_search` still answers `mode: hybrid` with no `fallback` while matching on words only; fix the missing `fallback` flag · criteria: R3.1, R3.2
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-SV04.md`
+  - **Completed**: 2026-11-27 08:53
+  - **Method**: /implement
+  - **Files**: src/sessions/search.ts, tests/integration/sessions.search.int.test.ts, docs/guide/sessions.md, .claude/skills/verify-notesd/features/projects.md, .workflows/todos.md, .workflows/plan/P1-NOTES-SV04.md, .workflows/plan/STREAM_PLAY_LOG_PLAN.md
+  - **Proof**: verified-first-pass — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/stream-play-log-p4/j1-j3.txt (J1-J3; J4 = 88/88 sessions integration tests, golden snapshot unchanged); neighbor check /home/miftah/.local/state/notesd-verify/1127-085212-2753890/evidence
+  - **Drift**: Plan line numbers for search.ts were off by one (doc comment at 783, not 782); same text, same edits.
+  - **Decided**: Index names worktree stream-play-log / feature/stream-play-log, session runs in stream-play-log-p4 / phase-4-stream-play-log → proceeded here (rung 6: the swarm's per-phase worktree; the coordinator integrates the branch)
+    Step 3 created only phase 4's task, in this worktree, and wrote its TaskID into the worktree's .workflows/plan/STREAM_PLAY_LOG_PLAN.md row 4 only → peers mint their own in their worktrees (tie-break: narrower blast radius)
+
 - [x] **P1-NOTES-A136** Phase 1: Stremio add-on providers: TorrentsDB and Peerflix
   - **Difficulty**: NORMAL
   - **Type**: Feature

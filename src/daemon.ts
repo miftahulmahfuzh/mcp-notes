@@ -67,12 +67,16 @@ import { DisabledCanary, StreamCanary } from './directStream/canary.js';
 import { loadKnownTitles } from './directStream/updateSource.js';
 import { buildTrending } from './directStream/trending/job.js';
 import { StreamReporter } from './directStream/report.js';
+import { PlayLog } from './directStream/playLog/log.js';
+import { PlayLogRepo } from './directStream/playLog/repo.js';
 import { defaultClaudeWindowDeps } from './sessions/resume.js';
 import { siteFallback } from './streaming/fallback.js';
 import { scriptRunner } from './streaming/service.js';
 import { scriptWarp } from './streaming/warp.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
+import { RemindersRepo } from './reminders/repo.js';
+import { seedReminders } from './reminders/seeds.js';
 
 /** `<dataDir>/chat`: the fixed cwd of every chat brain run. Sessions are not persisted there (persistSession: false). */
 export const CHAT_SUBDIR = 'chat';
@@ -106,6 +110,8 @@ export interface StartDaemonOptions {
    * it again. Omitted (tests): the stage waits for whoever starts the daemon next.
    */
   onRestartWanted?: () => void;
+  /** The clock of the reminder seeds (src/reminders/seeds.ts): a seed is due its days after this. Omitted: the wall clock. */
+  now?: () => Date;
 }
 
 /** How often a daemon that wants a restart looks whether something still plays. */
@@ -167,6 +173,14 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       console.error(`[notesd] shared import: the merge failed, nothing was changed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // Reminders (src/reminders/): each seed is stored once by its key, due its days after the first start that knows it.
+  // A failure here costs the seed, never the start.
+  try {
+    const seeded = await seedReminders(new RemindersRepo(db, options.now ?? (() => new Date())));
+    if (seeded.length > 0) console.log(`[notesd] reminders: stored ${seeded.join(', ')}`);
+  } catch (err) {
+    console.error(`[notesd] reminders: could not store the seeds: ${err instanceof Error ? err.message : String(err)}`);
+  }
   const events = new NoteEvents();
   const sessionEvents = new SessionEvents();
   const service = new NotesService({ db, dataDir: config.dataDir, events, embedder });
@@ -227,6 +241,13 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     } catch (err) {
       console.error(`[notesd] direct stream: could not close stale stream plays: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+  // The play log (src/directStream/playLog/): one row per stream play ask on this host, written behind the play and
+  // never failing it. Sessions live in memory, so the rows the previous run left open are closed as `restart`.
+  const playLog = movies === null || config.directStream?.enabled !== true ? null : new PlayLog({ repo: new PlayLogRepo(db), host: movies.host });
+  if (playLog !== null) {
+    const closed = await playLog.closeLeftOpen();
+    if (closed > 0) console.log(`[notesd] play log: closed ${closed} play(s) left open by the previous run (restart)`);
   }
   // The bound port, known only after listen() (config.port may be 0). The chat agent reaches notes
   // through this daemon's own /mcp, a direct-stream play opens this daemon's player page, and the
@@ -429,6 +450,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         ? null
         : siteFallback({ runner: streaming, remembered: (ref) => movieStreams.channel(ref), title: (ref) => movieStreams.titleNames(ref), streams: movieStreams }),
     warp,
+    playLog,
     hooks:
       movieStreams === null
         ? undefined
@@ -562,6 +584,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     genreGuides,
     streamLive,
     streamEvidence,
+    playLog,
   };
   // The Cache page (src/directStream/cacheShelf.ts): this host's torrents and cloud caches on disk, deleted after an undo
   // window, and what downloads now and why. Null with neither torrents nor the stream cache. startBackground carries out

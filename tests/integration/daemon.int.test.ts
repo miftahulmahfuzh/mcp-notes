@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_ADVERSARY_CONFIG, DEFAULT_DWORD_CONFIG, DEFAULT_MOVIES_CONFIG, DEFAULT_SESSIONS_CONFIG, type Config } from '../../src/config.js';
 import { createStubChatBackend } from '../../src/chat/stub.js';
@@ -91,6 +92,29 @@ describe('startDaemon', () => {
     } finally {
       await plain.stop();
       rmSync(plainDir, { recursive: true, force: true });
+    }
+  });
+
+  it('stores the play-log reminder once at start, due seven days after the first start that had it', async () => {
+    const t0 = new Date('2026-11-27T01:00:00.000Z');
+    await daemon.deps.db.execute(sql`delete from reminders where seed_key = 'play-log-ranking'`);
+    const firstDir = join(mkdtempSync(join(tmpdir(), 'notesd-')), 'data');
+    const first = await startDaemon(config(firstDir), { chat: createStubChatBackend({ delayMs: 0 }), now: () => t0 });
+    await first.stop();
+    const againDir = join(mkdtempSync(join(tmpdir(), 'notesd-')), 'data');
+    const again = await startDaemon(config(againDir), { chat: createStubChatBackend({ delayMs: 0 }), now: () => new Date('2026-12-01T00:00:00.000Z') });
+    try {
+      const rows = await again.deps.db.execute<{ repo: string; due_at: Date; done_at: Date | null }>(
+        sql`select repo, due_at, done_at from reminders where seed_key = 'play-log-ranking'`,
+      );
+      expect(rows.rows).toHaveLength(1);
+      expect(rows.rows[0]?.repo).toBe('mcp-notes');
+      expect(new Date(rows.rows[0]!.due_at).toISOString()).toBe('2026-12-04T01:00:00.000Z');
+      expect(rows.rows[0]?.done_at).toBeNull();
+    } finally {
+      await again.stop();
+      rmSync(firstDir, { recursive: true, force: true });
+      rmSync(againDir, { recursive: true, force: true });
     }
   });
 

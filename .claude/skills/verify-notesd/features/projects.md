@@ -25,6 +25,10 @@
   is made from, so a word or meaning only a commit has finds that session, in text and hybrid
   mode. Vectors made before this (`cc_session_embeddings.text_version` 0) are rebuilt once by
   the owning host's summary worker after a restart, then never again.
+- Session search says when it has no vectors: with a key but no session vector of the embedder's
+  model (`cc_session_embeddings`, model match, `embedding is not null`), `sessions_search` and
+  `GET /api/sessions/search` answer `mode: "text"` with the fallback "Session vectors are not built
+  yet ...", and no query embedding is made. One vector of the model is enough for `hybrid` again.
 - Link an existing note to a session (MCP `link_note` / `unlink_note`; Phase 1). Session notes =
   made ∪ linked, deduped (a note both made and linked is listed once as `made`), newest first, at most 50.
   Links live in `note_session_links`; purging a note from the bin (hard delete) drops its link rows
@@ -218,6 +222,12 @@ minute (`select embedding is not null from cc_session_reply_embeddings where seq
 meaning-only query such as `"why did lookups return outdated data for another project"` then lists
 NODE with `via_replies` seq 9001 in `mode: "hybrid"`. The weight itself is proven by
 `tests/integration/sessions.relatedEvidence.int.test.ts`, not on a run.
+
+No session vectors yet. A run without `--embed` has no embedder, so it shows the
+"Meaning search is off" fallback, not this one. The no-vectors case (embedder set, no session
+vector of its model) is proven by `tests/integration/sessions.search.int.test.ts`
+("no session vector of the embedder's model yet"), with the fake embedder and no billing:
+`npm run test:int -- tests/integration/sessions.search.int.test.ts -t "no session vector"`.
 
 Summary requests. Start the run with the summarizer off so nothing is billed and the request stays
 visible (`NOTESD_CLAUDE_BIN` pointing nowhere turns summaries off; the daemon log says so):

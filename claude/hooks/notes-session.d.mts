@@ -5,6 +5,12 @@ export interface SessionStartOutput {
   hookSpecificOutput: { hookEventName: 'SessionStart'; additionalContext: string };
 }
 
+export interface StartReminder {
+  id: number;
+  body: string;
+  due_at: string;
+}
+
 export interface StartReply {
   session_id?: string;
   node_id: string;
@@ -12,6 +18,14 @@ export interface StartReply {
   parent_node_id?: string | null;
   parent_link_source?: string | null;
   claimed?: boolean;
+  reminders?: StartReminder[] | null;
+}
+
+export interface ContextReminder {
+  id: number;
+  body: string;
+  /** YYYY-MM-DD, UTC. */
+  due: string;
 }
 
 export const HOOK_EVENT: 'SessionStart';
@@ -22,6 +36,7 @@ export const LOG_FILE: string;
 export const PARENT_ENV: string;
 export const FRESH_SOURCES: string[];
 export const TMUX_TARGET_FORMAT: string;
+export const MAX_REMINDERS: number;
 
 export function isCliSession(env: Env): boolean;
 export function sessionIdOf(input: unknown): string | null;
@@ -39,6 +54,8 @@ export function registryEntry(
 ): Promise<{ pid: string; name: string | null; tmux: string | null } | null>;
 export function nameFromProcesses(pids: string[], readText: (file: string) => Promise<string>): Promise<string | null>;
 export function tmuxTarget(env: Env, runTmux: (args: string[]) => Promise<string>): Promise<string | null>;
+export function remindersOf(reply: StartReply): ContextReminder[];
+export function reminderContext(reminders: ContextReminder[]): string | null;
 export function buildContext(reply: StartReply): string;
 export function runSession(opts: {
   input: unknown;

@@ -1181,3 +1181,93 @@ export async function cancelDownload(id: string): Promise<void> {
   const res = await fetch(`/api/stream/downloads/${enc(id)}`, { method: 'DELETE', headers: JSON_HEADERS });
   if (!res.ok) throw await failure(res);
 }
+
+/** One channel's or one source's figures on the Stream health page (GET /api/stream/health). */
+export interface HealthFigures {
+  asks: number;
+  failed: number;
+  no_picture: number;
+  played: number;
+  success_rate: number | null;
+  median_resolve_ms: number | null;
+  median_first_frame_ms: number | null;
+  played_hours: number;
+  stalls_per_hour: number | null;
+  stalled_share: number | null;
+  hd_share: number | null;
+}
+
+export interface HealthSource extends HealthFigures {
+  channel: string;
+  source: string;
+}
+
+export interface HealthFailure {
+  channel: string;
+  failure: string;
+  count: number;
+}
+
+export type HealthOutcome = 'failed' | 'no_picture' | 'played' | 'site';
+
+export interface HealthPlay {
+  id: number;
+  asked_at: string;
+  title: string;
+  movie_id: string | null;
+  season: number | null;
+  episode: number | null;
+  channel: string | null;
+  source: string | null;
+  outcome: HealthOutcome;
+  failure: string | null;
+  height: number | null;
+  resolve_ms: number | null;
+  first_frame_ms: number | null;
+  stalls: number;
+  stalled_ms: number;
+  waits: number;
+  waited_ms: number;
+  ended: string | null;
+}
+
+export interface HealthUnhandled {
+  title: string;
+  movie_id: string | null;
+  kind: 'movie' | 'tv';
+  tmdb_id: number;
+  season: number | null;
+  episode: number | null;
+  asks: number;
+  last_asked_at: string;
+  cloud_failure: string | null;
+  torrent_failure: string | null;
+}
+
+export interface StreamHealth {
+  host: string;
+  days: number;
+  since: string;
+  first_logged_at: string | null;
+  totals: Record<string, HealthFigures>;
+  by_source: HealthSource[];
+  failures: HealthFailure[];
+  recent: HealthPlay[];
+  unhandled: HealthUnhandled[];
+}
+
+/** How stream plays went on this machine in the last `days` days. Throws ApiError `direct_stream_off`. */
+export async function fetchStreamHealth(days: number, signal?: AbortSignal): Promise<StreamHealth> {
+  const v = await getJson<Partial<StreamHealth>>(`/api/stream/health?days=${days}`, signal);
+  return {
+    host: v.host ?? '',
+    days: v.days ?? days,
+    since: v.since ?? '',
+    first_logged_at: v.first_logged_at ?? null,
+    totals: v.totals ?? {},
+    by_source: list(v.by_source),
+    failures: list(v.failures),
+    recent: list(v.recent),
+    unhandled: list(v.unhandled),
+  };
+}

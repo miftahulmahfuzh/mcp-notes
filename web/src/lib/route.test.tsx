@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adversaryHref, adversaryRouteFromLocation, canonicalNodeId, historyHref, hrefForView, moviesHref, moviesRouteFromLocation, NO_ADVERSARY_ROUTE, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation, STREAM_ROUTE, CACHE_ROUTE } from './route';
+import { adversaryHref, adversaryRouteFromLocation, canonicalNodeId, historyHref, hrefForView, moviesHref, moviesRouteFromLocation, NO_ADVERSARY_ROUTE, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation, STREAM_ROUTE, CACHE_ROUTE, HEALTH_ROUTE } from './route';
 
 const loc = (url: string) => {
   const u = new URL(url, 'http://localhost');
@@ -126,6 +126,13 @@ describe('movies route', () => {
     expect(moviesRouteFromLocation(loc('/movies/cache'))).toEqual(CACHE_ROUTE);
     expect(moviesHref(CACHE_ROUTE)).toBe('/movies/cache');
     expect(hrefForView('movies', null, loc('/movies?side=stream'), NO_PROJECT_ROUTE, NO_ADVERSARY_ROUTE, CACHE_ROUTE)).toBe('/movies/cache');
+  });
+
+  it('reads and writes the Stream health page, /movies/health, on the Stream side', () => {
+    expect(moviesRouteFromLocation(loc('/movies/health'))).toEqual(HEALTH_ROUTE);
+    expect(moviesHref(HEALTH_ROUTE)).toBe('/movies/health');
+    expect(hrefForView('movies', null, loc('/movies?side=stream'), NO_PROJECT_ROUTE, NO_ADVERSARY_ROUTE, HEALTH_ROUTE)).toBe('/movies/health');
+    expect(hrefForView('movies', null, loc('/movies/health'), NO_PROJECT_ROUTE, NO_ADVERSARY_ROUTE, HEALTH_ROUTE)).toBeNull();
   });
 
   it('reads the grid, a title and the unmatched list', () => {

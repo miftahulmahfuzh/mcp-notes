@@ -44,6 +44,7 @@ import {
 } from './session';
 import { addFeedCue, followCueFeed, isEnglish, pickDefaultSubtitle, toWebVtt, type CueFeedFollower, type SubtitleOption } from './subtitles';
 import { isPageVisible, startAdaptivePoll, type AdaptivePoll } from '../lib/pageActive';
+import { PlayStats } from './playStats';
 
 export const POSITION_INTERVAL_MS = 5_000;
 export const MAX_REFRESHES = 3;
@@ -257,6 +258,8 @@ export interface ControllerDeps {
   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
   /** Where the page keeps what it knows of its play, so a reload after a daemon restart can carry it on (sessionStorage in the browser). */
   memory?: Pick<Storage, 'getItem' | 'setItem'>;
+  /** A monotonic clock in ms for the play's counters (performance.now() by default). Never the wall clock: it steps on this machine. */
+  now?: () => number;
 }
 
 interface FileTrack {
@@ -333,12 +336,18 @@ export class StreamController {
   private previewRevAsked = -1;
   /** The session whose previews are being read now: one read at a time per session. */
   private previewsReading: string | null = null;
+  /** The monotonic clock the counters use. */
+  private readonly now: () => number;
+  /** The counters of this page load of this session, sent with every position report; new when the page plays another session. */
+  private stats: PlayStats;
 
   constructor(sessionId: string, video: HTMLVideoElement, deps: ControllerDeps) {
     this.sessionId = sessionId;
     this.video = video;
     this.deps = deps;
     this.mutedMode = deps.muted === true;
+    this.now = deps.now ?? (() => performance.now());
+    this.stats = new PlayStats(this.now);
     this.settled = new Promise<void>((resolve) => {
       this.settle = resolve;
     });
@@ -459,6 +468,8 @@ export class StreamController {
     this.ready = null;
     this.clearFileTracks();
     this.sessionId = nextId;
+    // Another session: its own load id and counters, so no load id ever spans two sessions.
+    this.stats = new PlayStats(this.now);
     this.lastPositionS = 0;
     this.stalls = [];
     this.sourceSwitches = 0;
@@ -843,7 +854,9 @@ export class StreamController {
             if (current()) this.onRecovered();
           },
           onFatal: (message) => {
-            if (current()) void this.leaveBrokenSource(message);
+            if (!current()) return;
+            this.stats.error();
+            void this.leaveBrokenSource(message);
           },
         },
       });
@@ -871,6 +884,8 @@ export class StreamController {
    */
   private onRecovering(attempt: number, message: string): void {
     if (this.state.stage === 'error') return;
+    // One network error per episode of restarts, however many restarts it takes.
+    if (attempt === 1) this.stats.error();
     const at = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
     this.set({ stage: 'recovering' });
     this.note(`recovering ${attempt}/${NETWORK_RETRY_LIMIT} after ${message} at ${round1(at)} s`);
@@ -885,6 +900,8 @@ export class StreamController {
   private readonly onSeek = (): void => {
     this.lastSeekAt = Date.now();
     this.clearStallTimer();
+    // A seek ends a freeze; the wait it starts is timed afresh.
+    this.stats.moved();
     this.markFetching(true);
   };
 
@@ -894,6 +911,7 @@ export class StreamController {
   private readonly onWaiting = (): void => {
     if (this.state.stage === 'ready') this.markFetching(true);
     if (this.state.stage !== 'ready' || this.video.paused) return;
+    this.stats.standingStill();
     // A seek's own wait is not a stall, unless it outlasts the grace.
     this.armStall(STALL_MIN_MS + Math.max(0, this.lastSeekAt + SEEK_GRACE_MS - Date.now()));
   };
@@ -906,6 +924,8 @@ export class StreamController {
       this.stallTimer = null;
       if (this.disposed || this.state.stage !== 'ready' || this.video.paused) return;
       this.note(`stalled at ${round1(this.video.currentTime)} s`);
+      // The play log counts the freeze once, and not at all when it is a torrent's wait.
+      this.stats.stalled(this.state.torrent?.fetching === true);
       this.countStall();
       if (this.state.stage === 'ready') this.armStall(STALL_REPEAT_MS);
     }, delayMs);
@@ -913,6 +933,8 @@ export class StreamController {
 
   private readonly onMoving = (): void => {
     this.clearStallTimer();
+    this.stats.moved();
+    if (this.onFilm() && !this.video.paused) this.stats.firstFrame();
     this.markFetching(false);
   };
 
@@ -988,6 +1010,8 @@ export class StreamController {
     this.session = answer.session;
     this.followPreviews(this.sessionId, answer.session.previewRev);
     this.subtitleChosen = false;
+    // The new source's view has no fetching mark: the wait for the old one's part is over.
+    this.stats.waitEnded();
     this.set({
       stage: 'refreshing',
       kind: answer.session.manifestKind,
@@ -1157,6 +1181,8 @@ export class StreamController {
     this.clearCacheTimers();
     this.stopTorrent();
     this.sessionId = session.id;
+    // Another session: its own load id and counters.
+    this.stats = new PlayStats(this.now);
     this.stalls = [];
     this.sourceSwitches = 0;
     this.lastSourceAskAt = 0;
@@ -1331,7 +1357,12 @@ export class StreamController {
     if (torrent === null || torrent.fetching === on) return;
     if (on && (torrent.state === 'ready' || onDisk(this.state.cachedRanges, this.video.currentTime))) return;
     this.set({ torrent: { ...torrent, fetching: on } });
-    if (on) this.note(`waiting for the torrent at ${round1(this.video.currentTime)} s`);
+    if (on) {
+      this.stats.waitStarted();
+      this.note(`waiting for the torrent at ${round1(this.video.currentTime)} s`);
+    } else {
+      this.stats.waitEnded();
+    }
   }
 
   // The part a torrent's play waited for is here: the seek landed, or the film can play.
@@ -1431,6 +1462,7 @@ export class StreamController {
     this.applySubtitleDelay();
     this.readCaption();
     if (this.onFilm() && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
+    this.stats.tick(this.video.currentTime, this.onFilm() && !this.video.ended && !this.video.paused);
   };
 
   // Every 5 s while the page is open: the position while it plays, and a beat while it is paused, so
@@ -1443,6 +1475,11 @@ export class StreamController {
 
   private readonly onPause = (): void => {
     this.clearStallTimer();
+    // A pause is not a stall: a freeze in progress ends here.
+    this.stats.moved();
+    // And play stops counting here, whether or not a time update follows the pause: the first
+    // update after it only starts the count again (the plan's R1.6 test decides this).
+    this.stats.tick(this.video.currentTime, false);
     this.armPauseCache();
     if (this.onFilm() && !this.video.ended) this.report();
   };
@@ -1474,6 +1511,7 @@ export class StreamController {
       paused: !ended && this.video.paused,
       ...(extra.beat === true ? { beat: true } : {}),
       ...(extra.closed === true ? { closed: true } : {}),
+      stats: this.stats.report(),
     };
     this.set({ reportedS: report.position_s });
     const asked = this.sessionId;

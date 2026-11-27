@@ -8,6 +8,8 @@ import {
   candidatePids,
   nameFromArgv,
   parentFrom,
+  reminderContext,
+  remindersOf,
   runSession,
   tmuxTarget,
   type FetchLike,
@@ -198,5 +200,51 @@ describe('helpers', () => {
       `spawned by Claude Code session ${PARENT}`,
     );
     expect(buildContext({ node_id: 'A0-3G' })).toContain('No parent session is recorded');
+  });
+});
+
+describe('reminders in the start context', () => {
+  const due = { id: 12, body: 'Decide  proposal\nitem 3.', due_at: '2026-12-04T01:17:56.000Z' };
+
+  it('a fresh start reply with a due reminder puts its number, date and text after the node id, with the instruction', async () => {
+    const { fetchImpl } = fakeFetch(() => reply({ reminders: [due] }));
+    const out = await runSession({ input: input(), env, fetchImpl, readText: files({}), runTmux: noTmux, now: () => NOW, ppid: 4242, hostname: () => 'lenovo' });
+    const context = out!.hookSpecificOutput.additionalContext;
+    const [head, block] = context.split('\n\n');
+    expect(head).toBe(buildContext({ node_id: 'A0-3G' }));
+    expect(block).toContain('- Reminder #12 (due 2026-12-04): Decide proposal item 3.');
+    expect(block).toContain('at the start of your first reply');
+    expect(block).toContain('`remind` (action "done"');
+  });
+
+  it('a reply without reminders, or with an empty list, gives the context of before', () => {
+    const plain = "This Claude Code session is node A0-3G in the user's session graph (the Projects page of the mcp-notes wall). Quote A0-3G when the user or another session needs to refer to this session. No parent session is recorded for it.";
+    expect(buildContext({ node_id: 'A0-3G' })).toBe(plain);
+    expect(buildContext({ node_id: 'A0-3G', reminders: [] })).toBe(plain);
+    expect(buildContext({ node_id: 'A0-3G', reminders: null })).toBe(plain);
+  });
+
+  it('remindersOf keeps well formed reminders only, at most five', () => {
+    const bad = [null, { id: 0, body: 'x', due_at: due.due_at }, { id: 3, body: ' ', due_at: due.due_at }, { id: 4, body: 'x', due_at: 'soon' }, { id: '5', body: 'x', due_at: due.due_at }];
+    const good = Array.from({ length: 7 }, (_, i) => ({ id: i + 1, body: `r${i + 1}`, due_at: due.due_at }));
+    expect(remindersOf({ node_id: 'A0-3G', reminders: [...bad, ...good] } as never).map((r) => r.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(reminderContext([])).toBeNull();
+    expect(reminderContext(remindersOf({ node_id: 'A0-3G', reminders: good.slice(0, 2) }))).toMatch(/^2 reminders the owner asked for are due:/);
+  });
+
+  it('daemon down still prints nothing', async () => {
+    const out = await runSession({
+      input: input(),
+      env,
+      fetchImpl: async () => {
+        throw new TypeError('fetch failed');
+      },
+      readText: files({}),
+      runTmux: noTmux,
+      now: () => NOW,
+      ppid: 4242,
+      hostname: () => 'lenovo',
+    });
+    expect(out).toBeNull();
   });
 });

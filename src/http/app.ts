@@ -36,6 +36,8 @@ import { streamCachePlayRoutes } from './streamCachePlayApi.js';
 import { streamTorrentRoutes } from './streamTorrentApi.js';
 import { streamTorrentCandidatesRoutes } from './streamTorrentCandidatesApi.js';
 import { streamDiskRoutes } from './streamDiskApi.js';
+import { streamHealthRoutes } from './streamHealthApi.js';
+import { streamHealthReader } from '../directStream/playLog/health.js';
 import { streamReportRoutes } from './streamReportApi.js';
 import { streamTorrentCuesRoutes } from './streamTorrentCuesApi.js';
 import { streamTorrentRemuxRoutes } from './streamTorrentRemuxApi.js';
@@ -104,6 +106,7 @@ export function mcpToolDeps(
     directStream: directStreamToolDeps(deps),
     streamCache: streamCacheToolDeps(deps),
     streamDisk: deps.cacheShelf ?? null,
+    streamHealth: streamHealthReader(deps),
     subtitleCheck: subtitleCheckToolDeps(deps),
     ...(wallUrl !== undefined ? { wallUrl } : {}),
     ...(extra.sessionResume !== undefined ? { sessionResume: extra.sessionResume } : {}),
@@ -123,7 +126,7 @@ export function mcpToolDeps(
  * Adversarial read model, toggle and review-now), moviesApiRoutes and moviesPlayRoutes
  * (movies-library phases 4 and 5: library, user state, sync, playback), directStreamRoutes
  * (direct-streaming phase 3: play, the player's session, the pass-through, refresh),
- * streamEvidenceRoutes (stream bug reporting: the evidence log, page lines, snapshots), streamCacheRoutes (stream-cache phase 5: the stream cache), streamDownloadsRoutes (stream-downloads phase 4: the download queue the title page and direct_stream_cache fill), streamTorrentRoutes (torrent-stream-source phase 1: torrent downloads and their file route), streamTorrentCandidatesRoutes (a title's torrent candidates and the torrent blacklist), streamDiskRoutes (the Cache page: what this machine keeps on disk for streaming), staticRoutes
+ * streamEvidenceRoutes (stream bug reporting: the evidence log, page lines, snapshots), streamCacheRoutes (stream-cache phase 5: the stream cache), streamDownloadsRoutes (stream-downloads phase 4: the download queue the title page and direct_stream_cache fill), streamTorrentRoutes (torrent-stream-source phase 1: torrent downloads and their file route), streamTorrentCandidatesRoutes (a title's torrent candidates and the torrent blacklist), streamDiskRoutes (the Cache page: what this machine keeps on disk for streaming), streamHealthRoutes (stream-play-log phase 3: how stream plays went on this host), staticRoutes
  * (P6, last: it owns the SPA fallback; it reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
@@ -165,6 +168,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', streamTorrentRoutes(deps));
   app.route('/', streamTorrentCandidatesRoutes(deps));
   app.route('/', streamDiskRoutes(deps));
+  app.route('/', streamHealthRoutes(deps));
   app.route('/', streamReportRoutes(deps));
   app.route('/', streamTorrentCuesRoutes(deps));
   app.route('/', streamTorrentRemuxRoutes(deps));

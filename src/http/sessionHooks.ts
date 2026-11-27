@@ -4,6 +4,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { SessionsRepo } from '../sessions/repo.js';
+import { createRepoResolver } from '../sessions/repoResolve.js';
+import { RemindersRepo } from '../reminders/repo.js';
 import { PENDING_SPAWN_WINDOW_MS } from '../sessions/types.js';
 import { NoteError } from '../notes/types.js';
 import { captureGuard } from './capture.js';
@@ -20,6 +22,8 @@ export const PENDING_SPAWN_RETAIN_MS = 24 * 60 * 60 * 1000;
 export const FRESH_START_SOURCES: ReadonlySet<string> = new Set(['startup', 'clear']);
 /** Sources that may claim a pending spawn: only the first start of a process. */
 export const CLAIMING_SOURCES: ReadonlySet<string> = new Set(['startup']);
+/** How long a fresh start waits for its cwd's repository key before it shows only the reminders for every repository. */
+export const REMINDER_REPO_BUDGET_MS = 1000;
 
 const SESSION_ID = /^[0-9A-Za-z][0-9A-Za-z-]{7,99}$/;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -84,8 +88,23 @@ export interface SessionHookOptions {
   hostname?: () => string;
   /** Pending-spawn claim window. Defaults to PENDING_SPAWN_WINDOW_MS. */
   windowMs?: number;
-  /** Clock for the prune cutoff. Defaults to Date.now. */
+  /** Clock for the prune cutoff and for which reminders are due. Defaults to Date.now. */
   now?: () => number;
+  /**
+   * The repository key of a cwd, for a session whose row has none yet. Defaults to the ingester's rules
+   * (createRepoResolver with the home dir and config.sessions.worktreesDir), so a reminder's `repo` means what a
+   * session row's `repo` means. Tests inject one.
+   */
+  repoOf?: (cwd: string) => Promise<string | null>;
+  /** Defaults to REMINDER_REPO_BUDGET_MS. */
+  repoBudgetMs?: number;
+}
+
+/** A reminder shown at a fresh start (src/reminders/repo.ts, `dueFor`). */
+export interface SessionHookReminder {
+  id: number;
+  body: string;
+  due_at: string;
 }
 
 export interface SessionHookStartReply {
@@ -96,6 +115,25 @@ export interface SessionHookStartReply {
   parent_link_source: string | null;
   /** True when this call linked the parent by claiming a pending spawn. */
   claimed: boolean;
+  /** Due reminders of this session's repository and of every repository; only on a fresh start (`startup`, `clear`), else []. */
+  reminders: SessionHookReminder[];
+}
+
+/** `work`'s value, or `fallback` when it fails or takes longer than `ms`. */
+function within<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
 }
 
 function describeIssues(error: z.ZodError): string {
@@ -110,7 +148,11 @@ function describeIssues(error: z.ZodError): string {
  * POST /api/sessions/hook/start — notes-session (SessionStart). Upserts the session row (node id
  * assigned on first sight), then on a fresh start (`startup`, `clear`) links `parent` as 'env', or
  * (`startup` only, tmux and cwd known, no env/hook parent yet) claims a pending spawn as 'hook'.
- * `resume` / `compact` only refresh the row. 200 SessionHookStartReply.
+ * `resume` / `compact` only refresh the row.
+ * A fresh start also answers `reminders`: the due, open reminders of the session's repository (its row's `repo`, else its
+ * cwd's, resolved like ingest does within REMINDER_REPO_BUDGET_MS) and of every repository, each stamped as shown so it
+ * is not shown again for 20 hours (RemindersRepo.dueFor). A failure there answers `reminders: []` and one log line.
+ * 200 SessionHookStartReply.
  *
  * POST /api/sessions/hook/spawn — notes-spawn (Bash PreToolUse). Records a pending spawn
  * {parent, cwd, name, host}, then prunes spawns older than PENDING_SPAWN_RETAIN_MS (the only
@@ -128,6 +170,24 @@ export function sessionHookRoutes(deps: AppDeps, options: SessionHookOptions = {
   const hostname = options.hostname ?? os.hostname;
   const windowMs = options.windowMs ?? PENDING_SPAWN_WINDOW_MS;
   const now = options.now ?? Date.now;
+  const remindersRepo = new RemindersRepo(deps.db, () => new Date(now()));
+  const repoBudgetMs = options.repoBudgetMs ?? REMINDER_REPO_BUDGET_MS;
+  const repoOf =
+    options.repoOf ??
+    (() => {
+      const resolver = createRepoResolver({ homeDir: os.homedir(), worktreesDir: deps.config.sessions.worktreesDir });
+      return (cwd: string) => resolver.resolve(cwd, '');
+    })();
+  /** The reminders a fresh start shows; [] and one log line when the lookup fails. */
+  const dueReminders = async (rowRepo: string | null, cwd: string | null): Promise<SessionHookReminder[]> => {
+    try {
+      const repoKey = rowRepo ?? (cwd === null ? null : await within(repoOf(cwd), repoBudgetMs, null));
+      return await remindersRepo.dueFor(repoKey, new Date(now()));
+    } catch (err) {
+      console.error(`[notesd] reminders: the start lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  };
   const limit = bodyLimit({
     maxSize: MAX_SESSION_HOOK_BODY_BYTES,
     onError: (c) => c.json({ error: 'too_large', max_bytes: MAX_SESSION_HOOK_BODY_BYTES }, 413),
@@ -193,6 +253,7 @@ export function sessionHookRoutes(deps: AppDeps, options: SessionHookOptions = {
       parent_node_id: parentRow?.nodeId ?? null,
       parent_link_source: row.parentLinkSource ?? null,
       claimed,
+      reminders: fresh ? await dueReminders(row.repo, body.cwd) : [],
     };
     return c.json(reply, 200);
   });

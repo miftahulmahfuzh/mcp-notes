@@ -5,6 +5,8 @@ import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { fileResponse } from '../directStream/cache/serve.js';
 import { noPreviews } from '../directStream/previews/types.js';
+import type { PlayLogFeed } from '../directStream/playLog/log.js';
+import type { PageStats } from '../directStream/playLog/types.js';
 import type { DirectStreamService } from '../directStream/service.js';
 import { isFile } from '../directStream/torrent/subtitles/disk.js';
 import { DirectStreamError, type StreamRef } from '../directStream/types.js';
@@ -86,7 +88,7 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
 
 // `movies` is optional here so a caller without the movies store (phase 3's route tests) still fits;
 // the position route answers `direct_stream_off` without it.
-export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'torrents' | 'streamPreviews'>>): Hono {
+export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'torrents' | 'streamPreviews' | 'playLog'>>): Hono {
   const r = new Hono();
   const service = (): DirectStreamService => {
     const svc = deps.directStream ?? null;
@@ -256,7 +258,7 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
   });
 
   // Phase 5: the player page's position reports (src/movies/streams.ts).
-  r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null, torrents: deps.torrents ?? null, previews: deps.streamPreviews ?? null }));
+  r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null, torrents: deps.torrents ?? null, previews: deps.streamPreviews ?? null, playLog: deps.playLog ?? null }));
 
   return r;
 }
@@ -282,7 +284,8 @@ const MAX_STREAM_SECONDS = 1_000_000;
 /**
  * The player page's report: every 5 s while the page is open, on pause and at the end. `paused`
  * says the film is paused; `beat` marks a report sent only to say the paused page is still open;
- * `closed` is the page's last word as it closes. Unknown keys are dropped.
+ * `closed` is the page's last word as it closes; `stats` the page's counters since its load (readPageStats).
+ * Unknown keys are dropped.
  */
 const positionBody = z.object({
   position_s: z.number().finite().min(0).max(MAX_STREAM_SECONDS),
@@ -291,7 +294,33 @@ const positionBody = z.object({
   paused: z.boolean().optional(),
   beat: z.boolean().optional(),
   closed: z.boolean().optional(),
+  stats: z.unknown().optional(),
 });
+
+/** Largest count or time (ms) one page load's counters may carry: 11.5 days, a sanity bound. */
+const MAX_PAGE_STAT = 1_000_000_000;
+const pageStat = z.number().finite().min(0).max(MAX_PAGE_STAT).transform((n) => Math.round(n));
+
+/** The position report's `stats` key, as the player page sends it (STREAM_PLAY_LOG_PLAN's contract). */
+export const pageStatsBody = z.object({
+  load: z.string().regex(/^[A-Za-z0-9_-]{8,32}$/),
+  first_frame_ms: pageStat.nullish(),
+  played_ms: pageStat,
+  stalls: pageStat,
+  stalled_ms: pageStat,
+  waits: pageStat,
+  waited_ms: pageStat,
+  errors: pageStat,
+});
+
+/** The page's counters, read once here; null when absent or not of the contract's shape (the report itself still counts). */
+export function readPageStats(raw: unknown): PageStats | null {
+  if (raw === undefined || raw === null) return null;
+  const parsed = pageStatsBody.safeParse(raw);
+  if (!parsed.success) return null;
+  const s = parsed.data;
+  return { load: s.load, firstFrameMs: s.first_frame_ms ?? null, playedMs: s.played_ms, stalls: s.stalls, stalledMs: s.stalled_ms, waits: s.waits, waitedMs: s.waited_ms, errors: s.errors };
+}
 
 /** The session a report is for: `subtitleRev` counts the times its subtitle changed since the play started (a torrent session's, else a cloud session's outside one). */
 type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number; infoHash?: string; fileIndex?: number } | null; outside?: { subtitleRev: number }; sourceRev?: number; previewRev?: number };
@@ -313,6 +342,11 @@ export interface StreamPositionDeps {
   previews?: { reported(id: string): void } | null;
   /** A torrent session's report marks its download played (its keep clock), as nothing else does. */
   torrents?: { played(infoHash: string, fileIndex?: number): Promise<void> } | null;
+  /**
+   * The play log (src/directStream/playLog/): every report's counters, how the play ended, and the session it took the
+   * screen from. A paused page's beat for the stream on screen only reaches its memory. Null or absent: nothing is logged.
+   */
+  playLog?: PlayLogFeed | null;
 }
 
 /**
@@ -326,6 +360,8 @@ export interface StreamPositionDeps {
  * Each report also feeds the live state (src/movies/streamLive.ts): the session is the stream on
  * screen until it ends or closes. A `beat` of a paused page that is already the stream on screen
  * only keeps it there: the position did not move, so nothing is written.
+ * The play log hears every report first (its counters, `ended`/`closed`, the session it replaced on screen); it
+ * writes in the background and never changes this answer.
  *
  * Every 200 carries `subtitle_rev`, the session's count of subtitle changes (Wyzie Synced re-timed
  * it, or an outside subtitle arrived late): the page loads its subtitle again when the number changes.
@@ -362,6 +398,17 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     service.watched?.(session.id, { paused: report.paused === true, over, positionS: report.position_s, durationS: report.duration_s ?? null });
     // A check behind the play rejected the stream on screen: the move is made now that the film plays (never when paused).
     service.reported?.(session.id, { paused: report.paused === true, over });
+    // The play log: the page's counters always reach memory; a paused page's beat for the stream on screen writes nothing.
+    // `quiet` is the very condition of the early return below (live.has(id) is live.current()?.session_id === id), so
+    // such a beat reaches only the session's StatsTally: PlayLog.report returns before it queues any write (R1.5).
+    const playLog = deps.playLog ?? null;
+    if (playLog !== null) {
+      const quiet = live !== null && report.beat === true && report.paused === true && !over && live.has(session.id);
+      const onScreen = live?.current()?.session_id ?? null;
+      // Another session's page reports while that one is on screen: that play lost the screen.
+      if (!over && onScreen !== null && onScreen !== session.id) playLog.replaced(onScreen);
+      playLog.report(session.id, { stats: readPageStats(report.stats), over: report.ended === true ? 'finished' : report.closed === true ? 'closed' : null, quiet });
+    }
     // Seek previews: the session on screen has its sheets made first and its frames looked at again (preview_rev).
     if (!over) deps.previews?.reported(session.id);
     const previewRev = session.previewRev ?? 0;

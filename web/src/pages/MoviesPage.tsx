@@ -1,6 +1,7 @@
 import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowsClockwise, Books, Broadcast, FilmSlate, HardDrives, Question, Warning } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowsClockwise, Books, Broadcast, FilmSlate, HardDrives, Heartbeat, Question, Warning } from '@phosphor-icons/react';
 import { CachePage } from '../components/movies/CachePage';
+import { HealthPage } from '../components/movies/HealthPage';
 import { restoreScroll } from '../lib/scrollMemory';
 import { MovieDetail } from '../components/movies/MovieDetail';
 import { MoviesGrid } from '../components/movies/MoviesGrid';
@@ -36,7 +37,7 @@ import {
   type MoviesFilter,
   type TitleMark,
 } from '../lib/movies';
-import { CACHE_ROUTE, NO_MOVIES_ROUTE, STREAM_ROUTE, type MoviesRoute } from '../lib/route';
+import { CACHE_ROUTE, HEALTH_ROUTE, NO_MOVIES_ROUTE, STREAM_ROUTE, type MoviesRoute } from '../lib/route';
 import '../components/movies/Movies.css';
 
 export interface MoviesPageProps {
@@ -95,7 +96,7 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
   // a title's page has replaced the grid the browser has already clamped the offset to the shorter
   // page, so reading it then is too late. Coming back (the Back arrow, the browser's Back) scrolls
   // there again once the grid and the sections under it are tall enough (lib/scrollMemory).
-  const isGrid = route.title === null && !route.unmatched && !route.cache;
+  const isGrid = route.title === null && !route.unmatched && !route.cache && !route.health;
   const scrollPos = useRef<{ library: number; stream: number }>({ library: 0, stream: 0 });
   const cameBack = useRef(false);
   useLayoutEffect(() => {
@@ -280,8 +281,10 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
       </button>
     </div>
   );
-  // The Cache page's button: after the Films / Series buttons on the Stream grid, else in the toolbar.
+  // The Cache page's and the Stream health page's buttons: after the Films / Series buttons on the Stream grid, else in the toolbar.
   const onCache = route.cache === true;
+  const onHealth = route.health === true;
+  const onPage = onCache || onHealth;
   const cacheButton = (
     <button
       type="button"
@@ -296,7 +299,27 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
       <HardDrives weight="duotone" />
     </button>
   );
-  const streamGrid = side === 'stream' && route.title === null && !onCache && !off && store.streamError === null && store.stream !== null && store.stream.enabled && store.stream.titles.length > 0;
+  const healthButton = (
+    <button
+      type="button"
+      className={onHealth ? 'ibtn on' : 'ibtn hov'}
+      data-tip="Stream health: how plays went on this machine"
+      data-tip-side="below"
+      aria-label="Stream health"
+      aria-pressed={onHealth}
+      disabled={off}
+      onClick={() => onRoute(onHealth ? STREAM_ROUTE : HEALTH_ROUTE)}
+    >
+      <Heartbeat weight="duotone" />
+    </button>
+  );
+  const pageButtons = (
+    <>
+      {cacheButton}
+      {healthButton}
+    </>
+  );
+  const streamGrid = side === 'stream' && route.title === null && !onPage && !off && store.streamError === null && store.stream !== null && store.stream.enabled && store.stream.titles.length > 0;
   const tools = (
     <>
     {notice && (
@@ -309,8 +332,8 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
         )}
       </span>
     )}
-    {side === 'stream' && !streamGrid && cacheButton}
-    {(route.title !== null || route.unmatched || onCache) && (
+    {side === 'stream' && !streamGrid && pageButtons}
+    {(route.title !== null || route.unmatched || onPage) && (
       <button type="button" className="ibtn hov" data-tip={backLabel} data-tip-side="below" aria-label={backLabel} onClick={() => onRoute(side === 'stream' ? STREAM_ROUTE : NO_MOVIES_ROUTE)}>
         <ArrowLeft weight="duotone" />
       </button>
@@ -351,6 +374,7 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
       />
     );
   else if (onCache) content = <CachePage onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })} />;
+  else if (onHealth) content = <HealthPage onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })} />;
   else if (route.title !== null) {
     if (store.detailError !== null) content = <MoviesEmpty text={moviesErrorText(store.detailError, route.title)} />;
     else if (!detailIsFor(store.detail, route.title)) content = <p className="mv-empty mv-content">loading</p>;
@@ -380,7 +404,7 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
     else if (list.titles.length === 0) content = <p className="mv-empty mv-content">{streamEmptyText(list.fresh_days)}</p>;
     else
       content = (
-        <MoviesGrid side="stream" lead={sideSwitch} tail={tools} afterKinds={cacheButton} titles={withMarks(list.titles, marks)} player={store.player} filter={streamFilter} onFilter={setStreamFilter} onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })} onMark={(t, p) => void mark(t, p)} />
+        <MoviesGrid side="stream" lead={sideSwitch} tail={tools} afterKinds={pageButtons} titles={withMarks(list.titles, marks)} player={store.player} filter={streamFilter} onFilter={setStreamFilter} onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })} onMark={(t, p) => void mark(t, p)} />
       );
   } else if (store.listError !== null) content = <MoviesEmpty text={moviesErrorText(store.listError)} />;
   else if (store.titles === null) content = <p className="mv-empty mv-content">loading the library</p>;
@@ -404,10 +428,10 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
         </p>
       )}
       {content}
-      {side === 'stream' && route.title === null && !route.unmatched && !onCache && !off && store.stream?.enabled === true && (
+      {side === 'stream' && route.title === null && !route.unmatched && !onPage && !off && store.stream?.enabled === true && (
         <SiteTitlesSection titles={store.stream.site_titles ?? []} busy={siteBusy} onPlay={(t, episode) => void playOnSite(t, episode)} onRemove={(t) => void removeFromSites(t)} />
       )}
-      {side === 'stream' && route.title === null && !route.unmatched && !onCache && !off && store.streamError === null && (
+      {side === 'stream' && route.title === null && !route.unmatched && !onPage && !off && store.streamError === null && (
         <TrendingSection
           trending={store.trending === null ? null : { ...store.trending, titles: withMarks(store.trending.titles, marks) }}
           running={trendRunning}

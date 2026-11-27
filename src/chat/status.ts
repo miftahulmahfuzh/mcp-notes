@@ -89,6 +89,13 @@ export type StreamingToolName = (typeof STREAMING_TOOL_NAMES)[number];
  */
 export const STREAM_DISK_TOOL_NAME = 'stream_disk';
 
+/**
+ * direct_stream_health (src/mcp/streamHealthTool.ts): how stream plays went on this machine, from the play log, per
+ * channel and per torrent index or cloud provider, and the titles that could not be played; the /movies/health page's
+ * twin ("how did torrents do this week?"). Read-only; in allowedChatTools().
+ */
+export const STREAM_HEALTH_TOOL_NAME = 'direct_stream_health';
+
 /** Cloudflare WARP's switch (src/mcp/warpTool.ts): status, on, off, with the Wi-Fi network's name. */
 export const WARP_TOOL_NAME = 'warp';
 
@@ -185,6 +192,7 @@ export function allowedChatTools(): string[] {
     ...STREAMING_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     `${MCP_PREFIX}${WARP_TOOL_NAME}`,
     `${MCP_PREFIX}${STREAM_DISK_TOOL_NAME}`,
+    `${MCP_PREFIX}${STREAM_HEALTH_TOOL_NAME}`,
     ...DIRECT_STREAM_TOOL_NAMES.filter((name) => !CLAUDE_CODE_ONLY_TOOL_NAMES.includes(name)).map((name) => `${MCP_PREFIX}${name}`),
     // dword's six tool names (dword_schema, dword_sql, and DWORD_TOOL_NAMES above) arrive here
     // already, because CONNECTOR_SYSTEMS includes 'dword' (DWORD_CONNECTOR_PLAN phase 1).
@@ -312,6 +320,8 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'adding stream providers';
     case 'direct_stream_discover':
       return 'looking for titles to stream';
+    case 'direct_stream_health':
+      return 'reading how streams played';
     case 'stream_disk': {
       const action = (input as { action?: unknown } | null)?.action;
       return action === 'list' || action === undefined ? 'reading the stream cache on disk' : action === 'undo' ? 'undoing a cache deletion' : 'deleting stream cache';

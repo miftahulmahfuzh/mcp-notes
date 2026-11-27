@@ -200,8 +200,13 @@ matched through:
 `via_notes` and `via_replies` list at most three items each, best first, and are empty when the
 session matched on its own text. `seq` is the number of the prompt the reply answered.
 
-Without `OPENROUTER_API_KEY`, session search is words only: every word must appear, and the result
-carries `mode: "text"` and a `fallback` sentence saying so. Replies and notes are still searched by
+Session search is words only in two cases, and then every word must appear and the result carries
+`mode: "text"` and a `fallback` sentence saying which case it is: without `OPENROUTER_API_KEY`, and
+while no session has a vector of the embedder's model yet ("Session vectors are not built yet ...").
+The second is the state of a new local database until the copy of the old shared database has run
+(the summary worker waits for it, see [architecture.md](architecture.md)) and the worker has
+embedded a first session; it is checked before the query is embedded, so it costs no embedding
+call, and search is hybrid again from the first vector on. Replies and notes are still searched by
 their words. Reply vectors are made one by one in the background on the machine that ran the
 session.
 

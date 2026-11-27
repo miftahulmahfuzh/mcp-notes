@@ -97,6 +97,29 @@ export class SessionError extends Error {
   }
 }
 
+/**
+ * What the page measured of its play since it loaded this session (stream-play-log R1.6). Every
+ * number is cumulative since that load and never goes down under the same `load`; the daemon keeps
+ * the latest per load and sums over loads.
+ */
+export interface PlayStatsReport {
+  /** A random id of this page load of this session: 16 characters of [A-Za-z0-9_-]. */
+  load: string;
+  /** Page load to the first frame moving; null until then. */
+  first_frame_ms: number | null;
+  /** Time the film advanced. */
+  played_ms: number;
+  /** Freezes the page's stall timer confirmed (a torrent's wait for a missing part is not one). */
+  stalls: number;
+  /** From the moment each counted freeze began until the film moved again. */
+  stalled_ms: number;
+  /** "waiting for the torrent" waits. */
+  waits: number;
+  waited_ms: number;
+  /** Network errors the engine rode out (one per episode) and streams it declared broken. */
+  errors: number;
+}
+
 export interface PositionReport {
   position_s: number;
   duration_s: number | null;
@@ -107,6 +130,8 @@ export interface PositionReport {
   beat?: boolean;
   /** The page is closing: its last report. */
   closed?: boolean;
+  /** The page's counters since it loaded this session; sent with every report. */
+  stats: PlayStatsReport;
 }
 
 const KINDS: readonly string[] = ['hls', 'dash', 'mp4'];

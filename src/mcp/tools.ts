@@ -1,3 +1,4 @@
+import type { StreamHealthReader } from '../directStream/playLog/health.js';
 import type { StreamDiskApi } from './streamDiskTool.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -53,6 +54,8 @@ export interface ToolDeps {
   streamCache?: StreamCacheToolDeps | null;
   /** The Cache page's shelf behind stream_disk. Omitted or null: it answers stream_disk_off. */
   streamDisk?: StreamDiskApi | null;
+  /** The play log's health answer behind direct_stream_health (stream-play-log phase 3). Omitted or null: it answers direct_stream_off. */
+  streamHealth?: StreamHealthReader | null;
   /** The subtitle check behind direct_stream_sync_subtitle (/sync-subtitle). Omitted or null: it answers subtitle_check_off (direct streaming off, or Whisper not installed). */
   subtitleCheck?: SubtitleCheckToolDeps | null;
 }

@@ -1908,6 +1908,104 @@ export const streamDownloads = pgTable(
   ],
 )
 
+/** Which service entry made a play log row (src/directStream/playLog/). The CHECK below keeps the same list. */
+export const STREAM_PLAY_VIAS = ['play', 'cache', 'continue', 'episode'] as const
+export type StreamPlayVia = (typeof STREAM_PLAY_VIAS)[number]
+/** How the ask named its source: a provider by name, a codename's kind, a magnet (`torrent`). Null: none named. */
+export const STREAM_PLAY_ASKED = ['provider', 'cloud', 'torrent'] as const
+export type StreamPlayAsked = (typeof STREAM_PLAY_ASKED)[number]
+/** `failed`: no session; `no_picture`: a session whose page never reported; `played`: at least one report; `site`: a streaming site took it. */
+export const STREAM_PLAY_OUTCOMES = ['failed', 'no_picture', 'played', 'site'] as const
+export type StreamPlayOutcome = (typeof STREAM_PLAY_OUTCOMES)[number]
+export const STREAM_PLAY_CHANNELS = ['cloud', 'torrent', 'cache', 'site'] as const
+export type StreamPlayChannel = (typeof STREAM_PLAY_CHANNELS)[number]
+/** Why a session's row was closed. Null while it is open. */
+export const STREAM_PLAY_ENDS = ['finished', 'closed', 'replaced', 'expired', 'restart'] as const
+export type StreamPlayEnd = (typeof STREAM_PLAY_ENDS)[number]
+
+/**
+ * One stream play ask on this host whose title is known (migration 0044): the play, the Cache page's play, a page
+ * carrying on after a restart, the player's previous/next episode. Written only by PlayLogRepo
+ * (src/directStream/playLog/repo.ts) through PlayLog, which never fails, delays or changes a play. A failed ask
+ * keeps its outcome word, its redacted detail and the word each channel ended with (`cloud_failure`,
+ * `torrent_failure`; null: that channel was not asked). A session's row holds the page's counters summed over every
+ * page load and is closed with `ended`. A `played` row is a successful streaming attempt whatever its length.
+ * Neon never held it, so it is not in SHARED_IMPORT_TABLES.
+ */
+export const streamPlayLog = pgTable(
+  'stream_play_log',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    host: text('host').notNull(),
+    askedAt: timestamp('asked_at', { withTimezone: true, mode: 'date' }).notNull(),
+    via: text('via').$type<StreamPlayVia>().notNull(),
+    kind: text('kind').$type<MovieTitleKind>().notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    season: integer('season'),
+    episode: integer('episode'),
+    asked: text('asked').$type<StreamPlayAsked>(),
+    outcome: text('outcome').$type<StreamPlayOutcome>().notNull(),
+    failure: text('failure'),
+    failureDetail: text('failure_detail'),
+    cloudFailure: text('cloud_failure'),
+    torrentFailure: text('torrent_failure'),
+    resolveMs: integer('resolve_ms'),
+    session: text('session'),
+    channel: text('channel').$type<StreamPlayChannel>(),
+    providerFirst: text('provider_first'),
+    providerLast: text('provider_last'),
+    infoHash: text('info_hash'),
+    torrentIndex: text('torrent_index'),
+    seeds: integer('seeds'),
+    filmKbps: integer('film_kbps'),
+    height: integer('height'),
+    firstFrameMs: integer('first_frame_ms'),
+    playedMs: integer('played_ms').notNull().default(0),
+    stalls: integer('stalls').notNull().default(0),
+    stalledMs: integer('stalled_ms').notNull().default(0),
+    waits: integer('waits').notNull().default(0),
+    waitedMs: integer('waited_ms').notNull().default(0),
+    errors: integer('errors').notNull().default(0),
+    autoSwitches: integer('auto_switches').notNull().default(0),
+    ownerSwitches: integer('owner_switches').notNull().default(0),
+    refreshes: integer('refreshes').notNull().default(0),
+    switchNote: text('switch_note'),
+    subtitleSource: text('subtitle_source'),
+    ended: text('ended').$type<StreamPlayEnd>(),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('stream_play_log_session_idx').on(t.session).where(sql`${t.session} is not null`),
+    index('stream_play_log_host_asked_idx').on(t.host, t.askedAt),
+    check('stream_play_log_kind_check', sql`${t.kind} in ('movie', 'tv')`),
+    check(
+      'stream_play_log_slot_check',
+      sql`${t.tmdbId} > 0 and ((${t.kind} = 'movie' and ${t.season} is null and ${t.episode} is null) or (${t.kind} = 'tv' and ${t.season} >= 0 and ${t.episode} > 0))`,
+    ),
+    check('stream_play_log_via_check', sql`${t.via} in ('play', 'cache', 'continue', 'episode')`),
+    check('stream_play_log_asked_check', sql`${t.asked} is null or ${t.asked} in ('provider', 'cloud', 'torrent')`),
+    check('stream_play_log_outcome_check', sql`${t.outcome} in ('failed', 'no_picture', 'played', 'site')`),
+    check(
+      'stream_play_log_failed_check',
+      sql`(${t.outcome} = 'failed') = (${t.failure} is not null) and (${t.outcome} = 'failed' or (${t.failureDetail} is null and ${t.cloudFailure} is null and ${t.torrentFailure} is null))`,
+    ),
+    check('stream_play_log_session_check', sql`(${t.outcome} in ('no_picture', 'played')) = (${t.session} is not null)`),
+    check(
+      'stream_play_log_channel_check',
+      sql`(${t.channel} is null or ${t.channel} in ('cloud', 'torrent', 'cache', 'site')) and (${t.outcome} = 'failed') = (${t.channel} is null) and (${t.outcome} = 'site') = (${t.channel} is not distinct from 'site')`,
+    ),
+    check(
+      'stream_play_log_ended_check',
+      sql`(${t.ended} is null or ${t.ended} in ('finished', 'closed', 'replaced', 'expired', 'restart')) and (${t.ended} is null) = (${t.endedAt} is null) and (${t.ended} is null or ${t.session} is not null)`,
+    ),
+    check(
+      'stream_play_log_counts_check',
+      sql`${t.playedMs} >= 0 and ${t.stalls} >= 0 and ${t.stalledMs} >= 0 and ${t.waits} >= 0 and ${t.waitedMs} >= 0 and ${t.errors} >= 0 and ${t.autoSwitches} >= 0 and ${t.ownerSwitches} >= 0 and ${t.refreshes} >= 0 and (${t.resolveMs} is null or ${t.resolveMs} >= 0) and (${t.firstFrameMs} is null or ${t.firstFrameMs} >= 0)`,
+    ),
+  ],
+)
+
 export type StreamTorrentMarkRow = typeof streamTorrentMarks.$inferSelect
 
 export type NoteRow = typeof notes.$inferSelect
@@ -1959,3 +2057,34 @@ export type StreamCacheRow = typeof streamCaches.$inferSelect
 export type StreamTorrentRow = typeof streamTorrents.$inferSelect
 export type MovieStoryRow = typeof movieStories.$inferSelect
 export type StreamDownloadRow = typeof streamDownloads.$inferSelect
+export type StreamPlayLogRow = typeof streamPlayLog.$inferSelect
+export type NewStreamPlayLogRow = typeof streamPlayLog.$inferInsert
+
+/**
+ * Reminders for the owner (migration 0045). Written only by RemindersRepo (src/reminders/repo.ts). The notes-session hook
+ * shows a reminder at a fresh Claude Code start once `due_at` has passed, in its `repo` (null: every repository), at most
+ * once every 20 hours (`last_shown_at`), until `done_at` is set by the `remind` tool. `seed_key` is set only on the
+ * reminders the daemon stores itself at start (src/reminders/seeds.ts), each once. Neon never held it, so it is not in
+ * SHARED_IMPORT_TABLES.
+ */
+export const reminders = pgTable(
+  'reminders',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    seedKey: text('seed_key').unique(),
+    body: text('body').notNull(),
+    repo: text('repo'),
+    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    doneAt: timestamp('done_at', { withTimezone: true, mode: 'date' }),
+    lastShownAt: timestamp('last_shown_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    check('reminders_body_check', sql`length(${t.body}) between 1 and 2000`),
+    check('reminders_repo_check', sql`${t.repo} is null or length(${t.repo}) between 1 and 200`),
+    check('reminders_seed_key_check', sql`${t.seedKey} is null or length(${t.seedKey}) between 1 and 100`),
+    index('reminders_open_idx').on(t.dueAt).where(sql`${t.doneAt} is null`),
+  ],
+)
+
+export type ReminderRow = typeof reminders.$inferSelect
