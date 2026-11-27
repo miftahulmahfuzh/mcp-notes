@@ -6,19 +6,19 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "13357f5",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": null,
+      "note": "stream_play_log (0044), PlayLogRepo/PlayLog, service+position route+daemon wiring, docs, playlog.sh, on branch phase-1-stream-play-log; decisions: playlog.sh plays film 467905 not 550 (fake TMDB lacks 550; rung 2), only phase 1's task created in this worktree (P1-NOTES-L001; todos.py mint is blind to the 5-letter NOTES code, peers may collide on ids); not rebased onto feature@ede3b8b; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1127-085834-2787641/evidence",
       "package": "src/directStream`, `src/db`, `src/http",
       "plan": ".workflows/plan/stream-play-log/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-27T09:08:24+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-L001",
       "title": "Play log: table, writer, daemon wiring"
     },
     {
@@ -53,7 +53,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Stream health: route, MCP tool, page"
     },
@@ -89,7 +89,7 @@
       "satisfies": [
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Reminders: table, tool, hook, the one-week seed"
     }
@@ -97,6 +97,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-play-log",
-  "updated": "2026-11-27T08:58:54+07:00",
+  "updated": "2026-11-27T09:10:13+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-play-log"
 }
