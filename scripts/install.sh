@@ -154,8 +154,9 @@ check_preconditions() {
   done
   [[ -f "$REPO_DIR/package-lock.json" ]] || die "missing $REPO_DIR/package-lock.json."
   local hk
-  for hk in "$HOOKS_DIR/notes-capture.mjs" "$HOOKS_DIR/notes-paste.mjs" "$HOOKS_DIR/notes-prompt.mjs" \
-            "$HOOKS_DIR/notes-session.mjs" "$HOOKS_DIR/notes-spawn.mjs" "$HOOKS_HELPER"; do
+  # Every script in claude-hooks.mjs's HOOK_SCRIPTS (tests/unit/scripts/installHookPreconditions.test.ts).
+  for hk in "$HOOKS_DIR/notes-capture.mjs" "$HOOKS_DIR/notes-link.mjs" "$HOOKS_DIR/notes-paste.mjs" \
+            "$HOOKS_DIR/notes-prompt.mjs" "$HOOKS_DIR/notes-session.mjs" "$HOOKS_DIR/notes-spawn.mjs" "$HOOKS_HELPER"; do
     [[ -f "$hk" ]] || die "missing $hk."
   done
   [[ "$PASTE_STRATEGY" == "updatedInput" || "$PASTE_STRATEGY" == "deny" ]] \
