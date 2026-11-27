@@ -2599,6 +2599,15 @@ The player page shows a frame and the timestamp above the pointer over the timel
 - `StreamApp.tsx` / `stream.css`: the pointer over `.st-seek` maps to a time; the box is a div with the sprite sheet as background (the cue's rectangle scaled to the box width) plus the timestamp, the timestamp alone over a gap or when the sheet fails. Shown during a drag, hidden on leave and when the controls hide, `pointer-events: none`; a sheet is fetched only when hovered near.
 - Tests: `web/src/stream/{previews,controller,StreamApp}.test.tsx`, fakes in `web/src/testing/streamFakes.ts`.
 
+### Player play counters: web/src/stream/{playStats,session,controller}.ts (stream-play-log phase 2, P1-NOTES-PL02)
+
+Every position report the player page posts (the 5 s one, pause, `beat`, `ended`, `closed`) carries a `stats` object: the page's own measurements of the play since it loaded this session (R1.6). Web only; the daemon side that keeps them is phase 1. Nothing else the page does changes (no stall-to-switch rule, no evidence line).
+
+- `session.ts`: `PlayStatsReport { load, first_frame_ms, played_ms, stalls, stalled_ms, waits, waited_ms, errors }`; `PositionReport.stats` is required (`postPosition` is its only caller).
+- `playStats.ts` (new): `newLoadId(random?)` (16 characters of `[A-Za-z0-9_-]` from `crypto.getRandomValues`), `PLAYED_GAP_MAX_MS` 1 000, `PlayStats(now, load?)` with `firstFrame`, `tick(mediaS, advancing)` (adds the gap between close `timeupdate`s, capped at 1 s, never across a seek or a long gap), `standingStill` (a `waiting` resets the played count), `stalled(torrentWait)` (one per confirmed freeze; a torrent wait is not a stall), `moved`, `waitStarted` / `waitEnded` (the torrent `fetching` mark), `error`, `report()` (open stalls and waits counted up to now; every number a non-negative integer that never goes down under one `load`).
+- `controller.ts`: `ControllerDeps.now?` (monotonic ms clock, default `performance.now()`; never the wall clock, which steps on this machine). A new `PlayStats` (new `load`, counters at zero) at construction and whenever the page plays another session (`goToEpisode`, the carry-on `swapTo`), so a `load` never spans two sessions; a source switch or refresh inside a session keeps it. Stalls are counted by the existing stall timer (`STALL_MIN_MS` plus the seek grace); `errors` counts an engine's first network-recovery attempt of an episode and a fatal (broken) stream.
+- Tests: `web/src/stream/playStats.test.tsx` and additions to `controller.test.tsx` (`-t "R1.6|PlayStats|newLoadId"`). Proof: verify-notesd `scripts/stream/play-stats.steps.mjs`, listed in `features/direct-streaming.md`.
+
 ### Torrent remux: src/directStream/torrent/remux.ts, src/http/streamTorrentRemuxApi.ts (torrent-stream-source phase 5, P1-NOTES-A131)
 
 A torrent file Chrome cannot play as is (MKV, AC3/E-AC3/DTS sound, HEVC) plays through an ffmpeg remux instead of being refused as `unplayable`: video copied, the original-language audio converted to AAC stereo, fMP4 segments in a growing HLS EVENT playlist. Owner-facing behaviour is in `docs/guide/streaming.md` "The remux for files Chrome cannot play".
