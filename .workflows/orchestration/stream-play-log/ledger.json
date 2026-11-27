@@ -23,19 +23,19 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b87bead3ed3bbb91e50ad71d89f41f0aeea65d2c",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "player page sends stats (load id + 7 counters) with every position report; decided: onPause feeds a non-advancing tick so play stops counting at the pause (plan's R1.6 test, rung 3); only phase 2's task was created (P1-NOTES-PL02); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1127-085404-2773003/evidence",
       "package": "web/src/stream",
       "plan": ".workflows/plan/stream-play-log/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-27T08:58:54+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-PL02",
       "title": "Player page counters"
     },
     {
@@ -97,6 +97,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-play-log",
-  "updated": "2026-11-27T08:54:53+07:00",
+  "updated": "2026-11-27T08:58:54+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-play-log"
 }
