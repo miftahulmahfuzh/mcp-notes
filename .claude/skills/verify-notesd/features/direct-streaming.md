@@ -837,11 +837,12 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `cloud_failure`, `torrent_failure`) or taken by a streaming site. The page's `stats` key on its position
   reports is summed over page loads; the row is written on the first report, every 30 s at most while it
   plays, and at the end; a paused beat for the stream on screen writes nothing. Closed as `finished`,
-  `closed`, `replaced`, `expired` or `restart`. See `docs/guide/streaming.md` ("The play log").
+  `closed`, `replaced`, `expired` or `restart`; a page carrying its play on after a restart reopens that
+  `restart` row under its new session and never writes a new one. See `docs/guide/streaming.md` ("The play log").
 - Rules: `npx vitest run tests/unit/directStream/playLog tests/unit/directStream/playLogService.test.ts tests/unit/directStream/positionRoute.test.ts`;
   the table and its writer: `npm run test:int -- tests/integration/directStream.playLog.int.test.ts`.
 - On a `verify.sh up --direct-stream` run (no `--torrent`; about two minutes, `beat` waits 40 s and `restart`
-  restarts the daemon): `.claude/skills/verify-notesd/scripts/direct-stream/playlog.sh RUN [ask|stats|failed|beat|replaced|restart ...]`.
+  restarts the daemon, then carries the play on and checks no new row appears): `.claude/skills/verify-notesd/scripts/direct-stream/playlog.sh RUN [ask|stats|failed|beat|replaced|restart ...]`.
   Each stage prints `PASS <stage>`; the run ends with `playlog: PASS`.
 
 ## Gotchas

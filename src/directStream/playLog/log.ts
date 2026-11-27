@@ -1,7 +1,8 @@
 import type { StreamPlayEnd } from '../../db/schema.js';
 import { SESSION_IDLE_MS, SESSION_MAX_MS, type StreamSession } from '../sessions.js';
 import { channelFailures, channelOf, failureDetailOf, failureOf, heightOf, kbpsOf, slotOf, subtitleSourceOf } from './derive.js';
-import type { PlayLogInsert, PlayLogPatch, PlayLogWriter } from './repo.js';
+import type { PlayLogInsert, PlayLogPatch, PlayLogWriter, ReattachedRow } from './repo.js';
+import type { StreamRef } from '../types.js';
 import { StatsTally } from './tally.js';
 import { PLAY_LOG_SWEEP_EVERY_MS, PLAY_LOG_WRITE_EVERY_MS, type ChannelFailures, type PageReport, type PlayAsk } from './types.js';
 
@@ -19,7 +20,7 @@ export interface PlayLogOptions {
 }
 
 /** What DirectStreamService calls. */
-export type PlayLogSink = Pick<PlayLog, 'answered' | 'failed' | 'site' | 'switched' | 'ended'>;
+export type PlayLogSink = Pick<PlayLog, 'answered' | 'carriedOn' | 'failed' | 'site' | 'switched' | 'ended'>;
 /** What the position route calls. */
 export type PlayLogFeed = Pick<PlayLog, 'report' | 'replaced'>;
 
@@ -31,7 +32,9 @@ interface SessionTally {
   outcome: 'no_picture' | 'played';
   readonly stats: StatsTally;
   /** The torrent the ask was answered with: its bitrate is filled in while the session still plays it. */
-  readonly infoHash: string | null;
+  infoHash: string | null;
+  /** A play carried on after a restart: what its row had counted before; this session's counts add to it. Null: a new ask. */
+  base: ReattachedRow | null;
   autoSwitches: number;
   ownerSwitches: number;
   ended: Exclude<StreamPlayEnd, 'restart'> | null;
@@ -60,6 +63,25 @@ function stoppedChannels(ask: PlayAsk, reached: ChannelFailures): ChannelFailure
     torrent = ask.asked !== 'cloud' && ask.asked !== 'provider';
   }
   return { cloud: cloud ? 'error' : null, torrent: torrent ? 'error' : null };
+}
+
+/** A carried-on play's own counts on top of what its row had before the restart (the first frame stays the first load's). */
+function withBase(p: PlayLogPatch, b: ReattachedRow | null): PlayLogPatch {
+  if (b === null) return p;
+  return {
+    ...p,
+    outcome: b.outcome === 'played' ? 'played' : p.outcome,
+    firstFrameMs: b.firstFrameMs ?? p.firstFrameMs ?? null,
+    playedMs: int4(b.playedMs + (p.playedMs ?? 0)),
+    stalls: int4(b.stalls + (p.stalls ?? 0)),
+    stalledMs: int4(b.stalledMs + (p.stalledMs ?? 0)),
+    waits: int4(b.waits + (p.waits ?? 0)),
+    waitedMs: int4(b.waitedMs + (p.waitedMs ?? 0)),
+    errors: int4(b.errors + (p.errors ?? 0)),
+    autoSwitches: int4(b.autoSwitches + (p.autoSwitches ?? 0)),
+    ownerSwitches: int4(b.ownerSwitches + (p.ownerSwitches ?? 0)),
+    refreshes: int4(b.refreshes + (p.refreshes ?? 0)),
+  };
 }
 
 function patchOf(t: SessionTally): PlayLogPatch {
@@ -106,6 +128,8 @@ export class PlayLog {
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   /** Set by the daemon's stop: an ask that fails from now on failed because the daemon stopped, not for its title. */
   private isStopping = false;
+  /** When this run's start closed the rows the previous run left open; null until it did (a carry-on then reopens nothing). */
+  private restartClosedAt: Date | null = null;
 
   constructor(opts: PlayLogOptions) {
     this.repo = opts.repo;
@@ -128,6 +152,7 @@ export class PlayLog {
         outcome: 'no_picture',
         stats: new StatsTally(),
         infoHash: torrent?.infoHash ?? null,
+        base: null,
         autoSwitches: 0,
         ownerSwitches: 0,
         ended: null,
@@ -160,6 +185,58 @@ export class PlayLog {
       };
       this.queue(t, 'an answered play', async () => {
         t.rowId = await this.repo.insert(row, now);
+      });
+    });
+  }
+
+  /**
+   * A play the page carried on after a restart (DirectStreamService.continueSession), now on `session`. It is no new
+   * ask: the row its play was closed on as `restart` by this run's start (`was`: the session id the page held) is
+   * open again under the new session, and the new page load's counts add to what the row had. With no such row (an
+   * older daemon played it, or the row is gone), nothing is written for it, now or later.
+   */
+  carriedOn(ref: StreamRef, was: string | null, session: StreamSession): void {
+    this.guard('a play carried on after a restart', () => {
+      if (this.tallies.has(session.id)) return;
+      const closedSince = this.restartClosedAt;
+      if (closedSince === null) return;
+      const now = this.now();
+      const t: SessionTally = {
+        session,
+        rowId: null,
+        outcome: 'no_picture',
+        stats: new StatsTally(),
+        infoHash: session.torrent?.infoHash ?? null,
+        base: null,
+        autoSwitches: 0,
+        ownerSwitches: 0,
+        ended: null,
+        endedAt: null,
+        lastWriteAt: null,
+        chain: Promise.resolve(),
+      };
+      this.tallies.set(session.id, t);
+      this.armSweep();
+      const follow = { providerLast: session.source.provider, switchNote: session.sourceNote, subtitleSource: subtitleSourceOf(session) };
+      const forget = (): void => {
+        if (this.tallies.get(session.id) !== t) return;
+        this.tallies.delete(session.id);
+        if (this.tallies.size === 0) this.disarmSweep();
+      };
+      this.queue(t, 'a play carried on after a restart', async () => {
+        try {
+          const row = await this.repo.reattach(this.host, { ...slotOf(ref), was, closedSince }, session.id, follow, now);
+          if (row === null) {
+            forget();
+            return;
+          }
+          t.base = row;
+          t.infoHash = row.infoHash;
+          t.rowId = row.id;
+        } catch (err) {
+          forget();
+          throw err;
+        }
       });
     });
   }
@@ -322,7 +399,10 @@ export class PlayLog {
   /** Daemon start: the rows the previous run left open are closed as `restart`. How many; 0 when the database did not answer. */
   async closeLeftOpen(): Promise<number> {
     try {
-      return await this.repo.closeLeftOpen(this.host, this.now());
+      const now = this.now();
+      const closed = await this.repo.closeLeftOpen(this.host, now);
+      this.restartClosedAt = now;
+      return closed;
     } catch (err) {
       this.log(`[notesd] play log: the rows left open were not closed: ${messageOf(err)}`);
       return 0;
@@ -341,7 +421,8 @@ export class PlayLog {
     const patch = patchOf(t);
     this.queue(t, what, async () => {
       if (t.rowId === null) return;
-      await this.repo.update(this.host, t.rowId, patch, now);
+      // A carried-on play's row is known only once its reattach ran (queued before this write): its counts add to the row's.
+      await this.repo.update(this.host, t.rowId, withBase(patch, t.base), now);
     });
   }
 

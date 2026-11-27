@@ -65,6 +65,49 @@ describe('PlayLogRepo', () => {
   });
 });
 
+describe('PlayLogRepo.reattach (a play carried on after a restart)', () => {
+  const LATER = new Date('2026-11-27T11:00:00.000Z');
+  const NEW = 'N'.repeat(32);
+  const film = { kind: 'movie' as const, tmdbId: 550, season: null, episode: null };
+  const follow = { providerLast: 'Gamma', switchNote: null, subtitleSource: 'stream' };
+
+  it('opens the row closed as restart under the new session, keeps the ask, adds one refresh and answers its counters', async () => {
+    const repo = new PlayLogRepo(db);
+    const id = await repo.insert({ ...base, asked: 'torrent', outcome: 'no_picture', resolveMs: 4_200, session: SID, channel: 'torrent', providerFirst: 'Torrent', providerLast: 'Torrent', infoHash: 'a'.repeat(40), torrentIndex: 'torrentio', refreshes: 1 }, AT);
+    await repo.update('host-a', id, { outcome: 'played', firstFrameMs: 1_200, playedMs: 25_000, stalls: 2, stalledMs: 3_000, waits: 1, waitedMs: 4_000, errors: 1, autoSwitches: 1 }, AT);
+    expect(await repo.closeLeftOpen('host-a', LATER)).toBe(1);
+    const back = await repo.reattach('host-a', { ...film, was: SID, closedSince: LATER }, NEW, follow, LATER);
+    expect(back).toEqual({ id, outcome: 'played', infoHash: 'a'.repeat(40), firstFrameMs: 1_200, playedMs: 25_000, stalls: 2, stalledMs: 3_000, waits: 1, waitedMs: 4_000, errors: 1, autoSwitches: 1, ownerSwitches: 0, refreshes: 2 });
+    expect(await repo.bySession('host-a', SID)).toBeNull();
+    expect(await repo.bySession('host-a', NEW)).toMatchObject({ id, via: 'play', asked: 'torrent', askedAt: AT, resolveMs: 4_200, torrentIndex: 'torrentio', providerFirst: 'Torrent', providerLast: 'Gamma', subtitleSource: 'stream', ended: null, endedAt: null, refreshes: 2 });
+    expect(await db.select().from(streamPlayLog)).toHaveLength(1);
+    // Twice is once: the row is open now.
+    expect(await repo.reattach('host-a', { ...film, was: SID, closedSince: LATER }, 'M'.repeat(32), follow, LATER)).toBeNull();
+  });
+
+  it('never reopens another host\'s row, another title\'s, a row closed some other way, or one closed before this start', async () => {
+    const repo = new PlayLogRepo(db);
+    await repo.insert({ ...base, host: 'host-b', outcome: 'played', session: SID, channel: 'cloud', ended: 'restart', endedAt: LATER }, AT);
+    await repo.insert({ ...base, tmdbId: 551, outcome: 'played', session: 'T'.repeat(32), channel: 'cloud', ended: 'restart', endedAt: LATER }, AT);
+    await repo.insert({ ...base, outcome: 'played', session: 'U'.repeat(32), channel: 'cloud', ended: 'closed', endedAt: LATER }, AT);
+    await repo.insert({ ...base, outcome: 'played', session: 'V'.repeat(32), channel: 'cloud', ended: 'restart', endedAt: AT }, AT);
+    expect(await repo.reattach('host-a', { ...film, was: SID, closedSince: LATER }, NEW, follow, LATER)).toBeNull();
+    expect(await repo.reattach('host-a', { ...film, was: 'T'.repeat(32), closedSince: LATER }, NEW, follow, LATER)).toBeNull();
+    expect(await repo.reattach('host-a', { ...film, was: 'U'.repeat(32), closedSince: LATER }, NEW, follow, LATER)).toBeNull();
+    expect(await repo.reattach('host-a', { ...film, was: null, closedSince: LATER }, NEW, follow, LATER)).toBeNull();
+    expect(await repo.bySession('host-a', NEW)).toBeNull();
+  });
+
+  it('with no session id, takes the newest row of the episode this start closed as restart', async () => {
+    const repo = new PlayLogRepo(db);
+    const ep = { kind: 'tv' as const, tmdbId: 1399, season: 1, episode: 2 };
+    await repo.insert({ ...base, ...ep, outcome: 'played', session: 'A'.repeat(32), channel: 'cloud', ended: 'restart', endedAt: LATER }, AT);
+    const newest = await repo.insert({ ...base, ...ep, askedAt: new Date(AT.getTime() + 60_000), outcome: 'played', session: 'B'.repeat(32), channel: 'cloud', ended: 'restart', endedAt: LATER }, AT);
+    await repo.insert({ ...base, ...ep, episode: 3, askedAt: new Date(AT.getTime() + 120_000), outcome: 'played', session: 'C'.repeat(32), channel: 'cloud', ended: 'restart', endedAt: LATER }, AT);
+    expect((await repo.reattach('host-a', { ...ep, was: null, closedSince: LATER }, NEW, follow, LATER))?.id).toBe(newest);
+  });
+});
+
 describe('stream_play_log checks', () => {
   it('refuses a row that contradicts itself', async () => {
     expect(await pgCode(db.insert(streamPlayLog).values({ ...base, outcome: 'failed' }))).toBe('23514');

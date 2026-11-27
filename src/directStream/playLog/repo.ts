@@ -30,11 +30,47 @@ export type PlayLogPatch = Partial<
   >
 >;
 
+/**
+ * Which row a play carried on after a restart goes back to: its film or episode, the session id its page held
+ * (null: the page did not say, and the newest row of the title is taken) and when this run's start closed the rows
+ * the previous run left open (only a row it closed is reopened).
+ */
+export interface ReattachTo {
+  kind: 'movie' | 'tv';
+  tmdbId: number;
+  season: number | null;
+  episode: number | null;
+  was: string | null;
+  closedSince: Date;
+}
+
+/** What the new session says of the play: the provider it is on now, and its switch note and subtitle source. */
+export type ReattachFollow = Required<Pick<PlayLogPatch, 'providerLast' | 'switchNote' | 'subtitleSource'>>;
+
+/** The row a carry-on reopened: its id, and what it had counted before the restart (its counters keep summing). */
+export interface ReattachedRow {
+  id: number;
+  outcome: 'no_picture' | 'played';
+  infoHash: string | null;
+  firstFrameMs: number | null;
+  playedMs: number;
+  stalls: number;
+  stalledMs: number;
+  waits: number;
+  waitedMs: number;
+  errors: number;
+  autoSwitches: number;
+  ownerSwitches: number;
+  /** Already counting the carry-on as one more refresh. */
+  refreshes: number;
+}
+
 /** What PlayLog writes through (PlayLogRepo; a memory one in tests). */
 export interface PlayLogWriter {
   insert(row: PlayLogInsert, now: Date): Promise<number>;
   update(host: string, id: number, patch: PlayLogPatch, now: Date): Promise<void>;
   closeLeftOpen(host: string, now: Date): Promise<number>;
+  reattach(host: string, to: ReattachTo, session: string, follow: ReattachFollow, now: Date): Promise<ReattachedRow | null>;
 }
 
 /** The only writer of `stream_play_log`. Every write acts on one host's rows. Phase 3's reads live here too. */
@@ -63,6 +99,50 @@ export class PlayLogRepo implements PlayLogWriter {
       .where(and(eq(streamPlayLog.host, host), isNull(streamPlayLog.ended), isNotNull(streamPlayLog.session)))
       .returning({ id: streamPlayLog.id });
     return closed.length;
+  }
+
+  /**
+   * A play carried on after a restart is not a new ask: the newest of this host's rows of the title that this start
+   * closed as `restart` (the one of the page's session when it said which) is open again under the new session, with
+   * one more refresh and the provider it is on now. The ask's own columns stay. Null: no such row (an older daemon
+   * played it, or the row is gone), and nothing was written.
+   */
+  async reattach(host: string, to: ReattachTo, session: string, follow: ReattachFollow, now: Date): Promise<ReattachedRow | null> {
+    const res = await this.db.execute<ReattachDbRow>(sql`
+      update stream_play_log
+         set session = ${session}, ended = null, ended_at = null, refreshes = refreshes + 1,
+             provider_last = ${follow.providerLast}, switch_note = ${follow.switchNote}, subtitle_source = ${follow.subtitleSource},
+             updated_at = ${now.toISOString()}::timestamptz
+       where ended = 'restart' and host = ${host}
+         and id = (
+           select id from stream_play_log
+            where host = ${host} and kind = ${to.kind} and tmdb_id = ${to.tmdbId}
+              and season is not distinct from ${to.season}::int and episode is not distinct from ${to.episode}::int
+              and ended = 'restart' and session is not null
+              and ended_at >= ${to.closedSince.toISOString()}::timestamptz
+              ${to.was === null ? sql`` : sql`and session = ${to.was}`}
+            order by asked_at desc, id desc
+            limit 1
+              for update)
+      returning id, outcome, info_hash, first_frame_ms, played_ms, stalls, stalled_ms, waits, waited_ms, errors,
+                auto_switches, owner_switches, refreshes`);
+    const r = res.rows[0];
+    if (r === undefined) return null;
+    return {
+      id: Number(r.id),
+      outcome: r.outcome === 'played' ? 'played' : 'no_picture',
+      infoHash: r.info_hash,
+      firstFrameMs: r.first_frame_ms,
+      playedMs: Number(r.played_ms),
+      stalls: Number(r.stalls),
+      stalledMs: Number(r.stalled_ms),
+      waits: Number(r.waits),
+      waitedMs: Number(r.waited_ms),
+      errors: Number(r.errors),
+      autoSwitches: Number(r.auto_switches),
+      ownerSwitches: Number(r.owner_switches),
+      refreshes: Number(r.refreshes),
+    };
   }
 
   /** This host's row of one stream session, or null. */
@@ -166,6 +246,22 @@ export class PlayLogRepo implements PlayLogWriter {
 }
 
 /** Type aliases, not interfaces: db.execute<T> needs T assignable to Record<string, unknown>. */
+type ReattachDbRow = {
+  id: number | string;
+  outcome: string;
+  info_hash: string | null;
+  first_frame_ms: number | null;
+  played_ms: number;
+  stalls: number;
+  stalled_ms: number;
+  waits: number;
+  waited_ms: number;
+  errors: number;
+  auto_switches: number;
+  owner_switches: number;
+  refreshes: number;
+};
+
 type HealthDbRow = {
   id: number | string;
   asked_at: Date | string;

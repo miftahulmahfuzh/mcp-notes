@@ -182,6 +182,107 @@ describe('the play log', () => {
     expect(await new PlayLog({ repo: t.repo, host: 'host-a', now: t.clock }).closeLeftOpen()).toBe(1);
     expect(t.repo.bySession(session.id)).toMatchObject({ ended: 'restart' });
   });
+  describe('a play carried on after a restart', () => {
+    /** The play before the restart: answered, reported, then closed as `restart` by the next run's start. */
+    async function restarted() {
+      const t = setup();
+      const before = t.play();
+      t.store.replaceSource(before, { ...SOURCE, provider: 'Beta' }, []);
+      t.log.switched(before, 'auto');
+      t.log.report(before.id, { stats: stats('loadAAAA', 40_000, { stalls: 1, stalledMs: 2_000, waits: 1, waitedMs: 3_000, errors: 1 }), over: null, quiet: false });
+      await t.log.settled();
+      t.advance(60_000);
+      const store = new SessionStore(t.clock);
+      const log = new PlayLog({ repo: t.repo, host: 'host-a', now: t.clock, log: (line) => void t.logged.push(line) });
+      expect(await log.closeLeftOpen()).toBe(1);
+      return { ...t, before, store, log, row: { ...t.repo.bySession(before.id)! } };
+    }
+
+    it('is no new ask: the row its play was closed on is open again under the new session, its counters summed', async () => {
+      const t = await restarted();
+      t.advance(5_000);
+      const going = t.store.create(FILM, { ...SOURCE, provider: 'Gamma' }, []);
+      t.log.carriedOn(FILM, t.before.id, going);
+      t.log.report(going.id, { stats: stats('loadBBBB', 10_000, { firstFrameMs: 700, stalls: 1, stalledMs: 500 }), over: null, quiet: false });
+      await t.log.settled();
+      expect(t.repo.rows).toHaveLength(1);
+      expect(t.repo.bySession(t.before.id)).toBeUndefined();
+      expect(t.repo.bySession(going.id)).toMatchObject({
+        id: t.row.id, via: 'play', asked: null, askedAt: t.row.askedAt, resolveMs: 2_500, providerFirst: 'Alpha', providerLast: 'Gamma',
+        outcome: 'played', firstFrameMs: 1_200, playedMs: 50_000, stalls: 2, stalledMs: 2_500, waits: 1, waitedMs: 3_000, errors: 1,
+        autoSwitches: 1, ownerSwitches: 0, refreshes: 2, ended: null, endedAt: null,
+      });
+    });
+
+    it('is open again as soon as it is carried on, before its page reports, and closes like any play', async () => {
+      const t = await restarted();
+      const going = t.store.create(FILM, SOURCE, []);
+      t.log.carriedOn(FILM, t.before.id, going);
+      await t.log.settled();
+      expect(t.repo.bySession(going.id)).toMatchObject({ id: t.row.id, outcome: 'played', ended: null, endedAt: null, playedMs: 40_000, refreshes: 2 });
+      t.log.replaced(going.id);
+      await t.log.settled();
+      expect(t.repo.bySession(going.id)).toMatchObject({ ended: 'replaced', outcome: 'played', playedMs: 40_000 });
+    });
+
+    it('a carry-on replaced at once stays the play that reached the screen, never a no_picture', async () => {
+      const t = await restarted();
+      const going = t.store.create(FILM, SOURCE, []);
+      t.log.carriedOn(FILM, t.before.id, going);
+      t.log.replaced(going.id);
+      await t.log.settled();
+      expect(t.repo.rows).toHaveLength(1);
+      expect(t.repo.rows[0]).toMatchObject({ outcome: 'played', ended: 'replaced' });
+    });
+
+    it('with no row closed as restart for it, writes nothing at all', async () => {
+      const t = await restarted();
+      const writes = t.repo.writes;
+      const other = t.store.create({ kind: 'movie', tmdbId: 551 }, SOURCE, []);
+      t.log.carriedOn({ kind: 'movie', tmdbId: 551 }, t.before.id, other);
+      const unknown = t.store.create(FILM, SOURCE, []);
+      t.log.carriedOn(FILM, 'never-logged-session', unknown);
+      t.log.report(other.id, { stats: stats('loadCCCC', 1_000), over: 'closed', quiet: false });
+      t.log.report(unknown.id, { stats: stats('loadDDDD', 1_000), over: 'closed', quiet: false });
+      await t.log.settled();
+      expect(t.repo.rows).toHaveLength(1);
+      expect(t.repo.rows[0]).toMatchObject({ session: t.before.id, ended: 'restart', playedMs: 40_000 });
+      // One reattach was looked up per carry-on, and nothing else reached the database.
+      expect(t.repo.writes - writes).toBe(2);
+    });
+
+    it('a row closed some other way is never reopened', async () => {
+      const t = setup();
+      const before = t.play();
+      t.log.report(before.id, { stats: null, over: 'finished', quiet: false });
+      await t.log.settled();
+      const log = new PlayLog({ repo: t.repo, host: 'host-a', now: t.clock });
+      expect(await log.closeLeftOpen()).toBe(0);
+      const going = new SessionStore(t.clock).create(FILM, SOURCE, []);
+      log.carriedOn(FILM, before.id, going);
+      await log.settled();
+      expect(t.repo.rows).toEqual([expect.objectContaining({ session: before.id, ended: 'finished' })]);
+    });
+
+    it('with no session id from the page, takes the newest row of the title this start closed as restart', async () => {
+      const t = await restarted();
+      const going = t.store.create(FILM, SOURCE, []);
+      t.log.carriedOn(FILM, null, going);
+      await t.log.settled();
+      expect(t.repo.rows).toEqual([expect.objectContaining({ id: t.row.id, session: going.id, ended: null })]);
+    });
+
+    it('a database that does not answer costs one log line and never throws', async () => {
+      const t = await restarted();
+      t.repo.failWith = new Error('connect ECONNREFUSED 127.0.0.1:55437');
+      const going = t.store.create(FILM, SOURCE, []);
+      expect(() => t.log.carriedOn(FILM, t.before.id, going)).not.toThrow();
+      t.log.report(going.id, { stats: stats('loadBBBB', 1_000), over: null, quiet: false });
+      await t.log.settled();
+      expect(t.logged.at(-1)).toBe('[notesd] play log: a play carried on after a restart was not written: connect ECONNREFUSED 127.0.0.1:55437');
+    });
+  });
+
   it('closes a session that expired while nothing swept the store, as expired at the time it expired (not later as restart)', async () => {
     const t = setup();
     const session = t.play();
