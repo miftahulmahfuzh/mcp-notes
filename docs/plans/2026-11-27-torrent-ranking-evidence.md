@@ -1,6 +1,11 @@
 # Torrent ranking: evidence for the 2026-12-04 decision
 
-Status: evidence only. Nothing here changes code. The owner put every torrent ranking change off to a decision on
+**Decided 2026-11-27: option 2 with a 1.5x margin.** Among racers that do not deliver, a delivery ratio at least 1.5
+times the other's wins before the English subtitle file (`RATIO_MARGIN`, `chooseOrder` in
+`src/directStream/torrent/source/delivery.ts`); within 1.5x the old order decides. Row 39 now picks NOMA (4.1x);
+row 11 stays ArtymKo (YTS is 1.2x). `chosenText` names the deciding step in every "was chosen" line.
+
+Status before the decision: evidence only. Nothing here changes code. The owner put every torrent ranking change off to a decision on
 2026-12-04; this file collects what the unbounded torrent soak of 2026-11-27 showed about one rule, so that
 decision has the rows in front of it.
 

@@ -534,7 +534,8 @@ describe('TorrentSource: the torrent is chosen by what its swarm delivers', () =
   const D = candidate(h(4), 'Film.2026.720p.WEB-DL.x264.AAC-D', 5);
   // 500 MB over 62 s: a 64.5 Mbps "film", so only peers make a swarm healthy here.
   const THIN = { peers: 3, down_kbps: 1740 };
-  const WIDE = { peers: 14, down_kbps: 900 };
+  // Within RATIO_MARGIN of THIN's rate, so the peers decide (a ratio 1.5x or more would decide first).
+  const WIDE = { peers: 14, down_kbps: 1500 };
 
   it(`opens the best ${TORRENT_RACE_WIDTH} side by side, not one after the other`, async () => {
     const t = setup({ candidates: [A, B, C, D], openDelay: { [h(1)]: 30, [h(2)]: 30, [h(3)]: 30 }, settleMs: 0 });
@@ -550,9 +551,9 @@ describe('TorrentSource: the torrent is chosen by what its swarm delivers', () =
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
     expect(out.ok && out.torrent.infoHash).toBe(h(2));
     expect(out.attempts.slice(1).map((a) => [a.outcome, a.detail])).toEqual([
-      ['skipped', `its header arrived too (16 seeds listed; 3 peers connected, 1.7 Mbps for a 64.5 Mbps film); ${B.name} was chosen`],
-      ['resolved', 'mov h264 720p / aac, 9 seeds listed; 14 peers connected, 0.9 Mbps for a 64.5 Mbps film'],
-      ['skipped', `its header arrived too (7 seeds listed; 3 peers connected, 1.7 Mbps for a 64.5 Mbps film); ${B.name} was chosen`],
+      ['skipped', `its header arrived too (16 seeds listed; 3 peers connected, 1.7 Mbps for a 64.5 Mbps film); ${B.name} was chosen for more peers`],
+      ['resolved', 'mov h264 720p / aac, 9 seeds listed; 14 peers connected, 1.5 Mbps for a 64.5 Mbps film'],
+      ['skipped', `its header arrived too (7 seeds listed; 3 peers connected, 1.7 Mbps for a 64.5 Mbps film); ${B.name} was chosen for more peers`],
     ]);
     // The ones not chosen leave their swarms at once, and stay first in line for the shuffle button.
     const calls = await t.settled();
@@ -604,7 +605,7 @@ describe('TorrentSource: the torrent is chosen by what its swarm delivers', () =
     expect(out.ok && out.torrent.selected).toEqual([0, 1]);
   });
 
-  it('chooseOrder: a swarm that delivers, then an English subtitle file, then more peers, then the finder\'s order', () => {
+  it('chooseOrder: a swarm that delivers, then a delivery ratio 1.5x the other\'s, then an English subtitle file, then more peers, then the finder\'s order', () => {
     const d = (peers: number, downKbps: number) => ({ peers, downKbps, filmKbps: 2640 });
     expect(delivers(d(3, 1740))).toBe(false);
     expect(delivers(d(3, 2640))).toBe(true);
@@ -621,7 +622,8 @@ describe('TorrentSource: the torrent is chosen by what its swarm delivers', () =
       { position: 3, english: true, d: d(7, 100) },
       { position: 4, english: false, d: null },
     ];
-    expect(chooseOrder(passed, (p) => p.d).map((p) => p.position)).toEqual([3, 2, 1, 0, 4]);
+    // 0 reaches 66 % of its bitrate, 1 only 19 %: 3.5x, so 0 goes before 1's English subtitle file.
+    expect(chooseOrder(passed, (p) => p.d).map((p) => p.position)).toEqual([3, 2, 0, 1, 4]);
   });
 
   it('tells the caller where the play stands: the stage and the attempts so far', async () => {

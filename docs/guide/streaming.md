@@ -2384,17 +2384,24 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   still receives: the log says `waiting up to 20 s for <release> (preferred height)`). Of those whose headers
   arrived, the one that plays is, in this order: one whose swarm delivers (a download rate at or above the film's own
   bitrate, or 6 peers or more connected for a film of at most 8 Mbps: Amélie's 18.3 Mbps BDRip had 7 peers and never
-  got past its first frame on this ~9 Mbps link) before one that does not; the preferred height (1080p first); one whose
-  files hold an English subtitle file; the one with more peers connected; the one the finder ranked higher. Its attempt says what was
+  got past its first frame on this ~9 Mbps link) before one that does not; the preferred height (1080p first); when
+  neither delivers, one whose delivery ratio (its rate over the film's bitrate) is at least 1.5 times the other's (the
+  Russian release of Miracle in Cell No. 7, 1.5 of 6.6 Mbps with an English subtitle file, was chosen over NOMA's 2.9 of
+  3.1 Mbps and stalled 97 s in 169 s; within 1.5 times, as Confessions' ArtymKo 1.9 of 6.0 against YTS 1.0 of 2.6, the
+  next step decides); one whose files hold an English subtitle file; the one with more peers connected; the one the
+  finder ranked higher. Its attempt says what was
   measured: `16 seeds listed; 3 peers connected, 1.7 Mbps for a 2.6 Mbps film`. The others are `skipped` ("its header
-  arrived too", "still opening when ... was chosen"), leave their swarms at once, and are first in line for the
+  arrived too", "still opening when ... was chosen"), and the line names the step that decided: `was chosen: it
+  delivers`, `was chosen for its height`, `was chosen: 4.1x the delivery of the next`, `was chosen for its English
+  subtitle file`, `was chosen for more peers`, `was chosen in the finder's order` (plain `was chosen` when no other
+  header had arrived). They leave their swarms at once, and are first in line for the
   shuffle button. Every torrent that does not play gets a log line saying why, with what its swarm gave:
   `torrent: TMDB movie 693134: <release> (2770fe27) lost: no_stream after 21 s, the swarm stalled before the header
   arrived: 0.1 MB in the last 15 s (3.2 MB received, 2 peers, 0.1 Mbps in 16 s) (from torrentio)`: a torrent that
   failed names the index that listed it, since an index asked by IMDb id can list another film under it (TorrentsDB
   lists two 2013 Korean releases under the 2019 Turkish Miracle in Cell No. 7; the title-search fit would drop them,
   but it applies only to what only a title search listed), `lost: its header arrived too
-  (720p listed; 4 peers connected, ...); <release> was chosen`, `lost: still opening (8.1 MB received, 5 peers, 2.2 Mbps) when <release> was
+  (720p listed; 4 peers connected, ...); <release> was chosen for its height`, `lost: still opening (8.1 MB received, 5 peers, 2.2 Mbps) when <release> was
   chosen`.
 - **An episode TMDB numbers on across seasons.** TMDB files One Piece episode 1000 as season 21, episode 1000;
   Torrentio, and every release named `S21E109`, count it as the 109th of that season. Asked by TMDB's number,
@@ -2714,7 +2721,7 @@ keys move the lines 50 ms at a time, and the delay is kept for the title (see
 [The player](#the-player)).
 
 A torrent whose files hold an English subtitle file is preferred when the torrents opened side by
-side deliver alike (see [Playing from a torrent](#playing-from-a-torrent), "Which of them plays").
+side deliver alike (neither delivers and neither reaches 1.5 times the other's share of its bitrate) (see [Playing from a torrent](#playing-from-a-torrent), "Which of them plays").
 
 Each kept file is served by `GET /api/stream/torrent/<hash>/sub/<name>`.
 
@@ -3168,7 +3175,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - A play is in flight from the ask until its page reports (`DirectStreamService.begin`, `starting()`): one per title and named provider, a second ask joins it. Anything that answers a caller with a time limit goes through `playWithin` (`direct_stream_play` answers `pending` after `PLAY_ANSWER_MS`, under the MCP client's 60 s) and never cuts the play short; a play that starts nothing logs every attempt.
   - The JSON torrent indexes are asked by IMDb id side by side (`defaultIndexes`, `find/find.ts`). TorrentsDB and Peerflix are Stremio add-ons read by Torrentio's reader (`stremioAddonIndex`, `find/torrentio.ts`); Peerflix lists Spanish releases, nearly all dubs, and is asked only for a title made in Spanish. A new index gets its name in `TORRENT_INDEX_NAMES`, its `NOTESD_TORRENT_<NAME>_URL` in `TORRENT_INDEX_URL_KEYS` with a configuration row, and is set to a fake or `off` on both of `verify.sh`'s index lines (a test checks it).
   - Knaben, Bitsearch and torrents-csv (`torrent/find/knaben.ts`, `bitsearch.ts`, `torrentscsv.ts`) are asked by title, not IMDb id: a film as title + year, an episode as title + `SxxEyy` (`titleSearchText`, `find/titleSearch.ts`). A release only they list carries `titleSearch` and must pass `titleSearchExclusion` in `rank.ts` (the title, then the year ±1 or the episode's marker), else `other_title` / `other_year`; never loosen it to a substring test. Every candidate, an IMDb listing's too, must also hold the title or the original title as whole words of its name (`namesTitle` in `rank.ts`: a run of its words joins to exactly the title, a glued year allowed), never as a part of a longer word: TorrentsDB's IMDb listing for The Pit (Çukur, 2017) held The Pitt (2025), which a substring test let through. Each has its own `NOTESD_TORRENT_<NAME>_URL` (`off`); `verify.sh` pins all three `off`.
-  - A torrent is chosen by its swarm, not by the index's seed count: the best three are opened side by side and `chooseOrder` (`torrent/source/delivery.ts`, raced in `source/race.ts`) picks among those whose headers arrived; the losers leave at once (`TorrentStreams.drop`). The subtitle chain holds the play for at most `SUBTITLE_HEAD_MS`, then runs behind it and bumps `subtitleRev`. An index is skipped only through `IndexHealth`, never for a `bot_check`.
+  - A torrent is chosen by its swarm, not by the index's seed count: the best three are opened side by side and `chooseOrder` (`torrent/source/delivery.ts`, raced in `source/race.ts`) picks among those whose headers arrived: delivers, height, then (neither delivering) a delivery ratio at least `RATIO_MARGIN` (1.5) times the other's, then the English subtitle file, peers, the finder's order; `chosenText` names the deciding step in every "was chosen" line. The margin is no total order, so `chooseOrder` takes the racers one at a time; never replace it with a plain sort key. The losers leave at once (`TorrentStreams.drop`). The subtitle chain holds the play for at most `SUBTITLE_HEAD_MS`, then runs behind it and bumps `subtitleRev`. An index is skipped only through `IndexHealth`, never for a `bot_check`.
   - Asking again tries the next torrents: `TorrentSource` keeps, per film or episode and in memory, the torrents that were tried and did not play (`SWARM_FAILURE_KEEP_MS` for a swarm that did not deliver, `FILE_FAILURE_KEEP_MS` for a dub or an unplayable file) and leaves them out of the next `resolve`, which also tells the finder (`tried`) so the fallback sites are asked once the JSON indexes hold nothing new. When everything was tried it starts over with the swarm failures only. A failed play ends with the attempt `Torrents: not tried yet`. A pasted magnet is never remembered against.
   - The trackers are asked before a swarm is joined (`find/scrape.ts`, a BEP 15 scrape: nothing announced, no peer contacted). A candidate at least two trackers answered for with no seeder goes last, never out. `NOTESD_TORRENT_DISCOVERY=off` asks none; tests inject the scraper or leave it unset.
   - RuTracker (`sites/rutracker.mjs`, at `rutracker.net`: this provider blocks `.org`) is the third fallback site. Its Cloudflare check and its login are the owner's to clear by hand (`cli.mjs rutracker gate`); a script never types a login. Not logged in is `login_required`, an index `bot_check`.
