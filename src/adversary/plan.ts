@@ -137,6 +137,11 @@ export interface PlanInput {
   cap: number;
   /** Review symbols that already have a verdict again, superseding it (manual review only). */
   rereview: boolean;
+  /**
+   * Retry a pick whose review failed MAX_FAILED_ATTEMPTS times (a manual pass, "Review now"): the owner asked for this
+   * pass, so a pick an automatic pass gives up on is tried once more. An automatic pass keeps skipping it.
+   */
+  retryFailed: boolean;
   only?: { strategyId?: string; sessionDate?: string };
 }
 
@@ -170,7 +175,7 @@ export function planWork(input: PlanInput): PlannedAction[] {
     const reviewed = input.verdicts.get(decisionKey(decision.strategyId, decision.sessionDate));
     for (const pick of decision.picks) {
       const attempt = attemptKey(decision.strategyId, decision.sessionDate, pick.symbol, decision.stage);
-      if (!input.rereview && (input.failures.get(attempt) ?? 0) >= MAX_FAILED_ATTEMPTS) continue;
+      if (!input.rereview && !input.retryFailed && (input.failures.get(attempt) ?? 0) >= MAX_FAILED_ATTEMPTS) continue;
       const draft = input.drafts.get(draftKey(decision.strategyId, decision.sessionDate, pick.symbol, promptVersion));
 
       if (decision.stage === 'draft') {

@@ -111,6 +111,8 @@ All fixed on 2026-11-27; the last column names the commit.
    `rereview` (`src/http/adversaryApi.ts`), so the option is unreachable. The guide's "not retried
    automatically" (`docs/guide/adversary.md:261`) understates it. Either expose `rereview`, or the
    guide should say "not retried, even by Review now".
+   **Decided 2026-11-27: "Review now" retries it; automatic passes keep skipping it** (`PlanInput.retryFailed`,
+   set for a manual pass).
 3. **The 50-a-day vocabulary limit is checked before the "already held" path**
    (`src/mcp/dwordVocabTools.ts:367`, before the collision handling at `:381-394`). Past the limit,
    a `dword_vocab_add` meant only to attach an origin sentence to a word already held is refused

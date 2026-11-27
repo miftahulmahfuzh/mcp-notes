@@ -57,6 +57,7 @@ function input(decisions: Decision[], extra: Partial<PlanInput> = {}): PlanInput
     used: 0,
     cap: 15,
     rereview: false,
+    retryFailed: false,
     ...extra,
   };
 }
@@ -98,6 +99,16 @@ describe('toDecisions / toPreviewDecisions', () => {
 });
 
 describe('planWork', () => {
+  it('a pick whose review failed twice is skipped by an automatic pass and retried by a manual one (Review now)', () => {
+    const decisions = toDecisions(candidates('A', '2031-01-14', 'bracket', ['X', 'Y']), NOW);
+    const failures = new Map([[attemptKey('A', '2031-01-14', 'X', 'final'), 2]]);
+    expect(summarize(planWork(input(decisions, { failures })))).toEqual(['review:A:Y']);
+    expect(summarize(planWork(input(decisions, { failures, retryFailed: true })))).toEqual(['review:A:X', 'review:A:Y']);
+    // One failure is retried by either pass.
+    const once = new Map([[attemptKey('A', '2031-01-14', 'X', 'final'), 1]]);
+    expect(summarize(planWork(input(decisions, { failures: once })))).toEqual(['review:A:X', 'review:A:Y']);
+  });
+
   const bracket = toDecisions(candidates('A', '2031-01-14', 'bracket', ['A1', 'A2']), NOW);
   const bookEarly = toDecisions(candidates('K', '2031-01-13', 'book', ['K1', 'K2']), NOW);
   const draft = toPreviewDecisions(
