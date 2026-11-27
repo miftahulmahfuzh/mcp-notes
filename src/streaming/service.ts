@@ -2,8 +2,35 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { redactQueries } from '../directStream/evidence.js';
+import { redactSecrets } from '../sessions/redact.js';
 
 const run = promisify(execFile);
+
+/** Free text from a script with no secret left: magnets, address queries, and what redactSecrets knows. */
+function scrub(text: string): string {
+  return redactQueries(redactSecrets(text.replace(/magnet:\?\S*/gi, 'magnet:')));
+}
+
+/** How many of a failed script's last stderr lines its error keeps, and at most how many characters of them. */
+export const STDERR_TAIL_LINES = 8;
+export const STDERR_TAIL_CHARS = 1_000;
+
+/**
+ * The last lines of a failed script's stderr, for its error: a crash's cause (a stack's first lines come last
+ * from a thrown error) instead of only "Command failed". Never a secret: magnets, address queries (a download's
+ * `tok`, the Wyzie key) and anything redactSecrets knows are cut. Empty when it wrote nothing.
+ */
+export function stderrTail(stderr: unknown): string {
+  if (typeof stderr !== 'string') return '';
+  const lines = stderr
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim() !== '')
+    .slice(-STDERR_TAIL_LINES);
+  const text = scrub(lines.join(' | '));
+  return text.length > STDERR_TAIL_CHARS ? `...${text.slice(-STDERR_TAIL_CHARS)}` : text;
+}
 
 /**
  * The streaming sites the tools know. The sites themselves live in claude/streaming/sites/*.mjs
@@ -62,7 +89,9 @@ export async function runJsonScript(options: JsonScriptOptions): Promise<unknown
   } catch (err) {
     const out = (err as { stdout?: unknown }).stdout;
     if (typeof out !== 'string' || out.trim() === '') {
-      throw new Error(`${options.label} failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
+      const tail = stderrTail((err as { stderr?: unknown }).stderr);
+      const first = scrub(err instanceof Error ? (err.message.split('\n')[0] ?? '') : String(err));
+      throw new Error(`${options.label} failed: ${first}${tail === '' ? '' : `; stderr: ${tail}`}`);
     }
     stdout = out;
   }
