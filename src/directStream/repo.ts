@@ -215,6 +215,22 @@ export interface HealthAttempt {
   source: ResolvedSource | null;
 }
 
+/** How a `no_stream` attempt's detail starts when the provider's own page did not load (order.mjs UNREACHABLE, which resolve.mjs writes). */
+export const UNREACHABLE_DETAIL = 'unreachable: ';
+
+/**
+ * Whether a try counts toward the provider's failures in a row (the rest, order.mjs restingUntil). A `no_stream`
+ * from a page that loaded counts only when the title demonstrably exists: another cloud provider resolved it in the
+ * same resolve, or a cloud provider or a torrent streamed it (the film, or that episode) on this machine before. A
+ * provider is not put to rest for a title no source has: Smashy, VidRock, NexaStream and MovieVault rested for
+ * a week for titles nothing streamed. Such a try is not recorded: it neither adds to nor resets the count. An
+ * unreachable page, a bot check and an error count as before.
+ */
+export function countsTowardRest(attempt: { outcome: string; detail: string }, titleStreamed: boolean): boolean {
+  if (attempt.outcome !== 'no_stream' || attempt.detail.startsWith(UNREACHABLE_DETAIL)) return true;
+  return titleStreamed;
+}
+
 /** The only writer of `stream_providers`, `stream_provider_health` and `stream_caches`. */
 export class DirectStreamRepo {
   constructor(private readonly db: Db) {}

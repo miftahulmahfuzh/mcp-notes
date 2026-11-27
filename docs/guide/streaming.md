@@ -520,6 +520,15 @@ resolve, and one stream resets its count; `--only` (a provider the owner names, 
 the daily canary) asks it at any time. An `error` (the sniffer or Chrome failed on this machine) says nothing of the
 provider and never starts a rest (`order.mjs` `restingUntil`).
 
+A page that loads with no stream counts toward the rest only for a title that demonstrably exists: another cloud
+provider resolved it in the same resolve, a cloud provider or a torrent streamed that film or episode on this
+machine before (a verified source, or a stream play that is not a streaming site's), or it is one of
+`known-titles.json` (the canary, `/update-cloud-source`'s probe), which the providers carry by construction. A
+`no_stream` for a title nobody streamed is not recorded at all: it neither adds to the count nor resets it, so a
+provider is not put to rest by titles no source has (Smashy, VidRock, NexaStream and MovieVault each rested a
+week that way). An unreachable page, a bot check and an `error` count as before, and the rest lengths are
+unchanged (`repo.ts` `countsTowardRest`, asked by the service's `recordHealth` through the `titleStreamed` hook).
+
 **Side by side once the play goes badly.** The providers are asked one after another, and a provider that
 loads but has no stream of the title takes its full 35 s to say so: thirteen of them cost A Story About Fire
 (which nobody carries) 456 s; asked side by side it took 219 s. So once two providers have given nothing, the next ones in the order are asked
@@ -3146,6 +3155,7 @@ rule it states; the few that must never change are also in the repository's `CLA
   - A new site follows `claude/skills/create-streaming-skill`, and is added to `sites/index.mjs` and `STREAMING_SITES` together (a test compares them). Tests use a fake runner; `deps.streaming` unset answers `streaming_off`.
 - **Direct streaming** (`src/directStream/*`, resolver in `claude/streaming/direct/*`) plays a title in its original language only. The daily canary (`canary.ts`, `NOTESD_STREAM_CANARY`) asks every cloud provider for one known film through `runResolve --only`, for its health only.
   - Every resolve carries the title's `original_language` (`--audio-lang`); a stream that names other languages only is `dubbed` and skipped, never played. `dubbed` is not provider health.
+  - A provider rests after five failures in a row (`order.mjs` `restingUntil`). A `no_stream` from a page that loaded counts only for a title known to stream here (`repo.ts` `countsTowardRest`: the same resolve found a stream, the `titleStreamed` hook answers from `movie_stream_sources` and stream plays, or `runResolve`'s `known` for the canary and the probe); one that does not count is not recorded.
   - A torrent whose file tags no audio language is heard behind the play (`hearTorrent` in `service.ts`, `TorrentSource.hearAudio`, the same `AudioLangCheck.hear`), for any known original language, English too; the language heard is kept per info hash in `stream_torrent_marks` (`TorrentMarksRepo`, `torrent/marks.ts`, its only writer), and a torrent heard speaking another language than a title's original is left out of every later ask of that title (`leftOutByMarks`: `resolve`, `next`, `fromDisk`, the remembered torrent). A dub sets `pendingMove`, so the play moves by itself; a torrent the owner pasted (`session.pastedTorrent`) stays, the dub said in its attempt.
   - A cloud `.mp4` often has no audio-language tags, so a dub passes the resolver's check. The cloud audio-language check (`src/directStream/audioLang.ts`, run in `vetted`) passes ~30 s of a cloud stream's audio through Whisper's `detect` to hear the spoken language, and a provider heard dubbing a foreign film is passed over for one serving the original. Cloud-only, only when the original language is known and not English; verdict kept per title+provider; `unsure` plays; a dub still plays when nothing else does. `NOTESD_STREAM_AUDIO_CHECK=off`. A play waits `CHECK_HEAD_MS` (4 s) for this check and the picture check, never longer: a kept verdict passes a provider over before the play, a first look finishes behind it and is kept for the next play. Only a verdict rejects (`passesOver`, `passesOverAudio`): a stream no frame or no audio can be read from plays, and never costs another resolve round.
   - The stream on screen (`src/movies/streamLive.ts`, `GET /api/movies/player` `stream`) is in memory and fed only by the player page's position reports; a paused page's `beat` must not write to the database.

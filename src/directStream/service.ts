@@ -14,7 +14,7 @@ import { passesOverAudio, type AudioLangCheck } from './audioLang.js';
 import { normalizeAudioLang } from './torrent/probe.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
 import { observeForward, refusedRecord, safeRecord, sessionRecord, sessionSource, type EvidenceSink, type SessionSource } from './evidence.js';
-import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
+import { countsTowardRest, DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
 import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { MAX_SESSIONS, SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
@@ -122,6 +122,12 @@ export interface DirectStreamHooks {
   channelFailed?: (ref: StreamRef, kind: 'cloud' | 'torrent') => Promise<void>;
   /** A torrent was blacklisted: every title forgets it as the torrent it last played through. The ids of those titles. */
   forgetTorrent?: (infoHash: string) => Promise<string[]>;
+  /**
+   * A cloud provider or a torrent streamed the title (the film, or that episode) on this machine before. Asked only
+   * when a resolve found nothing and a provider's page loaded with no stream: that `no_stream` counts toward the
+   * provider's rest only when the title is known to stream (repo.ts countsTowardRest). Absent or failing: not known.
+   */
+  titleStreamed?: (ref: StreamRef) => Promise<boolean>;
 }
 
 export interface SessionSubtitle {
@@ -2062,9 +2068,11 @@ export class DirectStreamService {
    * error). Does not call the recordResolve hook. Phase 8 probes one provider with `{ only }`;
    * `deadlineS` becomes the resolver's `--deadline-s` (phase 10's per-pass budget). `skip` names
    * providers the resolver must not try (a session that left them, switchSource). The health file
-   * also carries each provider's delivery, which the resolver's order puts before its resolve health.
+   * also carries each provider's delivery, which the resolver's order puts before its resolve health. `known`: the
+   * title is one of known-titles.json (the canary, a probe), which the providers carry by construction, so a
+   * provider's `no_stream` counts toward its rest without looking the title up (countsTowardRest).
    */
-  async runResolve(ref: StreamRef, options: { only?: string; deadlineS?: number; skip?: readonly string[] } = {}): Promise<ResolveOutput> {
+  async runResolve(ref: StreamRef, options: { only?: string; deadlineS?: number; skip?: readonly string[]; known?: boolean } = {}): Promise<ResolveOutput> {
     const audioLang = await this.audioLang(ref);
     const anime = await this.animeRef(ref);
     return this.serial(async () => {
@@ -2107,7 +2115,7 @@ export class DirectStreamService {
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
-      await this.recordHealth(out, new Set(providers.map((p) => p.name)));
+      await this.recordHealth(ref, out, new Set(providers.map((p) => p.name)), options.known === true);
       this.log(
         out.ok
           ? `[notesd] direct stream: ${refLabel(ref)} resolved by ${out.source.provider} (${out.source.manifest_kind}${out.source.best_height === null ? '' : `, ${out.source.best_height}p`}) after ${out.attempts.length} tries`
@@ -2147,7 +2155,7 @@ export class DirectStreamService {
       knownTitles: () => loadKnownTitles(),
       probe: async (provider, title) => {
         try {
-          return toProbeResult(title, provider, await this.runResolve(title.ref, { only: provider }));
+          return toProbeResult(title, provider, await this.runResolve(title.ref, { only: provider, known: true }));
         } catch (err) {
           return { title: title.label, outcome: 'error', took_s: null, manifest_kind: null, best_height: null, en_subtitle: null, detail: err instanceof Error ? err.message : String(err) };
         }
@@ -2408,6 +2416,13 @@ export class DirectStreamService {
     return language !== null && /^[A-Za-z]{2,3}$/.test(language) ? language.toLowerCase() : null;
   }
 
+  /** The titleStreamed hook's answer; false without the hook or when it fails. */
+  private async titleStreamed(ref: StreamRef): Promise<boolean> {
+    const hook = this.opts.hooks?.titleStreamed;
+    if (hook === undefined) return false;
+    return (await this.hookValue('titleStreamed', () => hook(ref))) ?? false;
+  }
+
   private async neighborsOf(ref: StreamRef): Promise<EpisodeNeighbors> {
     const hook = this.opts.hooks?.neighbors;
     if (ref.kind !== 'tv' || hook === undefined) return { prev: null, next: null };
@@ -2421,10 +2436,16 @@ export class DirectStreamService {
     return anime !== null && Number.isSafeInteger(anime.id) && anime.id > 0 && Number.isSafeInteger(anime.episode) && anime.episode > 0 ? anime : null;
   }
 
-  private async recordHealth(out: ResolveOutput, known: ReadonlySet<string>): Promise<void> {
+  private async recordHealth(ref: StreamRef, out: ResolveOutput, known: ReadonlySet<string>, knownTitle: boolean): Promise<void> {
     const rows: HealthAttempt[] = [];
+    // A resolve that found a stream, or a known title, proves the title exists; else it is looked up once, and only when it matters.
+    let streamed: boolean | null = out.ok || knownTitle ? true : null;
     for (const a of out.attempts) {
       if (!isHealthOutcome(a.outcome) || !known.has(a.provider)) continue;
+      if (!countsTowardRest(a, false)) {
+        streamed ??= await this.titleStreamed(ref);
+        if (!countsTowardRest(a, streamed)) continue;
+      }
       const source = out.ok && a.outcome === 'resolved' && a.provider === out.source.provider ? out.source : null;
       rows.push({ provider: a.provider, outcome: a.outcome, took_s: a.took_s, detail: a.detail, source });
     }

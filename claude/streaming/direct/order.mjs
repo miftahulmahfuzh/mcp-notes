@@ -29,7 +29,8 @@ export const REST_MAX_MS = 7 * 24 * 3_600_000;
  * then failed 16 times in a row, and every play asked it first. An `error` (the sniffer or Chrome failed on this
  * machine) says nothing of the provider and never starts a rest. It is asked again once the rest is over (a day
  * after its last failure, then two, four, up to a week), so a provider that came back is found without anyone
- * looking, and one stream resets its count; `--only` asks it at any time.
+ * looking, and one stream resets its count; `--only` asks it at any time. The daemon counts a `no_stream` from a
+ * page that loaded only for a title known to stream here (src/directStream/repo.ts countsTowardRest).
  */
 export function restingUntil(health) {
   if (!health || (health.consecutive_failures ?? 0) < DEAD_AFTER) return null;

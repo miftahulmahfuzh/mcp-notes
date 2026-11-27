@@ -215,6 +215,22 @@ export class MovieStreams {
   }
 
   /**
+   * A cloud provider or a torrent streamed the target (the film, or that episode) on this machine: the direct-stream
+   * service asks before a provider's `no_stream` counts toward its rest. Reads only; false when the title is not
+   * stored or the read fails.
+   */
+  async titleStreamed(target: StreamTarget): Promise<boolean> {
+    try {
+      const slot = streamSlot(target);
+      if (slot === null) return false;
+      return await this.movies.repo.streamedOnHost(slot.titleId, slot, this.movies.host, STREAMING_SITES);
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read whether ${describeTarget(target)} streamed here: ${messageOf(err)}`);
+      return false;
+    }
+  }
+
+  /**
    * Sets the audio language a title plays in ("en"), for a title whose spoken language is not TMDB's original
    * language; null goes back to TMDB's. The title row is ensured first. False when it cannot be stored.
    */

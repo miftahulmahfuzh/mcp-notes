@@ -57,7 +57,7 @@ export interface StreamCanaryOptions {
   providers: () => Promise<CanaryProvider[]>;
   knownTitles: () => Promise<KnownTitle[]>;
   /** DirectStreamService.runResolve: records health, writes nothing else. */
-  resolve: (ref: StreamRef, options: { only: string; deadlineS: number }) => Promise<ResolveOutput>;
+  resolve: (ref: StreamRef, options: { only: string; deadlineS: number; known: true }) => Promise<ResolveOutput>;
   /** True while a VLC play, a stream on screen or a stream being started exists. */
   busy: () => boolean;
   initialDelayMs?: number;
@@ -138,7 +138,7 @@ export class StreamCanary implements CanaryHandle {
         }
         p.asked += 1;
         try {
-          const out = await this.o.resolve(title.ref, { only: name, deadlineS: CANARY_DEADLINE_S });
+          const out = await this.o.resolve(title.ref, { only: name, deadlineS: CANARY_DEADLINE_S, known: true });
           if (out.ok) p.resolved += 1;
         } catch (err) {
           this.log(`[notesd] stream canary: ${name}: ${messageOf(err)}`);

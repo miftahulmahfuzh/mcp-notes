@@ -112,3 +112,27 @@ describe('the health file and the sniffer reply carry what the rest reads', () =
     expect(parseSniffReply(JSON.stringify({ requests: 4 })).page).toEqual({ status: null, error: null, down: false });
   });
 });
+
+describe('countsTowardRest: a no_stream counts only once the title is known to stream', () => {
+  const load = () => import('../../../src/directStream/repo.js');
+  it('the daemon reads an unreachable page by the same words the resolver writes', async () => {
+    expect((await load()).UNREACHABLE_DETAIL).toBe(UNREACHABLE);
+  });
+  it('a no_stream for a title nobody streamed here does not count', async () => {
+    const { countsTowardRest } = await load();
+    expect(countsTowardRest({ outcome: 'no_stream', detail: '60 requests, 0 media hits' }, false)).toBe(false);
+  });
+  it('a no_stream counts when another provider or a torrent streamed the title', async () => {
+    const { countsTowardRest } = await load();
+    expect(countsTowardRest({ outcome: 'no_stream', detail: '60 requests, 0 media hits' }, true)).toBe(true);
+  });
+  it('an unreachable page, a bot check and an error count whatever is known of the title', async () => {
+    const { countsTowardRest } = await load();
+    for (const streamed of [true, false]) {
+      expect(countsTowardRest({ outcome: 'no_stream', detail: `${UNREACHABLE}HTTP 523` }, streamed)).toBe(true);
+      expect(countsTowardRest({ outcome: 'bot_check', detail: 'Just a moment...' }, streamed)).toBe(true);
+      expect(countsTowardRest({ outcome: 'error', detail: 'the sniffer timed out' }, streamed)).toBe(true);
+      expect(countsTowardRest({ outcome: 'resolved', detail: '' }, streamed)).toBe(true);
+    }
+  });
+});

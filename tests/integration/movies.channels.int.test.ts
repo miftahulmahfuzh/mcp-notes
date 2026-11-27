@@ -56,6 +56,25 @@ describe('how a title was last streamed (movie_title_channels)', () => {
     return new MovieStreams(moviesOf(host), { now: () => clock, log: () => undefined })
   }
 
+  it('titleStreamed: a verified cloud source or a stream play of that film or episode on this machine; never a site play, another episode or another machine', async () => {
+    const s = streams()
+    const EP = { ...MOBLAND, season: 1, episode: 2 }
+    expect(await s.titleStreamed(FIGHT_CLUB)).toBe(false)
+    // A resolve that found nothing records a stale row: not a stream.
+    await s.recordResolve(FIGHT_CLUB, { ok: false, error: 'no_source' })
+    expect(await s.titleStreamed(FIGHT_CLUB)).toBe(false)
+    await s.recordResolve(FIGHT_CLUB, { ok: true, source: { provider: 'VidRock', manifest_kind: 'hls', best_height: 1080, subtitles: [] } })
+    expect(await s.titleStreamed(FIGHT_CLUB)).toBe(true)
+    expect(await streams(OTHER).titleStreamed(FIGHT_CLUB)).toBe(false)
+    // A torrent play of one episode: that episode streamed, the next did not.
+    await s.recordPosition({ id: 'sess-t', ref: EP, source: { provider: 'Torrent' }, torrent: { infoHash: 'cd'.repeat(20) } }, { positionS: 5, durationS: 3600, ended: false })
+    expect(await s.titleStreamed(EP)).toBe(true)
+    expect(await s.titleStreamed({ ...MOBLAND, season: 1, episode: 3 })).toBe(false)
+    // A streaming site's play says nothing of the cloud providers.
+    await s.recordSitePlay({ ...MOBLAND, season: 1, episode: 4 }, 'dramacool', SITE_URL)
+    expect(await s.titleStreamed({ ...MOBLAND, season: 1, episode: 4 })).toBe(false)
+  })
+
   it("a play's first position report makes its source the title's channel, and the last one to play wins", async () => {
     const s = streams()
     expect(await s.channel(FIGHT_CLUB)).toBeNull()
