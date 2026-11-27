@@ -17,7 +17,9 @@
  *    POST_TIMEOUT_MS. The daemon links the parent ('env'), or claims a pending spawn recorded by the
  *    notes-spawn hook ('hook'); only a fresh start does that, never resume or compact.
  * 4. It prints {hookSpecificOutput:{hookEventName:'SessionStart', additionalContext}} naming the node
- *    id and the parent's node id. Daemon down, an error, or no node id in the reply: no output.
+ *    id and the parent's node id, then, on a fresh start whose reply carries due reminders, each
+ *    reminder's number, due date and text with the instruction to tell the owner and to mark it done
+ *    with the `remind` tool. Daemon down, an error, or no node id in the reply: no output.
  *
  * Always exits 0; stdout carries only the hook JSON (or nothing). Problems go to
  * ${XDG_STATE_HOME:-~/.local/state}/notes-capture/session.log. Node >= 22 built-ins only.
@@ -45,6 +47,9 @@ const PID = /^[1-9]\d{0,9}$/;
 const PANE = /^%\d{1,9}$/;
 const MAX_NAME = 200;
 const MAX_TMUX = 200;
+/** At most this many reminders are put in the context (the daemon sends at most 5 too). */
+export const MAX_REMINDERS = 5;
+const MAX_REMINDER_BODY = 2000;
 
 /** True for a terminal session: CLAUDE_CODE_ENTRYPOINT unset or `cli`. */
 export function isCliSession(env) {
@@ -178,6 +183,34 @@ function linkPhrase(source) {
   return '';
 }
 
+/** The reply's reminders that are well formed, at most MAX_REMINDERS: {id, body, due} with due as YYYY-MM-DD (UTC). */
+export function remindersOf(reply) {
+  if (reply === null || typeof reply !== 'object' || !Array.isArray(reply.reminders)) return [];
+  const out = [];
+  for (const r of reply.reminders) {
+    if (out.length >= MAX_REMINDERS) break;
+    if (r === null || typeof r !== 'object') continue;
+    if (!Number.isSafeInteger(r.id) || r.id <= 0) continue;
+    const body = typeof r.body === 'string' ? r.body.replace(/\s+/g, ' ').trim().slice(0, MAX_REMINDER_BODY) : '';
+    if (body === '') continue;
+    if (typeof r.due_at !== 'string' || Number.isNaN(Date.parse(r.due_at))) continue;
+    out.push({ id: r.id, body, due: new Date(r.due_at).toISOString().slice(0, 10) });
+  }
+  return out;
+}
+
+/** The reminder block of the context, or null when there is none. */
+export function reminderContext(reminders) {
+  if (reminders.length === 0) return null;
+  const one = reminders.length === 1;
+  return [
+    one ? 'A reminder the owner asked for is due:' : `${reminders.length} reminders the owner asked for are due:`,
+    ...reminders.map((r) => `- Reminder #${r.id} (due ${r.due}): ${r.body}`),
+    `Tell the owner ${one ? 'this reminder' : 'these reminders'} at the start of your first reply, whatever they ask first, with ${one ? 'its' : 'each'} number. ` +
+      'When the owner says one is handled, mark it done with the notes MCP tool `remind` (action "done", id the number); until then it is shown again in a fresh session after 20 hours.',
+  ].join('\n');
+}
+
 /** The additionalContext for a reply carrying this session's node id. */
 export function buildContext(reply) {
   const node = reply.node_id;
@@ -195,7 +228,9 @@ export function buildContext(reply) {
   } else {
     lines.push('No parent session is recorded for it.');
   }
-  return lines.join(' ');
+  const context = lines.join(' ');
+  const reminders = reminderContext(remindersOf(reply));
+  return reminders === null ? context : `${context}\n\n${reminders}`;
 }
 
 function textOrNull(value) {

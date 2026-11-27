@@ -14,6 +14,7 @@ import { registerStreamCacheTool } from './streamCacheTools.js';
 import { registerStreamDiskTool } from './streamDiskTool.js';
 import { registerStreamHealthTool } from './streamHealthTool.js';
 import { registerSubtitleCheckTools } from './subtitleCheckTools.js';
+import { registerRemindTool } from './remindTool.js';
 import { registerNoteTools, type ToolDeps } from './tools.js';
 
 export const SERVER_NAME = 'mcp-notes';
@@ -48,6 +49,8 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   // The play log's health (stream-play-log phase 3). Answers direct_stream_off when deps.streamHealth is unset.
   registerStreamHealthTool(server, deps);
   registerSubtitleCheckTools(server, deps);
+  // Reminders for the owner, shown by the notes-session hook (STREAM_PLAY_LOG_PLAN phase 5). Claude Code only.
+  registerRemindTool(server, deps);
   return server;
 }
 

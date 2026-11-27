@@ -2059,3 +2059,32 @@ export type MovieStoryRow = typeof movieStories.$inferSelect
 export type StreamDownloadRow = typeof streamDownloads.$inferSelect
 export type StreamPlayLogRow = typeof streamPlayLog.$inferSelect
 export type NewStreamPlayLogRow = typeof streamPlayLog.$inferInsert
+
+/**
+ * Reminders for the owner (migration 0045). Written only by RemindersRepo (src/reminders/repo.ts). The notes-session hook
+ * shows a reminder at a fresh Claude Code start once `due_at` has passed, in its `repo` (null: every repository), at most
+ * once every 20 hours (`last_shown_at`), until `done_at` is set by the `remind` tool. `seed_key` is set only on the
+ * reminders the daemon stores itself at start (src/reminders/seeds.ts), each once. Neon never held it, so it is not in
+ * SHARED_IMPORT_TABLES.
+ */
+export const reminders = pgTable(
+  'reminders',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    seedKey: text('seed_key').unique(),
+    body: text('body').notNull(),
+    repo: text('repo'),
+    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    doneAt: timestamp('done_at', { withTimezone: true, mode: 'date' }),
+    lastShownAt: timestamp('last_shown_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    check('reminders_body_check', sql`length(${t.body}) between 1 and 2000`),
+    check('reminders_repo_check', sql`${t.repo} is null or length(${t.repo}) between 1 and 200`),
+    check('reminders_seed_key_check', sql`${t.seedKey} is null or length(${t.seedKey}) between 1 and 100`),
+    index('reminders_open_idx').on(t.dueAt).where(sql`${t.doneAt} is null`),
+  ],
+)
+
+export type ReminderRow = typeof reminders.$inferSelect
