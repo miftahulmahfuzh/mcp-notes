@@ -3,6 +3,12 @@
   "coordinator": "orch-stream-play-log",
   "coordinator_session_id": "1a4af456-00dc-4405-90be-e574d233cb06",
   "created": "2026-11-27T08:48:37+07:00",
+  "landed": {
+    "at": "2026-11-27T09:26:21+07:00",
+    "base": "main",
+    "commit": "ec89d9969d0fbd218ed32e7307ab9d90ffb3cc20",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -76,27 +82,27 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b8cae42",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "reminders table (0045), RemindersRepo, remind tool, start-hook reminders, one-week seed; decided: plan's int-test fixture 'future' due moved T0+1h\u2192T0+20h (its own assertion contradicted R4.1), code unchanged; docs:gen must be rerun at integration with phase 3; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1127-091708-2857326/evidence",
       "package": "src/reminders`, `claude/hooks`, `src/mcp`, `src/http",
       "plan": ".workflows/plan/stream-play-log/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-27T09:20:52+07:00",
       "satisfies": [
         "R4"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-RM05",
       "title": "Reminders: table, tool, hook, the one-week seed"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-play-log",
-  "updated": "2026-11-27T09:20:11+07:00",
+  "updated": "2026-11-27T09:26:21+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-play-log"
 }
