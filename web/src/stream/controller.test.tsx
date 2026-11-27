@@ -14,7 +14,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function setup(routes: Record<string, (call: FetchCall) => Response>, opts: { muted?: boolean; memory?: Pick<Storage, 'getItem' | 'setItem'>; onSession?: (id: string) => void } = {}) {
+function setup(
+  routes: Record<string, (call: FetchCall) => Response>,
+  opts: { muted?: boolean; memory?: Pick<Storage, 'getItem' | 'setItem'>; onSession?: (id: string) => void; now?: () => number } = {},
+) {
   const { made, createEngine } = fakeEngines();
   const { fetchImpl, calls } = routeFetch(routes);
   const { video, media, play, fire } = fakeVideo();
@@ -30,9 +33,17 @@ function setup(routes: Record<string, (call: FetchCall) => Response>, opts: { mu
     muted: opts.muted,
     memory: opts.memory,
     onSession: opts.onSession,
+    now: opts.now,
   });
   controllers.push(controller);
-  const posts = (url = `${S1}/position`) => calls.filter((c) => c.method === 'POST' && c.url === url).map((c) => c.body);
+  // A position body without its `stats` (the counters have their own describe, R1.6); other bodies as sent.
+  const withoutStats = (url: string, body: unknown): unknown => {
+    if (!url.endsWith('/position') || body === null || typeof body !== 'object') return body;
+    const rest = { ...(body as Record<string, unknown>) };
+    delete rest.stats;
+    return rest;
+  };
+  const posts = (url = `${S1}/position`) => calls.filter((c) => c.method === 'POST' && c.url === url).map((c) => withoutStats(url, c.body));
   return { controller, made, calls, video, media, play, fire, texts, posts };
 }
 
@@ -1830,5 +1841,224 @@ describe('StreamController: seek previews (seek-preview-thumbnails phase 4)', ()
     // Episode 2's previews answer 404: the page shows none, never episode 1's.
     await vi.waitFor(() => expect(reads(t, `${S2}/previews`)).toBe(1));
     expect(t.controller.getState().previews).toEqual(NO_PREVIEWS);
+  });
+});
+
+describe('the counters in every position report (R1.6)', () => {
+  const LOAD_ID = /^[A-Za-z0-9_-]{8,32}$/;
+  const HASH = '08ada5a7a6183aae1e09d831df6748d566095a10';
+  const S2 = '/api/stream/sessions/S2';
+  type Stats = { load: string; first_frame_ms: number | null; played_ms: number; stalls: number; stalled_ms: number; waits: number; waited_ms: number; errors: number };
+
+  /** A page whose counters' clock moves only when the test says; `elapse` moves it and the timers together. */
+  function counted(session: Record<string, unknown> = streamSessionJson(), routes: Record<string, (call: FetchCall) => Response> = {}) {
+    const clock = { ms: 0 };
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(session), ...routes }, { now: () => clock.ms });
+    const elapse = async (ms: number) => {
+      clock.ms += ms;
+      await vi.advanceTimersByTimeAsync(ms);
+    };
+    /** The film plays `seconds` on: a time update every 250 ms. */
+    const play = async (seconds: number) => {
+      for (let i = 0; i < seconds * 4; i++) {
+        await elapse(250);
+        t.media.currentTime += 0.25;
+        t.fire('timeupdate');
+      }
+    };
+    /** The page reports at once: a closing tab says its last position each time it is told, and changes no counter. */
+    const reportNow = () => window.dispatchEvent(new Event('pagehide'));
+    const bodiesTo = (url = `${S1}/position`) => t.calls.filter((c) => c.method === 'POST' && c.url === url).map((c) => c.body as Record<string, unknown> & { stats: Stats });
+    const last = (url = `${S1}/position`) => bodiesTo(url).at(-1)?.stats;
+    return { ...t, clock, elapse, play, reportNow, bodiesTo, last };
+  }
+
+  async function ready(t: ReturnType<typeof counted>, engine = 0) {
+    await vi.waitFor(() => expect(t.made).toHaveLength(engine + 1));
+    t.made[engine].req.handlers.onReady({ qualities: [], subtitles: [] });
+  }
+
+  it('times the first frame from the page load, counts play only while the film moves, and sends it all under one load id in every kind of report', async () => {
+    const t = counted();
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    await t.elapse(1_200);
+    await ready(t);
+    t.fire('playing');
+    await t.play(10);
+    t.reportNow();
+    const first = t.last();
+    // The first update only starts the count: 39 gaps of 250 ms.
+    expect(first).toEqual({ load: expect.stringMatching(LOAD_ID), first_frame_ms: 1_200, played_ms: 9_750, stalls: 0, stalled_ms: 0, waits: 0, waited_ms: 0, errors: 0 });
+
+    // Paused: the pause report and the beat carry the counters, and play stops counting.
+    t.media.paused = true;
+    t.fire('pause');
+    await t.elapse(POSITION_INTERVAL_MS);
+    const [pausedReport, beat] = t.bodiesTo().slice(-2);
+    expect(pausedReport).toMatchObject({ paused: true, stats: first });
+    expect(beat).toMatchObject({ beat: true, stats: first });
+
+    // Play again, then the end: the first update after the pause only starts the count again.
+    t.media.paused = false;
+    t.fire('play');
+    await t.play(2);
+    Object.assign(t.media, { duration: 600, ended: true });
+    t.fire('ended');
+    expect(t.bodiesTo().at(-1)).toMatchObject({ ended: true, stats: { ...first, played_ms: 9_750 + 1_750 } });
+    expect(new Set(t.bodiesTo().map((b) => b.stats.load))).toEqual(new Set([first?.load]));
+  });
+
+  it('counts a stall once the wait outlasts STALL_MIN_MS, timed from the moment the film stood still until it moves again', async () => {
+    const t = counted();
+    void t.controller.start();
+    await ready(t);
+    t.fire('playing');
+    await t.play(2);
+    t.fire('waiting');
+    await t.elapse(STALL_MIN_MS);
+    expect(t.controller.getState().log.some((line) => line.startsWith('stalled at'))).toBe(true);
+    await t.elapse(2_500);
+    // Still frozen: the report counts it up to now.
+    t.reportNow();
+    expect(t.last()).toMatchObject({ stalls: 1, stalled_ms: 4_000 });
+    t.fire('playing');
+    await t.play(1);
+    t.reportNow();
+    // Played: 7 gaps before the freeze, 3 after it; the frozen time is not play.
+    expect(t.last()).toMatchObject({ stalls: 1, stalled_ms: 4_000, played_ms: 2_500 });
+  });
+
+  it('counts one long freeze as one stall, though the switch rule counts it every STALL_REPEAT_MS', async () => {
+    const t = counted();
+    void t.controller.start();
+    await ready(t);
+    t.fire('playing');
+    await t.play(1);
+    t.fire('waiting');
+    await t.elapse(STALL_MIN_MS + STALL_REPEAT_MS + 500);
+    t.fire('playing');
+    t.reportNow();
+    expect(t.controller.getState().log.filter((line) => line.startsWith('stalled at'))).toHaveLength(2);
+    expect(t.last()).toMatchObject({ stalls: 1, stalled_ms: STALL_MIN_MS + STALL_REPEAT_MS + 500 });
+  });
+
+  it("does not count the first load, a short wait, a seek's own wait within the grace or a wait while paused", async () => {
+    const t = counted();
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    // The first load: the engine is not ready yet.
+    t.fire('waiting');
+    await t.elapse(STALL_MIN_MS * 2);
+    await ready(t);
+    t.fire('playing');
+    await t.play(1);
+    // A short wait.
+    t.fire('waiting');
+    await t.elapse(STALL_MIN_MS - 100);
+    t.fire('playing');
+    // A seek's own wait, inside the grace.
+    t.media.currentTime = 900;
+    t.fire('seeking');
+    t.fire('waiting');
+    await t.elapse(SEEK_GRACE_MS);
+    t.fire('playing');
+    await t.play(1);
+    // A wait while paused.
+    t.media.paused = true;
+    t.fire('pause');
+    t.fire('waiting');
+    await t.elapse(STALL_MIN_MS * 3);
+    t.reportNow();
+    expect(t.last()).toMatchObject({ stalls: 0, stalled_ms: 0, waits: 0, waited_ms: 0 });
+    expect(t.controller.getState().log.some((line) => line.startsWith('stalled'))).toBe(false);
+  });
+
+  it("counts a torrent's wait for a missing part as a wait, never as a stall, though the stall timer fires during it", async () => {
+    const t = counted(
+      streamSessionJson({
+        provider: 'Torrent',
+        manifest_kind: 'mp4',
+        manifest_url: `/api/stream/torrent/${HASH}/f/0`,
+        torrent: { info_hash: HASH, name: 'Sintel.2010.1080p.WEB.x264', index: 'Torrentio', state: 'downloading', seeds: 52 },
+      }),
+      {
+        [`GET /api/stream/torrent/${HASH}`]: () => jsonResponse({ info_hash: HASH, state: 'downloading', peers: 5, down_kbps: 4000, up_kbps: 800, progress: 0.2 }),
+        [`GET /api/stream/torrent/${HASH}/map`]: () => jsonResponse({ duration_s: 888, ranges: [[0, 60]] }),
+      },
+    );
+    void t.controller.start();
+    await ready(t);
+    t.media.duration = 888;
+    t.fire('playing');
+    await vi.waitFor(() => expect(t.controller.getState().cachedRanges).toEqual([[0, 60]]));
+    await t.play(1);
+    t.media.currentTime = 400;
+    t.fire('seeking');
+    t.fire('waiting');
+    await t.elapse(SEEK_GRACE_MS + STALL_MIN_MS + 1_000);
+    expect(t.controller.getState().log).toContain('waiting for the torrent at 400 s');
+    expect(t.controller.getState().log.some((line) => line.startsWith('stalled at'))).toBe(true);
+    t.reportNow();
+    expect(t.last()).toMatchObject({ stalls: 0, stalled_ms: 0, waits: 1, waited_ms: SEEK_GRACE_MS + STALL_MIN_MS + 1_000 });
+    // The part arrives: the wait ends there.
+    t.fire('seeked');
+    t.fire('playing');
+    await t.elapse(1_000);
+    t.reportNow();
+    expect(t.last()).toMatchObject({ stalls: 0, stalled_ms: 0, waits: 1, waited_ms: SEEK_GRACE_MS + STALL_MIN_MS + 1_000 });
+  });
+
+  it('counts each network error the engine rides out and each stream it declared broken', async () => {
+    const t = counted(streamSessionJson(), {
+      [`POST ${S1}/source`]: () => jsonResponse({ ...streamSessionJson({ manifest_url: `${S1}/p?u=m2`, provider: 'VidNest Anime' }), switched: true, reason: null, from: 'VidFast' }),
+    });
+    void t.controller.start();
+    await ready(t);
+    t.fire('playing');
+    await t.play(1);
+    // One network error, ridden out over two restarts.
+    t.made[0].req.handlers.onRecovering(1, 'networkError fragLoadError');
+    t.made[0].req.handlers.onRecovering(2, 'networkError fragLoadError');
+    t.made[0].req.handlers.onRecovered();
+    // A stream that cannot be played at all: the page moves to another provider and plays on.
+    t.made[0].req.handlers.onFatal('mediaError bufferAppendError');
+    await ready(t, 1);
+    t.fire('playing');
+    await t.play(1);
+    t.reportNow();
+    expect(t.last()).toMatchObject({ errors: 2 });
+  });
+
+  it('starts a new load id and fresh counters when the page plays another session without loading again', async () => {
+    const ep = (over: Record<string, unknown>) => streamSessionJson({ kind: 'tv', tmdb_id: 37854, season: 17, ...over });
+    const next = ep({ session_id: 'S2', episode: 731, manifest_url: `${S2}/p?u=m731`, prev_episode: { season: 17, episode: 730 } });
+    const t = counted(ep({ episode: 730, next_episode: { season: 17, episode: 731 } }), {
+      [`POST ${S1}/episode`]: () => jsonResponse(next),
+      [`GET ${S2}`]: () => jsonResponse(next),
+    });
+    void t.controller.start();
+    await ready(t);
+    t.fire('playing');
+    await t.play(2);
+    t.fire('waiting');
+    await t.elapse(STALL_MIN_MS);
+    t.fire('playing');
+    await t.controller.goToEpisode('next');
+    // The old session's last word carries its own counters.
+    const old = t.last();
+    expect(t.bodiesTo().at(-1)).toMatchObject({ closed: true });
+    expect(old).toMatchObject({ stalls: 1, stalled_ms: STALL_MIN_MS });
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    await t.elapse(800);
+    await ready(t, 1);
+    t.media.currentTime = 0;
+    t.fire('playing');
+    await t.play(1);
+    t.reportNow();
+    const fresh = t.last(`${S2}/position`);
+    expect(fresh).toEqual({ load: expect.stringMatching(LOAD_ID), first_frame_ms: 800, played_ms: 750, stalls: 0, stalled_ms: 0, waits: 0, waited_ms: 0, errors: 0 });
+    expect(fresh?.load).not.toBe(old?.load);
   });
 });

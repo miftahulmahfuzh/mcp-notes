@@ -53,6 +53,19 @@
   `npm run test:int -- tests/integration/movies.streams.int.test.ts`; on a run, seed a stream play
   with `verify.sh exec` and read `GET /api/movies/<id>` and `GET /api/movies` (journey J2 of
   `.workflows/plan/direct-streaming/phase-5.md`).
+- The player page's counters (stream-play-log phase 2): every position report (the 5 s one, pause,
+  `beat`, `ended`, `closed`) carries `stats`: a random `load` id of this page load of this session
+  (a new one when the page plays another session without reloading) and, since then,
+  `first_frame_ms`, `played_ms`, `stalls` and `stalled_ms` (one per freeze the page's stall timer
+  confirms, timed from the moment the film stood still until it moved; a pause, a seek's own wait in
+  the grace and the first load are not stalls), `waits` and `waited_ms` (the torrent's "waiting for
+  the torrent"; never a stall), `errors`. Measured with `performance.now()`. Logic:
+  `npx vitest run web/src/stream/playStats.test.tsx web/src/stream/controller.test.tsx -t "R1.6|PlayStats|newLoadId"`;
+  in the real page build: `$V up --web`, then
+  `STREAM_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/play-stats.steps.mjs`
+  (about 90 s; `FIX` from `make-hls-fixture.sh` as for `player.steps.mjs`). The transcript has
+  `FIRST FRAME PASS`, `STALL PASS`, `GRACE PASS`, `BEAT PASS`, `NEW LOAD PASS` and `TORRENT WAIT PASS`.
+  What the daemon keeps of them is the play log's (phase 1).
 - `/update-cloud-source <site url>` (`direct_stream_update_source`) and `direct_stream_sources`:
   read an aggregator site's provider templates, add the ones the registry lacks (matched by
   template host and path), probe each new one against the known titles, report per provider; a

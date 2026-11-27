@@ -2,12 +2,12 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-20
-**Total Active Tasks**: 21
+**Last Updated**: 2026-11-27
+**Total Active Tasks**: 22
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 21
+- P1 High: 22
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
@@ -21,6 +21,27 @@
 ### [P0] Critical
 
 ### [P1] High
+
+- [x] **P1-NOTES-PL02** Phase 2: Player page counters
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/stream/controller.ts`, `web/src/stream/session.ts`, the new `web/src/stream/playStats.ts` and their tests: the counters and the `stats` key of the position report (a 16-character `load`, a new one when the page moves to another session); `play-stats.steps.mjs`; one bullet in `features/direct-streaming.md`. Exit: controller tests show the counters for a stall that recovers, a torrent wait, a pause (not counted), a seek within the grace (not counted), and a report body carrying `stats`; the real page build's posted bodies carry `stats` (`play-stats.steps.mjs`).
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R1 — the per-play record (proposal item 1): time to first frame, stall count and stalled seconds, source switches, subtitle outcome, how it ended · criteria: R1.6
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-PL02.md`
+  - **Completed**: 2026-11-27 09:10
+  - **Method**: /implement
+  - **Files**: web/src/stream/session.ts, web/src/stream/playStats.ts, web/src/stream/playStats.test.tsx, web/src/stream/controller.ts, web/src/stream/controller.test.tsx, .claude/skills/verify-notesd/scripts/stream/play-stats.steps.mjs, .claude/skills/verify-notesd/features/direct-streaming.md, .workflows/todos.md, .workflows/plan/P1-NOTES-PL02.md
+  - **Proof**: verified-first-pass — 2 journeys, evidence /home/miftah/.local/state/notesd-verify/1127-085404-2773003/evidence
+  - **Drift**:
+    - controller.ts: the subtitles import is at line 45 and a pageActive import follows it; the PlayStats import went after the last import. Every other quoted block matched.
+  - **Decided**:
+    - Worktree differs from the index's (stream-play-log vs stream-play-log-p2) → implemented in the phase's own worktree and branch (the swarm ledger and the coordinator's note assign it)
+    - Step 3 task creation → only phase 2's task (P1-NOTES-PL02) was created, because peer phase sessions run Step 3 concurrently in their own worktrees (tie-break: narrower blast radius)
+    - The plan's first R1.6 controller test expected 11 500 ms played but the plan's code gave 12 500 (no time update follows a pause in the test, so the gap across the pause was counted, capped at 1 s) → onPause also feeds the counters a non-advancing tick, so play stops counting at the pause itself (rung 3: the plan's test code block, and its note that the cause is the code, not the test)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching this repo's swarm precedent, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. Phase 2 ticked in the coordinator's plan index (not committed from here). No successor to unblock: phases 3 and 5 depend on phase 1 and mint their own tasks.
 
 - [x] **P1-NOTES-SD01** Phase 1: Schema and single writers: the download queue, the kept mark, the story store
   - **Difficulty**: NORMAL
