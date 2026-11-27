@@ -297,6 +297,20 @@ export class TorrentStreams {
     }
   }
 
+  /**
+   * Fetches a used file's first and last pieces before its middle (the header ffprobe reads, and the end it seeks to).
+   * Only a video or subtitle file this torrent's `use` already selected, and only in the swarm; otherwise nothing.
+   */
+  headFirst(infoHash: string, fileIndex: number): void {
+    const hash = normalizeInfoHash(infoHash);
+    const live = hash === null ? undefined : this.core.active.get(hash);
+    if (live === undefined || live.users === 0) return;
+    const file = live.handle.files.find((f) => f.index === fileIndex);
+    if (file === undefined || mediaOf(file.name) === null) return;
+    if (![...live.rows.values()].some((r) => r.files.some((f) => f.index === fileIndex && f.remuxed !== true))) return;
+    live.handle.headFirst?.(fileIndex);
+  }
+
   /** The peers connected and the download rate of a torrent in the swarm, now; null when it is not in it. */
   stats(infoHash: string): TorrentStats | null {
     const hash = normalizeInfoHash(infoHash);

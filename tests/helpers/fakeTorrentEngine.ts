@@ -25,6 +25,8 @@ export class FakeTorrentEngine implements TorrentEngine {
   readonly deletedFiles: string[] = [];
   readonly selected: { infoHash: string; indexes: number[] }[] = [];
   readonly deselected: { infoHash: string; indexes: number[] }[] = [];
+  /** The files whose first and last pieces were asked for before the rest (`headFirst`), in order. */
+  readonly headFirst: { infoHash: string; index: number }[] = [];
   readonly reads: { infoHash: string; index: number; start: number; end: number }[] = [];
   private readonly specs = new Map<string, FakeTorrentSpec>();
   private readonly handles = new Map<string, FakeHandle>();
@@ -95,6 +97,10 @@ class FakeHandle implements TorrentHandle {
 
   deselect(indexes: readonly number[]): void {
     this.engine.deselected.push({ infoHash: this.infoHash, indexes: [...indexes] });
+  }
+
+  headFirst(index: number): void {
+    this.engine.headFirst.push({ infoHash: this.infoHash, index });
   }
 
   read(index: number, range: { start: number; end: number }): Readable {

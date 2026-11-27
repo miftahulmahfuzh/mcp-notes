@@ -2321,8 +2321,13 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   up only when the torrent received less than 512 kB in the last 15 s (`stalled before the header arrived: 0.2 MB in
   the last 15 s (...)`). A flat 30 s used to drop well seeded 1080p torrents: a YTS MP4's header is about 10 MB, and
   three racers sharing this machine's link (about 9 Mbps) each needed some 35 s; Dune: Part Two then played a 720p
-  after 80 s. A file whose audio names only languages other than the title's original is
-  `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
+  after 80 s. The file's first and last 2 MB (at least one piece each) are fetched before its middle
+  (`TorrentStreams.headFirst`): ffprobe reads the start and then seeks to the end (a Matroska file's Cues and Tags,
+  an MP4's moov), and webtorrent fetches a selected file front to back, so in a season pack, whose pieces are 8 to
+  16 MB, the end came only after the whole episode (Babylon Berlin S01E01: 25.2 MB from 14 peers in 79 s, and no
+  header). The log names the file the probe reads: `torrent: TMDB tv 66980 S01E01: <release> (<hash>): probing
+  <path> (file 0 of 10, 1450 MB, 1 subtitle file beside it), its first and last pieces first`. A file whose audio
+  names only languages other than the title's original is `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
   one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six torrents and what
   is left of the same 90 seconds, so one ask never takes longer.

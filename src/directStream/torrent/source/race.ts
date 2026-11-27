@@ -169,6 +169,11 @@ export function race(ctx: SourceContext, ref: StreamRef, query: FindQuery, c: To
         throw err;
       }
       if (state.cancelled) return left();
+      const probedFile = opened.files.find((f) => f.index === picked.video);
+      ctx.log(
+        `[notesd] torrent: ${refLabel(ref)}: ${c.name} (${c.infoHash.slice(0, 8)}): probing ${probedFile?.path ?? `file ${picked.video}`} (file ${picked.video} of ${opened.files.length}, ${((probedFile?.length ?? 0) / 1e6).toFixed(0)} MB${picked.subtitles.length > 0 ? `, ${picked.subtitles.length} subtitle file${picked.subtitles.length === 1 ? '' : 's'} beside it` : ''}), its first and last pieces first`,
+      );
+      opts.swarm.headFirst?.(c.infoHash, picked.video);
       const manifestUrl = opts.swarm.localUrl(c.infoHash, picked.video);
       const probed = await probeWhileDelivering(
         { opts, now, receivedText: (hash) => hands.receivedText(hash) },

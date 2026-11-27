@@ -37,6 +37,8 @@ export interface TorrentSwarm {
   open(pick: TorrentPick, options: { timeoutMs: number }): Promise<OpenedTorrent>;
   /** Selects the files and marks the torrent in use (one more user). */
   use(infoHash: string, fileIndexes: readonly number[]): unknown;
+  /** Fetches a used file's first and last pieces before its middle (what the probe reads). Absent: nothing asked. */
+  headFirst?(infoHash: string, fileIndex: number): unknown;
   /** One user fewer; with none left the daemon leaves the swarm. Safe for a torrent opened and never used. */
   release(infoHash: string): unknown;
   find(ref: StreamRef): Promise<DownloadOnDisk | null>;
