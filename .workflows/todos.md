@@ -22,6 +22,30 @@
 
 ### [P1] High
 
+- [x] **P1-NOTES-SH03** Phase 3: Stream health: route, MCP tool, page
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns read functions on `PlayLogRepo` (`healthRows`, `firstAskedAt`, `unhandled`) and the pure builder `src/directStream/playLog/health.ts`; `GET /api/stream/health` (`src/http/streamHealthApi.ts`); the MCP tool `direct_stream_health`, its chat allow-list entry and caption, one sentence in `instructions.ts` and `chat/prompt.ts`; the `/movies/health` page (`HealthPage.tsx`/`.css`, `route.ts`, `lib/movies.ts`, `moviesApi.ts`) and its heartbeat icon beside the Cache drive icon in `MoviesPage.tsx`; the `Stream health` group in `scripts/docs/httpRoutes.ts`, generated references, `docs/guide/movies.md` and `streaming.md`; `features/movies.md` and the README's Movies row. Exit: the route, the tool and the page show seeded rows in a throwaway daemon (J1-J5); empty period handled; all gates green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-play-log/PLAN.md` (phase 3 of 5)
+  - **Satisfies**: R2 — "them" → proposal item 2: "**A small health view** on the Stream side and one MCP tool, so "how did torrents do this week?" is a query instead of a soak." Extended by: "successful short plays ARE "successful streaming attempt" ... over time, i still want to findout which the movies / series that we can't handle. maybe because there is no torrent / no cloud sources for it" · criteria: R2.1, R2.2, R2.3, R2.4, R2.5
+  - **Depends on**: P1-NOTES-L001
+  - **Plan**: `.workflows/plan/P1-NOTES-SH03.md`
+  - **Completed**: 2026-11-27 09:16
+  - **Method**: /implement
+  - **Files**: src/directStream/playLog/health.ts, src/directStream/playLog/repo.ts, src/http/streamHealthApi.ts, src/http/app.ts, src/mcp/streamHealthTool.ts, src/mcp/tools.ts, src/mcp/server.ts, src/chat/status.ts, src/chat/prompt.ts, src/mcp/instructions.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, docs/guide/movies.md, docs/guide/streaming.md, web/src/moviesApi.ts, web/src/lib/route.ts, web/src/lib/route.test.tsx, web/src/lib/movies.ts, web/src/pages/MoviesPage.tsx, web/src/components/movies/HealthPage.tsx, web/src/components/movies/HealthPage.css, web/src/components/movies/HealthPage.test.tsx, tests/helpers/playLogRows.ts, tests/unit/directStream/playLogHealth.test.ts, tests/unit/mcp.streamHealthTool.test.ts, tests/unit/chat-status.test.ts, tests/integration/streamPlayLog.health.int.test.ts, .claude/skills/verify-notesd/features/movies.md, .claude/skills/verify-notesd/features/README.md, .workflows/todos.md, .workflows/plan/P1-NOTES-SH03.md, .workflows/plan/STREAM_PLAY_LOG_PLAN.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1127-091520-2849753/evidence
+  - **Drift**:
+    - No code drift: every anchor the plan quotes matched the tree (allowedChatTools' stream_disk line is at :187, not :176).
+    - tests/unit/mcp.streamHealthTool.test.ts: the plan's code read `await res.json()` untyped, which tsc rejects (TS18046, unknown); a small `body(res): Promise<any>` helper was added. No assertion changed.
+    - HealthPage.css: `.hp-wide` 96px -> 132px, `.hp-num` and `.hp-when` nowrap (`.hp-when` min-width 110px): the stalls and when columns wrapped onto two lines in the first run's screenshot.
+    - First Proof run (1127-091404-2843756): J4 failed because the plan's seed id 990002 is the verify harness's fake TMDB film 'The Dog Stars' (scripts/movies/tmdb.json), so `on conflict do nothing` kept that name. All journeys were re-run on a fresh daemon with Film B seeded as 990012; J1-J5 and the Cache neighbor check passed. features/movies.md says not to seed 990002.
+    - origin/feature/stream-play-log had not moved past f9eb9ef when this phase finished; no catch-up was needed.
+  - **Decided**:
+    - Index names worktree stream-play-log / feature/stream-play-log; this session runs in stream-play-log-p3 / phase-3-stream-play-log → proceeded here (rung 6: the swarm's per-phase worktree; the coordinator's note assigns it)
+    - Step 3 creates every phase's task → created only phase 3's, id P1-NOTES-SH03, inline (coordinator's note; narrower blast radius)
+    - Proof seed's Film B id 990002 collides with a harness fixture → seeded as 990012, every check unchanged (rung 2: exit criteria; same as phase 1's 550 → 467905)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats left untouched, matching this repo's swarm precedent, to avoid conflicts with peer phases in their own worktrees; the coordinator's integrator reconciles them. P1-NOTES-SH03 written into phase 3's TaskID cell of the worktree's `.workflows/plan/STREAM_PLAY_LOG_PLAN.md`; the coordinator's index was not edited. No successor to unblock: phase 5 mints its own task in its own worktree.
 - [x] **P1-NOTES-PL02** Phase 2: Player page counters
   - **Difficulty**: NORMAL
   - **Type**: Feature

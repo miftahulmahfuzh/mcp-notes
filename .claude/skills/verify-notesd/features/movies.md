@@ -33,6 +33,19 @@
   unfolded; a second click goes back. Proof: `web/src/components/movies/CachePage.test.tsx`,
   `tests/unit/directStream/cacheShelf.test.ts`; on a `TORRENT_SEED_KBPS=20 $V up --web --torrent` run,
   `direct-stream/downloads.sh RUN season cache` (see `features/direct-streaming.md`, "Downloads asked for").
+- Stream health page (`/movies/health`): the heartbeat icon beside the Cache drive icon on the Stream side
+  (aria-label `Stream health`). `GET /api/stream/health?days=N` (1..90, default 7) and the `direct_stream_health`
+  tool answer the same from `stream_play_log`, this host only: per channel (`all`, `cloud`, `torrent` always) and
+  per torrent index or cloud provider, asks, played (a short play counts), `success_rate`, medians of time to
+  answer and first frame, stalls per hour, `stalled_share`, `hd_share`; failures by word; the latest 30 asks;
+  and `unhandled`, over all time, every film or episode whose asks failed and that has not played since, with
+  `cloud_failure`/`torrent_failure`. The page: "By channel" with sources and failure chips, "Could not be
+  played" (`no torrent found`, `no cloud source`, ...), "Latest plays"; an empty period says `Nothing was played
+  in the last 7 days.` Proof: `tests/unit/directStream/playLogHealth.test.ts`, `tests/unit/mcp.streamHealthTool.test.ts`,
+  `tests/integration/streamPlayLog.health.int.test.ts`, `web/src/components/movies/HealthPage.test.tsx`; on a
+  `$V up --web --direct-stream` run, seed `movie_titles` and `stream_play_log` with `$V exec` (the host from the
+  empty answer's `host`; use title ids the fake TMDB does not serve, so not 990002, its "The Dog Stars") and
+  drive the route, the tool and the page (phase 3's Proof, J1-J5).
 - Download buttons (Stream side, direct streaming on): an icon on a film's page beside Play, on each season row
   and on each episode row (none at a series' head) queues the film, the season's aired episodes or the episode
   (`POST /api/stream/downloads`); its caret opens "Choose how to download <name>" (Best torrent, Cloud, Pick a

@@ -12,6 +12,7 @@ import { registerWarpTool } from './warpTool.js';
 import { registerDirectStreamTools } from './directStreamTools.js';
 import { registerStreamCacheTool } from './streamCacheTools.js';
 import { registerStreamDiskTool } from './streamDiskTool.js';
+import { registerStreamHealthTool } from './streamHealthTool.js';
 import { registerSubtitleCheckTools } from './subtitleCheckTools.js';
 import { registerNoteTools, type ToolDeps } from './tools.js';
 
@@ -44,6 +45,8 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   registerStreamCacheTool(server, deps);
   // The Cache page's reading and deletions. Answers stream_disk_off when deps.streamDisk is unset.
   registerStreamDiskTool(server, deps);
+  // The play log's health (stream-play-log phase 3). Answers direct_stream_off when deps.streamHealth is unset.
+  registerStreamHealthTool(server, deps);
   registerSubtitleCheckTools(server, deps);
   return server;
 }

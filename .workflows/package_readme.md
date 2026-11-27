@@ -2791,6 +2791,17 @@ One `stream_play_log` row per stream play ask on this host: how it resolved, the
 - Wiring: `src/daemon.ts` builds `PlayLog({ repo: new PlayLogRepo(db), host: movies.host })` when movies and direct streaming are on, runs `closeLeftOpen()` at start (logs the count), hands it to `buildDirectStreamService` and sets `deps.playLog`; `directStreamRoutes` passes it to the position routes.
 - Tests: unit `tests/unit/directStream/playLog/{derive,log,tally}.test.ts`, `tests/unit/directStream/playLogService.test.ts`, `tests/unit/directStream/positionRoute.test.ts` (in-memory writer `tests/helpers/memoryPlayLog.ts`); integration `tests/integration/directStream.playLog.int.test.ts`; verify-notesd `scripts/direct-stream/playlog.sh` and the feature map entry.
 
+### Stream health: src/directStream/playLog/health.ts, src/http/streamHealthApi.ts, src/mcp/streamHealthTool.ts, web/src/components/movies/HealthPage.tsx (stream-play-log phase 3, P1-NOTES-SH03)
+
+Read side of `stream_play_log`: how well streams played on this host over the last N days. Read-only; `PlayLogRepo` stays the only writer. Plan: `.workflows/plan/P1-NOTES-SH03.md`.
+
+- `repo.ts`: `PlayLogRepo` gains the reads of the `PlayLogReader` port: `healthRows(host, since)`, `firstAskedAt(host)`, `unhandled(host, limit)`.
+- `health.ts`: `HEALTH_DEFAULT_DAYS` 7, `HEALTH_MAX_DAYS` 90, `HEALTH_RECENT_LIMIT` 30, `HEALTH_UNHANDLED_LIMIT` 200; pure `channelsOf`, `sourceOf`, `median`, `figures`, `buildHealth` (totals per channel, `all`/`cloud`/`torrent` always present with zeros, per source, failure counts, recent plays, unhandled); `readHealth(reader, host, days, now)`; `streamHealthReader(deps)` (null when movies or streaming are off).
+- `GET /api/stream/health?days=N` (`streamHealthRoutes`): default 7, `invalid_query` 400 outside 1..90, `STREAM_HEALTH_OFF` when off.
+- MCP `direct_stream_health` (`registerStreamHealthTool`, `ToolDeps.streamHealth`), in the chat allow list (`src/chat/status.ts`).
+- Web: `/movies/health` page (`HealthPage.tsx`/`.css`), opened by a heartbeat icon beside Cache on the Stream side (`route.ts`, `moviesApi.ts`).
+- Tests: unit `tests/unit/directStream/playLogHealth.test.ts`, `tests/unit/mcp.streamHealthTool.test.ts`, `HealthPage.test.tsx`; integration `tests/integration/streamPlayLog.health.int.test.ts` (rows from `tests/helpers/playLogRows.ts`).
+
 ### src/deps.ts, src/daemon.ts, src/background.ts, src/main.ts
 
 ```ts

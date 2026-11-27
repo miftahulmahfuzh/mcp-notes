@@ -774,6 +774,31 @@ From chat or Claude Code the `stream_disk` tool does the same: "how much cache d
 with the id of a deletion inside its 10 seconds. The routes are in
 [http-api.md](reference/http-api.md#cache-page).
 
+### Stream health
+
+The heartbeat icon beside the Cache drive icon on the Stream side opens `/movies/health`: how direct-stream
+plays went on this machine, read from the [play log](streaming.md#the-play-log) the daemon keeps of every
+play ask. Only this machine's rows are read. The three buttons at the top choose the period: 7, 30 or 90 days.
+
+- **By channel.** One row for every ask, then Torrents, Cloud, and From disk or Streaming sites when they
+  played. Each says how many asks reached the screen (`3/5` and `60%`), the median time to the first frame
+  and from the ask to a player, stalls per hour played and the share of plays at 1080p or better. A play
+  that reached the screen is a success however short it was: a one-minute test of a torrent counts as a
+  play, never as a failure. Under each channel, its torrent indexes or cloud providers with the same
+  figures, and the failed asks by what they ended with (`no torrent found ×2`).
+- **Could not be played.** Every film or episode whose asks failed and that has not played since, over
+  all time and not only the period: what the cloud providers and the torrents each last answered (`no
+  cloud source`, `no torrent found`, `bot check`, `dub only`, `not asked`), how many asks failed and
+  when the last one was. It leaves the list once it plays.
+- **Latest plays.** The newest 30 asks of the period: the title (with its episode), the provider or
+  index, the height, the first frame, the stalls with how long the film stood still, and how it ended
+  (finished, closed, replaced by another play, session expired, daemon restarted, failed and why).
+- With nothing logged in the period the page says `Nothing was played in the last 7 days.`
+
+The page reads `GET /api/stream/health` every 30 seconds while it is visible. From chat or Claude Code the
+`direct_stream_health` tool answers the same ("how did torrents do this week?"). The route is in
+[http-api.md](reference/http-api.md#stream-health).
+
 ## Playback
 
 ![A film's page while VLC plays it: "playing" on the poster and the position beside the stars](img/movies/playing.png)

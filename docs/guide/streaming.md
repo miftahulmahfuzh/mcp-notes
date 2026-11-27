@@ -2132,6 +2132,16 @@ play that starts meanwhile waits behind at most one. The log has one line per pa
 (`[notesd] stream canary: 7 of 13 providers resolved; done`). `NOTESD_STREAM_CANARY=off` asks
 nothing.
 
+### Stream health
+
+What the play log holds is read back per channel and per torrent index or cloud provider: start success
+(asks that reached the screen, a short play included), time to answer, time to the first frame, stalls
+per hour and the share at 1080p, the failures by word, the latest plays, and every film or episode that
+could not be played with what the cloud and the torrents answered. The wall's Stream health page
+(`/movies/health`, see [movies.md](movies.md#stream-health)), the `direct_stream_health` tool and
+`GET /api/stream/health?days=N` answer the same. They only read: nothing here changes which provider or
+torrent a play chooses.
+
 ### Reporting a stream bug: `/report-stream-bug`
 
 When a direct-stream play lags, stops with `Playback stopped (...)`, or says its session ended, type

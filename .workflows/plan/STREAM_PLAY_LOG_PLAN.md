@@ -159,7 +159,7 @@ The answer also carries `"unhandled": [ { "title", "movie_id", "kind", "tmdb_id"
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 | Play log: table, writer, daemon wiring | R1 | `src/directStream`, `src/db`, `src/http` | ~27 | — | HARD | `.workflows/plan/stream-play-log/phase-1.md` | — | — |
 | 2 | Player page counters | R1 | `web/src/stream` | ~7 | — | NORMAL | `.workflows/plan/stream-play-log/phase-2.md` | — | — |
-| 3 | Stream health: route, MCP tool, page | R2 | `src/directStream/playLog`, `src/http`, `src/mcp`, `web/src/components/movies`, `web/src/pages` | ~30 | 1 | NORMAL | `.workflows/plan/stream-play-log/phase-3.md` | — | — |
+| 3 | Stream health: route, MCP tool, page | R2 | `src/directStream/playLog`, `src/http`, `src/mcp`, `web/src/components/movies`, `web/src/pages` | ~30 | 1 | NORMAL | `.workflows/plan/stream-play-log/phase-3.md` | P1-NOTES-SH03 | — |
 | 4 | Sessions search says when it has no vectors | R3 | `src/sessions` | ~4 | — | EASY | `.workflows/plan/stream-play-log/phase-4.md` | P1-NOTES-SV04 | — |
 | 5 | Reminders: table, tool, hook, the one-week seed | R4 | `src/reminders`, `claude/hooks`, `src/mcp`, `src/http` | ~26 | 1 | NORMAL | `.workflows/plan/stream-play-log/phase-5.md` | — | — |
 

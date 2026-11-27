@@ -349,6 +349,15 @@ export const HTTP_GROUPS: HttpGroup[] = [
     },
   },
   {
+    title: 'Stream health',
+    intro:
+      'How direct-stream plays went on this machine, read from the play log: the Stream health page at `/movies/health` and the `direct_stream_health` tool answer the same. Reads only. 503 `direct_stream_off` with the movie library off. Guide: [movies.md](../movies.md#stream-health).',
+    routes: {
+      'GET /api/stream/health':
+        'Query `days` (1 to 90, default 7; 400 `invalid_query` otherwise). `{host, days, since, first_logged_at, totals, by_source, failures, recent, unhandled}` for this host. `totals` has `all`, `cloud` and `torrent` always (zeros with nothing logged), and `cache`, `site` or `none` when a row has them; `by_source` one entry per channel and torrent index (`disk` for a torrent without one) or cloud provider. Each is `{asks, failed, no_picture, played, success_rate, median_resolve_ms, median_first_frame_ms, played_hours, stalls_per_hour, stalled_share, hd_share}`: `played` counts every play that reached the screen however short (and a streaming site\'s play), `success_rate` is played / asks, the medians and rates are null with nothing to measure, `hd_share` is the share of plays of known height at 1080p or better. A failed ask that reached no channel counts under each channel it asked and in no source. `failures` is `[{channel, failure, count}]`, most first. `recent` is the latest 30 asks `{id, asked_at, title, movie_id, season, episode, channel, source, outcome, failure, height, resolve_ms, first_frame_ms, stalls, stalled_ms, waits, waited_ms, ended}`. `unhandled`, over all time and newest first (at most 200), is every film or episode whose asks failed and that has not played since: `{title, movie_id, kind, tmdb_id, season, episode, asks, last_asked_at, cloud_failure, torrent_failure}`.',
+    },
+  },
+  {
     title: 'Debug',
     routes: {
       'GET /api/debug/egress': 'Rows and approximate bytes returned per query shape since the daemon started, largest first, plus the Neon quota breaker (`quota.tripped`, `quota.resumes_at`). `{enabled: false}` with `NOTESD_EGRESS_METER=off`. Loopback only. See [architecture.md](../architecture.md#neon).',
