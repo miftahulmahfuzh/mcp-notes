@@ -209,7 +209,7 @@ describe('reminders in the start context', () => {
     process.env.TZ = 'Asia/Jakarta';
     try {
       // `due: "2026-12-04"` is stored as midnight here: 2026-12-03T17:00Z.
-      expect(remindersOf({ reminders: [{ id: 1, body: 'x', due_at: '2026-12-03T17:00:00.000Z' }] })[0]?.due).toBe('2026-12-04');
+      expect(remindersOf({ node_id: 'A0-3G', reminders: [{ id: 1, body: 'x', due_at: '2026-12-03T17:00:00.000Z' }] })[0]?.due).toBe('2026-12-04');
     } finally {
       if (tz === undefined) delete process.env.TZ;
       else process.env.TZ = tz;

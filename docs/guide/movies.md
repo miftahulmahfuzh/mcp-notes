@@ -780,6 +780,8 @@ The heartbeat icon beside the Cache drive icon on the Stream side opens `/movies
 plays went on this machine, read from the [play log](streaming.md#the-play-log) the daemon keeps of every
 play ask. Only this machine's rows are read. The three buttons at the top choose the period: 7, 30 or 90 days.
 
+<!-- health.png: the first `docs:shots -- --live movies` that finds a play log puts the picture here -->
+
 - **By channel.** One row for every ask, then Torrents, Cloud, and From disk or Streaming sites when they
   played. Each says how many asks reached the screen (`3/5` and `60%`), the median time to the first frame
   and from the ask to a player, stalls per hour played, the share of plays at 1080p or better, the share of
