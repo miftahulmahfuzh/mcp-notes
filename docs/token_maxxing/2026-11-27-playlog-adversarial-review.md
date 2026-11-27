@@ -21,7 +21,7 @@
   - The health page answers for the period on screen. It shows the `no picture` and `stood still` shares the contract asked for, and its tips are in words.
   - `health.png` is taken on the next `--live` movies run, and the guide line appears on its own (no step left to the owner).
 - **Branch:** token-maxxing-2026-11-27-playlog-adversarial-review
-- **Merge status:** on branch, NOT merged — this is a worker session; the coordinator owns landing worker branches
+- **Merge status:** merged (commit dc8de55, landed by coordinator orch-stream-play-log)
 - **Approx token burn:** high. One main session plus four Opus reviewer runs (two of them repeats after Fable usage-limit deaths) and a throwaway-daemon verification 🔥
 
 ## Context & Motivation
